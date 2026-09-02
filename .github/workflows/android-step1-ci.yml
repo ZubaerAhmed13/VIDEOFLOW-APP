@@ -1,0 +1,142 @@
+name: VideoFlow Android Step 1 Certification
+
+on:
+  push:
+    branches: [ main, step1-certification ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  step1-certification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install Android API 37.0 platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM_URL='https://dl.google.com/android/repository/platform-37.0_r02.zip'
+          PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
+          curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
+          echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          mkdir -p "$ANDROID_HOME/platforms"
+          unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          sdkmanager 'build-tools;36.0.0'
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Generate deterministic MP4 instrumentation fixtures
+        run: ./scripts/generate-test-fixtures.sh
+
+      - name: Step 1 prohibited-pattern audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -n -E 'inputStream\.readBytes\(\)|ByteArray\([^)]*(fileSize|sizeBytes|file\.length)|WebView|android\.permission\.INTERNET' app/src/main app/src/main/AndroidManifest.xml; then
+            echo 'Step 1 prohibited pattern detected.'
+            exit 1
+          fi
+          if grep -R -n -E 'TODO|FIXME|Coming Soon|Not Implemented' app/src/main; then
+            echo 'Unfinished Step 1 marker detected.'
+            exit 1
+          fi
+
+      - name: Clean
+        run: ./gradlew clean --stacktrace
+
+      - name: Unit tests
+        run: ./gradlew test --stacktrace
+
+      - name: Android lint
+        run: ./gradlew lint --stacktrace
+
+      - name: Compile instrumentation tests
+        run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
+
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Assemble test-signed release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Emulator instrumentation and Compose tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 600
+          disk-size: 4096M
+          script: ./gradlew connectedDebugAndroidTest --stacktrace
+
+      - name: Package certification artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p step1-deliverables/reports
+          [ ! -f app/build/outputs/apk/debug/app-debug.apk ] || cp app/build/outputs/apk/debug/app-debug.apk step1-deliverables/VideoFlow_Android_Step1_Debug.apk
+          [ ! -f app/build/outputs/apk/release/app-release.apk ] || cp app/build/outputs/apk/release/app-release.apk step1-deliverables/VideoFlow_Android_Step1_Release.apk
+          cp -R app/build/reports step1-deliverables/reports/app-build-reports 2>/dev/null || true
+          git archive --format=zip --output=step1-deliverables/VideoFlow_Android_Step1_Source.zip HEAD || true
+          cd step1-deliverables
+          : > SHA256SUMS.txt
+          [ ! -f VideoFlow_Android_Step1_Source.zip ] || sha256sum VideoFlow_Android_Step1_Source.zip >> SHA256SUMS.txt
+          for apk in *.apk; do [ -f "$apk" ] && sha256sum "$apk" >> SHA256SUMS.txt || true; done
+          cat SHA256SUMS.txt
+
+      - name: Upload certification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-Step1-Certification
+          path: step1-deliverables
+          if-no-files-found: error
+          retention-days: 30

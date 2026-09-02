@@ -1,0 +1,70 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "2f10f3828cd9e06d6e20d77a6df6bd65",
+    "entities": [
+      {
+        "tableName": "projects",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `projectFormatVersion` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `lastOpenedAt` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {"fieldPath":"id","columnName":"id","affinity":"TEXT","notNull":true},
+          {"fieldPath":"name","columnName":"name","affinity":"TEXT","notNull":true},
+          {"fieldPath":"projectFormatVersion","columnName":"projectFormatVersion","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"createdAt","columnName":"createdAt","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"updatedAt","columnName":"updatedAt","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"lastOpenedAt","columnName":"lastOpenedAt","affinity":"INTEGER"}
+        ],
+        "primaryKey":{"autoGenerate":false,"columnNames":["id"]}
+      },
+      {
+        "tableName": "media_assets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`assetId` TEXT NOT NULL, `projectId` TEXT NOT NULL, `sourceUri` TEXT NOT NULL, `displayName` TEXT NOT NULL, `mimeType` TEXT, `sizeBytes` INTEGER, `durationUs` INTEGER, `width` INTEGER, `height` INTEGER, `rotationDegrees` INTEGER, `frameRate` REAL, `videoCodecMime` TEXT, `audioCodecMime` TEXT, `audioSampleRate` INTEGER, `audioChannelCount` INTEGER, `videoTrackCount` INTEGER NOT NULL, `audioTrackCount` INTEGER NOT NULL, `videoBitrate` INTEGER, `videoProfile` INTEGER, `videoLevel` INTEGER, `colorStandard` INTEGER, `colorTransfer` INTEGER, `colorRange` INTEGER, `hdrStaticInfoPresent` INTEGER NOT NULL, `fingerprintSha256` TEXT, `fingerprintAlgorithm` TEXT, `fingerprintStrength` TEXT NOT NULL, `fingerprintSampledBytes` INTEGER NOT NULL, `fingerprintNote` TEXT, `permissionPersisted` INTEGER NOT NULL, `sourceStatus` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`assetId`), FOREIGN KEY(`projectId`) REFERENCES `projects`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {"fieldPath":"assetId","columnName":"assetId","affinity":"TEXT","notNull":true},
+          {"fieldPath":"projectId","columnName":"projectId","affinity":"TEXT","notNull":true},
+          {"fieldPath":"sourceUri","columnName":"sourceUri","affinity":"TEXT","notNull":true},
+          {"fieldPath":"displayName","columnName":"displayName","affinity":"TEXT","notNull":true},
+          {"fieldPath":"mimeType","columnName":"mimeType","affinity":"TEXT"},
+          {"fieldPath":"sizeBytes","columnName":"sizeBytes","affinity":"INTEGER"},
+          {"fieldPath":"durationUs","columnName":"durationUs","affinity":"INTEGER"},
+          {"fieldPath":"width","columnName":"width","affinity":"INTEGER"},
+          {"fieldPath":"height","columnName":"height","affinity":"INTEGER"},
+          {"fieldPath":"rotationDegrees","columnName":"rotationDegrees","affinity":"INTEGER"},
+          {"fieldPath":"frameRate","columnName":"frameRate","affinity":"REAL"},
+          {"fieldPath":"videoCodecMime","columnName":"videoCodecMime","affinity":"TEXT"},
+          {"fieldPath":"audioCodecMime","columnName":"audioCodecMime","affinity":"TEXT"},
+          {"fieldPath":"audioSampleRate","columnName":"audioSampleRate","affinity":"INTEGER"},
+          {"fieldPath":"audioChannelCount","columnName":"audioChannelCount","affinity":"INTEGER"},
+          {"fieldPath":"videoTrackCount","columnName":"videoTrackCount","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"audioTrackCount","columnName":"audioTrackCount","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"videoBitrate","columnName":"videoBitrate","affinity":"INTEGER"},
+          {"fieldPath":"videoProfile","columnName":"videoProfile","affinity":"INTEGER"},
+          {"fieldPath":"videoLevel","columnName":"videoLevel","affinity":"INTEGER"},
+          {"fieldPath":"colorStandard","columnName":"colorStandard","affinity":"INTEGER"},
+          {"fieldPath":"colorTransfer","columnName":"colorTransfer","affinity":"INTEGER"},
+          {"fieldPath":"colorRange","columnName":"colorRange","affinity":"INTEGER"},
+          {"fieldPath":"hdrStaticInfoPresent","columnName":"hdrStaticInfoPresent","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"fingerprintSha256","columnName":"fingerprintSha256","affinity":"TEXT"},
+          {"fieldPath":"fingerprintAlgorithm","columnName":"fingerprintAlgorithm","affinity":"TEXT"},
+          {"fieldPath":"fingerprintStrength","columnName":"fingerprintStrength","affinity":"TEXT","notNull":true},
+          {"fieldPath":"fingerprintSampledBytes","columnName":"fingerprintSampledBytes","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"fingerprintNote","columnName":"fingerprintNote","affinity":"TEXT"},
+          {"fieldPath":"permissionPersisted","columnName":"permissionPersisted","affinity":"INTEGER","notNull":true},
+          {"fieldPath":"sourceStatus","columnName":"sourceStatus","affinity":"TEXT","notNull":true},
+          {"fieldPath":"createdAt","columnName":"createdAt","affinity":"INTEGER","notNull":true}
+        ],
+        "primaryKey":{"autoGenerate":false,"columnNames":["assetId"]},
+        "indices":[
+          {"name":"index_media_assets_projectId","unique":false,"columnNames":["projectId"],"orders":[],"createSql":"CREATE INDEX IF NOT EXISTS `index_media_assets_projectId` ON `${TABLE_NAME}` (`projectId`)"},
+          {"name":"index_media_assets_projectId_sourceUri","unique":false,"columnNames":["projectId","sourceUri"],"orders":[],"createSql":"CREATE INDEX IF NOT EXISTS `index_media_assets_projectId_sourceUri` ON `${TABLE_NAME}` (`projectId`, `sourceUri`)"}
+        ],
+        "foreignKeys":[{"table":"projects","onDelete":"CASCADE","onUpdate":"NO ACTION","columns":["projectId"],"referencedColumns":["id"]}]
+      }
+    ],
+    "setupQueries":[
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2f10f3828cd9e06d6e20d77a6df6bd65')"
+    ]
+  }
+}
