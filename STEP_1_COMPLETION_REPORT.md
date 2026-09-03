@@ -12,7 +12,7 @@ Status vocabulary: **PASS / FAIL / PARTIAL / NOT VERIFIED / NOT APPLICABLE**.
 
 **STEP 1 STATUS: PARTIAL**
 
-The Step 1 software foundation and all automated certification gates are **PASS**. The remaining blockers are intrinsically physical-device gates requiring a real API-26+ Android phone/tablet and a genuine encoded >3 GB source. They remain **NOT VERIFIED** and are not inferred from structural or emulator evidence.
+The Step 1 software foundation and all automated certification gates are **PASS**. Physical-device certification is now **PARTIAL**: direct phone evidence confirms installation, project/media flows, persisted URI display, bounded large-source fingerprinting, large-source HEVC playback below 3 GB, and reference-based storage behavior across approximately 2.30 GB of imported media. The mandatory genuine encoded >3 GB single-source gate and other remaining physical checks are still open.
 
 Step 2 has not been started.
 
@@ -23,41 +23,64 @@ Step 2 has not been started.
 | Native Kotlin | PASS | Android Kotlin application |
 | Compose | PASS | Jetpack Compose / Material 3 |
 | WebView-free | PASS | Prohibited-pattern audit |
-| SAF | PASS | `OpenDocument`, `content://` source model |
-| Persisted URI attempt | PASS | Persistable read grant attempted and state stored |
+| SAF | PASS | `OpenDocument`, `content://` source model; physical Add Media flow observed |
+| Persisted URI attempt | PASS | Persistable read grant attempted and `persisted URI permission` displayed on physical device |
 | No original copy architecture | PASS | Reference-based import; no source-copy implementation |
 | `Long` large-file values | PASS | Automated logical sizes through 100 GB |
 | No artificial file-size cap | PASS | No application 3 GB rejection/cap |
-| Sampled SHA-256 | PASS | `VideoFlowSampleSHA256-v1` |
+| Sampled SHA-256 | PASS | `VideoFlowSampleSHA256-v1`; physical 1.26 GB source used `STRONG_THREE_REGION`, 12.00 MB sampled |
 | CHANGED detection | PASS | Same URI/different underlying media repository test |
 | Strong relink | PASS | Strength-aware exact-match policy |
 | Weak relink handling | PASS | Explicit confirmation; never promoted to strong |
 | Duplicate confirmation | PASS | No Room insertion before confirmation |
-| MediaExtractor | PASS | Real MP4 instrumentation |
-| Media3 | PASS | Native prepare/playback foundation |
-| Seek | PASS | Media3 seek instrumentation |
+| MediaExtractor | PASS | Real MP4 instrumentation + physical large HEVC metadata extraction |
+| Media3 | PASS | Native prepare/playback foundation + physical playback observed |
+| Seek | PASS | Media3 seek instrumentation; physical 1.26 GB source observed playing at ~63% |
 | Room | PASS | CRUD + reopen + 10 GB metadata persistence |
-| Force-stop reopen | NOT VERIFIED | Requires physical device |
+| Force-stop reopen | NOT VERIFIED | Requires physical-device sequence |
 | Physical reboot persistence | NOT VERIFIED | Requires physical device/provider |
 | Missing source | PASS | Repository/runtime missing-source handling; physical removable scenario NOT VERIFIED |
 | Relink | PASS | Automated safe relink policy/runtime mismatch rejection; physical relink NOT VERIFIED |
-| H.264 capability | PASS | Capability query implementation/runtime interrogation; physical support result NOT VERIFIED |
-| HEVC capability | PASS | Capability query implementation/runtime interrogation; physical support result NOT VERIFIED |
-| VP9 capability | PASS | Capability query implementation/runtime interrogation; physical support result NOT VERIFIED |
-| AV1 capability | PASS | Capability query implementation/runtime interrogation; physical support result NOT VERIFIED |
+| H.264 capability | PASS | Capability query implementation/runtime interrogation; physical capability screen result NOT VERIFIED |
+| HEVC capability | PASS | Capability query implementation/runtime interrogation; physical 1280×690 HEVC playback observed, capability screen result NOT VERIFIED |
+| VP9 capability | PASS | Capability query implementation/runtime interrogation; physical result NOT VERIFIED |
+| AV1 capability | PASS | Capability query implementation/runtime interrogation; physical result NOT VERIFIED |
 | 4K capability query | PASS | 3840×2160 30/60 query where Android APIs allow; physical result NOT VERIFIED |
-| Real encoded >3 GB input | NOT VERIFIED | Requires physical device + genuine encoded source |
-| >3 GB preview | NOT VERIFIED | Requires physical device |
-| >3 GB late seek | NOT VERIFIED | Requires physical device |
-| Storage delta | NOT VERIFIED | Requires before/after app-storage measurement |
+| Real encoded >3 GB input | NOT VERIFIED | Largest physical source evidenced so far: 1.26 GB |
+| >3 GB preview | NOT VERIFIED | Requires genuine >3 GB physical source |
+| >3 GB late seek | NOT VERIFIED | Requires genuine >3 GB physical source |
+| Physical storage/no-copy below 3 GB | PASS | App total 23.69→23.74 MB after project represented ~2.30 GB media; ~50 kB delta |
+| Mandatory >3 GB storage delta | NOT VERIFIED | Requires a single genuine >3 GB physical source |
 | Memory bounded | NOT VERIFIED | Structural bounded algorithms PASS; physical memory measurement required |
 | Launcher icon | PASS | Adaptive/round/monochrome resources packaged by green build; physical launcher appearance NOT VERIFIED |
 | Backup/privacy rules | PASS | No INTERNET; `allowBackup=false`; extraction rules exclude app data |
 | Unit tests | PASS | 23/23 |
 | Instrumentation | PASS | 16/16 on API 35 |
 | Lint | PASS | 0 errors |
-| Debug APK | PASS | Main run #43 artifact |
+| Debug APK | PASS | Main run #43 artifact; installed/ran on physical device |
 | Release APK | PASS | Main run #43 test-signed artifact |
+
+## Physical-device evidence recorded on 2026-09-03
+
+The certified debug APK was installed and used on a physical Android phone.
+
+Observed media:
+
+- 5.85 MB H.264/AAC MP4: physical playback observed, full-small-file fingerprint path
+- 1.26 GB HEVC source: 1280×690, 03:17:20, 1 video + 2 audio tracks, `STRONG_THREE_REGION`, 12.00 MB sampled
+- 1.03 GB HEVC source: 1280×720, 02:36:22
+
+The 1.26 GB HEVC source was observed playing at 02:05:09 of 03:17:21, approximately 63% into the file.
+
+Physical app-storage evidence:
+
+- before media additions: 23.69 MB total, 147 kB user data, 180 kB cache
+- after three media items: 23.74 MB total, 201 kB user data, 180 kB cache
+- total delta: approximately +0.05 MB (~50 kB)
+- user-data delta: +54 kB
+- media represented in the project: approximately 2.30 GB total
+
+This directly supports the no-source-copy architecture on the tested device. It does not replace the required genuine >3 GB single-source certification.
 
 ## Remediation closed in this certification
 
@@ -106,20 +129,20 @@ Application configuration:
 
 ## Remaining Step 1 blockers
 
-Only genuine physical-device certification remains:
+The remaining physical-device gates are:
 
-- encoded >3 GB document import
-- >3 GB preview and 25/50/75/95% seek
-- measured app-storage delta proving no source-sized copy on device
+- genuine encoded >3 GB document import
+- >3 GB preview and 25/50/75/95% seek sequence
+- mandatory >3 GB app-storage before/after delta
 - force-stop/reopen persistence
 - reboot/provider persistence
 - physical missing-source and relink flow
-- measured memory during import/fingerprint/preview
+- measured memory during import/fingerprint/preview/late seek
 - thermal observation
-- actual-device codec/4K results
-- launcher appearance/basic physical-device UI check
+- actual-device Device Capability screen/codec/4K results
+- launcher appearance/basic accessibility device check
 
-No physical row is marked PASS without direct evidence.
+No still-open physical row is marked PASS without direct evidence.
 
 ## Final statement
 
@@ -127,6 +150,6 @@ Software remediation: **PASS**.
 
 Automated Step 1 certification: **PASS**.
 
-Physical-device certification: **NOT VERIFIED**.
+Physical-device certification: **PARTIAL**.
 
 Overall Step 1: **PARTIAL**.
