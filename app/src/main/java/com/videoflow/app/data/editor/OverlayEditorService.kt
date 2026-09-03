@@ -23,25 +23,38 @@ class OverlayEditorService @Inject constructor(private val db: VideoFlowDatabase
         italic: Boolean? = null,
         colorArgb: Long? = null,
         opacity: Float? = null,
+        alignment: String? = null,
         x: Float? = null,
         y: Float? = null,
         scale: Float? = null,
-        rotationDegrees: Float? = null
+        rotationDegrees: Float? = null,
+        timelineStartUs: Long? = null,
+        timelineEndUs: Long? = null
     ): TextOverlay = withContext(Dispatchers.IO) {
         db.withTransaction {
             val current = db.editorDao().getTextOverlays(projectId).first { it.id == overlayId }
             requireUnlocked(projectId, current.trackId)
+            val nextStart = timelineStartUs ?: current.timelineStartUs
+            val nextEnd = timelineEndUs ?: current.timelineEndUs
+            require(nextStart >= 0L && nextEnd > nextStart) { "Text overlay must have positive timeline duration" }
+            val normalizedAlignment = alignment?.uppercase()?.also {
+                require(it in VALID_ALIGNMENTS) { "Alignment must be START, CENTER or END" }
+            } ?: current.alignment
+            val validatedScale = scale?.also { require(it.isFinite() && it in 0.05f..10f) }
             val next = current.copy(
+                timelineStartUs = nextStart,
+                timelineEndUs = nextEnd,
                 content = content?.take(MAX_TEXT_LENGTH) ?: current.content,
                 fontSizeSp = fontSizeSp?.also { require(it.isFinite() && it in 6f..256f) } ?: current.fontSizeSp,
                 fontWeight = fontWeight?.coerceIn(100, 900) ?: current.fontWeight,
                 italic = italic ?: current.italic,
                 colorArgb = colorArgb ?: current.colorArgb,
                 opacity = opacity?.also { require(it in 0f..1f) } ?: current.opacity,
+                alignment = normalizedAlignment,
                 x = x?.also { require(it.isFinite()) }?.coerceIn(0f, 1f) ?: current.x,
                 y = y?.also { require(it.isFinite()) }?.coerceIn(0f, 1f) ?: current.y,
-                scaleX = scale?.also { require(it.isFinite() && it in 0.05f..10f) } ?: current.scaleX,
-                scaleY = scale ?: current.scaleY,
+                scaleX = validatedScale ?: current.scaleX,
+                scaleY = validatedScale ?: current.scaleY,
                 rotationDegrees = rotationDegrees?.also { require(it.isFinite()) } ?: current.rotationDegrees
             )
             db.editorDao().putTextOverlay(next)
@@ -57,17 +70,25 @@ class OverlayEditorService @Inject constructor(private val db: VideoFlowDatabase
         x: Float? = null,
         y: Float? = null,
         scale: Float? = null,
-        rotationDegrees: Float? = null
+        rotationDegrees: Float? = null,
+        timelineStartUs: Long? = null,
+        timelineEndUs: Long? = null
     ): ImageOverlay = withContext(Dispatchers.IO) {
         db.withTransaction {
             val current = db.editorDao().getImageOverlays(projectId).first { it.id == overlayId }
             requireUnlocked(projectId, current.trackId)
+            val nextStart = timelineStartUs ?: current.timelineStartUs
+            val nextEnd = timelineEndUs ?: current.timelineEndUs
+            require(nextStart >= 0L && nextEnd > nextStart) { "Image overlay must have positive timeline duration" }
+            val validatedScale = scale?.also { require(it.isFinite() && it in 0.05f..10f) }
             val next = current.copy(
+                timelineStartUs = nextStart,
+                timelineEndUs = nextEnd,
                 opacity = opacity?.also { require(it in 0f..1f) } ?: current.opacity,
                 x = x?.also { require(it.isFinite()) }?.coerceIn(0f, 1f) ?: current.x,
                 y = y?.also { require(it.isFinite()) }?.coerceIn(0f, 1f) ?: current.y,
-                scaleX = scale?.also { require(it.isFinite() && it in 0.05f..10f) } ?: current.scaleX,
-                scaleY = scale ?: current.scaleY,
+                scaleX = validatedScale ?: current.scaleX,
+                scaleY = validatedScale ?: current.scaleY,
                 rotationDegrees = rotationDegrees?.also { require(it.isFinite()) } ?: current.rotationDegrees
             )
             db.editorDao().putImageOverlay(next)
@@ -116,6 +137,7 @@ class OverlayEditorService @Inject constructor(private val db: VideoFlowDatabase
 
     companion object {
         private const val MAX_TEXT_LENGTH = 4096
+        private val VALID_ALIGNMENTS = setOf("START", "CENTER", "END")
     }
 }
 
