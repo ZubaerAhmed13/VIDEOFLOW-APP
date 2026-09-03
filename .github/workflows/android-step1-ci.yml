@@ -10,9 +10,10 @@ permissions:
   contents: read
 
 jobs:
-  step1-certification:
+  build-certification:
+    name: Build, unit, lint and APK certification
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 55
 
     steps:
       - name: Checkout
@@ -97,30 +98,7 @@ jobs:
       - name: Assemble test-signed release APK
         run: ./gradlew assembleRelease --stacktrace
 
-      - name: Enable KVM acceleration
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -e /dev/kvm
-          sudo chown "$USER":"$(id -gn)" /dev/kvm
-          sudo chmod 660 /dev/kvm
-          test -r /dev/kvm
-          test -w /dev/kvm
-          df -h /
-
-      - name: Emulator instrumentation and Compose tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          disable-animations: true
-          disable-linux-hw-accel: false
-          emulator-boot-timeout: 600
-          disk-size: 1536M
-          script: ./gradlew connectedDebugAndroidTest --stacktrace
-
-      - name: Package certification artifacts
+      - name: Package build certification artifacts
         if: always()
         shell: bash
         run: |
@@ -136,11 +114,138 @@ jobs:
           for apk in *.apk; do [ -f "$apk" ] && sha256sum "$apk" >> SHA256SUMS.txt || true; done
           cat SHA256SUMS.txt
 
-      - name: Upload certification artifacts
+      - name: Upload build certification artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VideoFlow-Android-Step1-Certification
+          name: VideoFlow-Android-Step1-Build-Certification
           path: step1-deliverables
           if-no-files-found: error
+          retention-days: 30
+
+  emulator-certification:
+    name: API 35 emulator instrumentation certification
+    needs: build-certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install only compile-time Android dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM_URL='https://dl.google.com/android/repository/platform-37.0_r02.zip'
+          PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
+          curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
+          echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          mkdir -p "$ANDROID_HOME/platforms"
+          unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          sdkmanager 'build-tools;36.0.0'
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+          rm -f /tmp/platform-37.0_r02.zip
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Install fixture generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Generate deterministic MP4 instrumentation fixtures
+        run: ./scripts/generate-test-fixtures.sh
+
+      - name: Reclaim fixture-generator and package-manager space
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get purge -y -qq ffmpeg || true
+          sudo apt-get autoremove -y -qq || true
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/* /tmp/*
+          df -h /
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Pre-emulator storage diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== Filesystem ==='
+          df -h / "$HOME" "$ANDROID_HOME"
+          echo '=== Major CI directories ==='
+          du -sh "$ANDROID_HOME" "$HOME/.gradle" "$HOME/.android" . 2>/dev/null || true
+          FREE_KB=$(df --output=avail -k / | tail -1 | tr -d ' ')
+          echo "Free root filesystem space: $((FREE_KB / 1024)) MiB"
+          if [ "$FREE_KB" -lt 10485760 ]; then
+            echo 'Less than 10 GiB is free before emulator provisioning; refusing to start an unreliable certification run.'
+            exit 1
+          fi
+
+      - name: Emulator instrumentation and Compose tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 600
+          disk-size: 1536M
+          script: ./gradlew connectedDebugAndroidTest --stacktrace
+
+      - name: Package emulator test reports
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p step1-emulator-reports
+          cp -R app/build/reports/androidTests step1-emulator-reports/androidTests 2>/dev/null || true
+          cp -R app/build/outputs/androidTest-results step1-emulator-reports/androidTest-results 2>/dev/null || true
+          df -h / > step1-emulator-reports/final-disk-usage.txt || true
+
+      - name: Upload emulator certification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-Step1-Emulator-Certification
+          path: step1-emulator-reports
+          if-no-files-found: warn
           retention-days: 30
