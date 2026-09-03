@@ -42,6 +42,11 @@ android {
         buildConfig = true
     }
 
+    // Keep the checked-in Room schema contract available to instrumentation packages and release evidence.
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
+
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     testOptions.unitTests.isIncludeAndroidResources = true
 }
@@ -96,7 +101,6 @@ dependencies {
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.0")
-    androidTestImplementation("androidx.room:room-testing:2.8.3")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }
