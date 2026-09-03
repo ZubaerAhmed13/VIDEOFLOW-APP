@@ -1,0 +1,258 @@
+name: VideoFlow Android Step 2 Certification
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-certification:
+    name: Step 1 regression, Step 2 unit, lint and APK certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install Android API 37.0 platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM_URL='https://dl.google.com/android/repository/platform-37.0_r02.zip'
+          PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
+          curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
+          echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          mkdir -p "$ANDROID_HOME/platforms"
+          unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          sdkmanager 'build-tools;36.0.0'
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          rm -f /tmp/platform-37.0_r02.zip
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Generate deterministic media fixtures
+        run: ./scripts/generate-test-fixtures.sh
+
+      - name: Step 1 and Step 2 prohibited-pattern audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -n -E 'inputStream\.readBytes\(\)|\.readBytes\(\)|ByteArray\([^)]*(fileSize|sizeBytes|file\.length)|WebView|android\.permission\.INTERNET|android\.permission\.MANAGE_EXTERNAL_STORAGE|fallbackToDestructiveMigration|ffmpeg\.wasm|FFmpeg-WASM' app/src/main app/src/main/AndroidManifest.xml; then
+            echo 'A Step 1/Step 2 prohibited pattern was detected.'
+            exit 1
+          fi
+          if grep -R -n -E 'TODO|FIXME|Coming Soon|Not Implemented' app/src/main; then
+            echo 'Unfinished production marker detected.'
+            exit 1
+          fi
+
+      - name: Verify Step 2 schema and migration are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'version = 2' app/src/main/java/com/videoflow/app/data/db/Entities.kt
+          grep -q 'MIGRATION_1_2' app/src/main/java/com/videoflow/app/data/db/Migrations.kt
+          grep -q 'addMigrations(MIGRATION_1_2)' app/src/main/java/com/videoflow/app/di/AppModule.kt
+
+      - name: Clean
+        run: ./gradlew clean --stacktrace
+
+      - name: Step 1 regression and Step 2 unit tests
+        run: ./gradlew test --stacktrace
+
+      - name: Android lint
+        run: ./gradlew lint --stacktrace
+
+      - name: Compile instrumentation tests
+        run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
+
+      - name: Assemble debug APK and instrumentation APK
+        run: ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace
+
+      - name: Assemble test-signed release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Prepare exact Step 2 runtime bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_APK='app/build/outputs/apk/debug/app-debug.apk'
+          TEST_APK='app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'
+          RELEASE_APK='app/build/outputs/apk/release/app-release.apk'
+          test -f "$APP_APK"
+          test -f "$TEST_APK"
+          test -f "$RELEASE_APK"
+          mkdir -p step2-runtime
+          cp "$APP_APK" step2-runtime/VideoFlow_Android_Step2_Debug.apk
+          cp "$TEST_APK" step2-runtime/VideoFlow_Android_Step2_Debug-androidTest.apk
+          cp "$RELEASE_APK" step2-runtime/VideoFlow_Android_Step2_Release-TestSigned.apk
+          (
+            cd step2-runtime
+            sha256sum *.apk | tee SHA256SUMS.txt
+          )
+
+      - name: Upload exact Step 2 runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-Step2-Runtime-Bundle
+          path: step2-runtime
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Package Step 2 build certification artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p step2-deliverables/reports
+          [ ! -f app/build/outputs/apk/debug/app-debug.apk ] || cp app/build/outputs/apk/debug/app-debug.apk step2-deliverables/VideoFlow_Android_Step2_Debug.apk
+          [ ! -f app/build/outputs/apk/release/app-release.apk ] || cp app/build/outputs/apk/release/app-release.apk step2-deliverables/VideoFlow_Android_Step2_Release-TestSigned.apk
+          cp -R app/build/reports step2-deliverables/reports/app-build-reports 2>/dev/null || true
+          cp STEP_2_IMPLEMENTATION_STATUS.md step2-deliverables/ 2>/dev/null || true
+          git archive --format=zip --output=step2-deliverables/VideoFlow_Android_Step2_Source.zip HEAD || true
+          cd step2-deliverables
+          : > SHA256SUMS.txt
+          [ ! -f VideoFlow_Android_Step2_Source.zip ] || sha256sum VideoFlow_Android_Step2_Source.zip >> SHA256SUMS.txt
+          for apk in *.apk; do [ -f "$apk" ] && sha256sum "$apk" >> SHA256SUMS.txt || true; done
+          cat SHA256SUMS.txt
+
+      - name: Upload Step 2 build certification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-Step2-Build-Certification
+          path: step2-deliverables
+          if-no-files-found: error
+          retention-days: 30
+
+  emulator-certification:
+    name: API 35 Step 2 emulator instrumentation certification
+    needs: build-certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Reclaim unrelated hosted-runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake" "$ANDROID_HOME/system-images" "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/sources" "$ANDROID_HOME/extras" || true
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* /tmp/* || true
+          df -h /
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Download exact APKs produced by build job
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Android-Step2-Runtime-Bundle
+          path: step2-runtime
+
+      - name: Verify runtime bundle integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f step2-runtime/VideoFlow_Android_Step2_Debug.apk
+          test -f step2-runtime/VideoFlow_Android_Step2_Debug-androidTest.apk
+          (cd step2-runtime && sha256sum -c SHA256SUMS.txt)
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Pre-emulator storage diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h / "$HOME" "$ANDROID_HOME"
+          FREE_KB=$(df --output=avail -k / | tail -1 | tr -d ' ')
+          if [ "$FREE_KB" -lt 16777216 ]; then
+            echo 'Less than 16 GiB free before emulator provisioning.'
+            exit 1
+          fi
+
+      - name: API 35 instrumentation and Compose tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 600
+          disk-size: 1536M
+          script: |
+            mkdir -p step2-emulator-reports
+            adb install -r step2-runtime/VideoFlow_Android_Step2_Debug.apk
+            adb install -r step2-runtime/VideoFlow_Android_Step2_Debug-androidTest.apk
+            adb shell am instrument -w -r com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step2-emulator-reports/instrumentation-output.txt 2>&1
+            cat step2-emulator-reports/instrumentation-output.txt
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step2-emulator-reports/instrumentation-output.txt
+            grep -E -q 'OK \([0-9]+ tests?\)' step2-emulator-reports/instrumentation-output.txt
+
+      - name: Package emulator reports
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p step2-emulator-reports
+          df -h / > step2-emulator-reports/final-disk-usage.txt || true
+          adb devices -l > step2-emulator-reports/adb-devices.txt 2>/dev/null || true
+
+      - name: Upload Step 2 emulator reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-Step2-Emulator-Certification
+          path: step2-emulator-reports
+          if-no-files-found: warn
+          retention-days: 30
