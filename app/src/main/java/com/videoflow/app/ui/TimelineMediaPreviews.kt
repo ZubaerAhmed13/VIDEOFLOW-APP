@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,11 @@ fun CachedThumbnailPreview(path: String?, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun WaveformPreview(peaks: FloatArray?, modifier: Modifier = Modifier) {
+fun WaveformPreview(
+    peaks: FloatArray?,
+    modifier: Modifier = Modifier,
+    color: Color = Color.White
+) {
     if (peaks.isNullOrEmpty()) return
     Canvas(modifier = modifier) {
         val centerY = size.height / 2f
@@ -50,7 +55,7 @@ fun WaveformPreview(peaks: FloatArray?, modifier: Modifier = Modifier) {
             val x = if (visibleBins <= 1) 0f else outputIndex.toFloat() / (visibleBins - 1).toFloat() * size.width
             val halfHeight = peak * centerY
             drawLine(
-                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.72f),
+                color = color.copy(alpha = 0.78f),
                 start = Offset(x, centerY - halfHeight),
                 end = Offset(x, centerY + halfHeight),
                 strokeWidth = 1f
