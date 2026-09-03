@@ -28,7 +28,9 @@ class HomeComposeTest {
         projectNameField.performTextInput("Step 1 UI Test")
 
         rule.onNodeWithText("Create", useUnmergedTree = true).performClick()
-        rule.waitUntil(5_000) {
+        // Database-backed navigation can take longer on a cold hosted emulator after media codec tests.
+        // Wait for the actual semantic destination instead of using a fragile 5-second performance assumption.
+        rule.waitUntil(15_000) {
             runCatching {
                 rule.onNodeWithContentDescription("Add media").fetchSemanticsNode()
                 true

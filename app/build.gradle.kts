@@ -42,6 +42,12 @@ android {
         buildConfig = true
     }
 
+    // Room's MigrationTestHelper loads exported schemas from androidTest assets.
+    // Keep the checked-in v1 schema and KSP-generated current schema on the real test APK classpath.
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
+
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     testOptions.unitTests.isIncludeAndroidResources = true
 }
