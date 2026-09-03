@@ -28,21 +28,21 @@ class EditorPropertyService @Inject constructor(private val db: VideoFlowDatabas
         require(opacity in 0f..1f)
         db.openHelper.writableDatabase.execSQL(
             "UPDATE clips SET x=?, y=?, scaleX=?, scaleY=?, rotationDegrees=?, opacity=? WHERE id=?",
-            arrayOf(x, y, scaleX, scaleY, rotationDegrees, opacity, clip.id)
+            arrayOf<Any?>(x, y, scaleX, scaleY, rotationDegrees, opacity, clip.id)
         )
     }
 
     suspend fun resetTransform(projectId: String, clipId: String) = mutate(projectId, clipId) { clip ->
         db.openHelper.writableDatabase.execSQL(
             "UPDATE clips SET x=0.5, y=0.5, scaleX=1.0, scaleY=1.0, rotationDegrees=0.0, opacity=1.0, flipHorizontal=0, flipVertical=0, cropLeft=0.0, cropTop=0.0, cropRight=1.0, cropBottom=1.0 WHERE id=?",
-            arrayOf(clip.id)
+            arrayOf<Any?>(clip.id)
         )
     }
 
     suspend fun setCrop(projectId: String, clipId: String, crop: CropRect) = mutate(projectId, clipId) { clip ->
         db.openHelper.writableDatabase.execSQL(
             "UPDATE clips SET cropLeft=?, cropTop=?, cropRight=?, cropBottom=? WHERE id=?",
-            arrayOf(crop.left, crop.top, crop.right, crop.bottom, clip.id)
+            arrayOf<Any?>(crop.left, crop.top, crop.right, crop.bottom, clip.id)
         )
     }
 
@@ -50,21 +50,21 @@ class EditorPropertyService @Inject constructor(private val db: VideoFlowDatabas
         val next = ((clip.rotationDegrees + 90f) % 360f + 360f) % 360f
         db.openHelper.writableDatabase.execSQL(
             "UPDATE clips SET rotationDegrees=? WHERE id=?",
-            arrayOf(next, clip.id)
+            arrayOf<Any?>(next, clip.id)
         )
     }
 
     suspend fun setFlipHorizontal(projectId: String, clipId: String, enabled: Boolean) = mutate(projectId, clipId) { clip ->
         db.openHelper.writableDatabase.execSQL(
             "UPDATE clips SET flipHorizontal=? WHERE id=?",
-            arrayOf(if (enabled) 1 else 0, clip.id)
+            arrayOf<Any?>(if (enabled) 1 else 0, clip.id)
         )
     }
 
     suspend fun setFlipVertical(projectId: String, clipId: String, enabled: Boolean) = mutate(projectId, clipId) { clip ->
         db.openHelper.writableDatabase.execSQL(
             "UPDATE clips SET flipVertical=? WHERE id=?",
-            arrayOf(if (enabled) 1 else 0, clip.id)
+            arrayOf<Any?>(if (enabled) 1 else 0, clip.id)
         )
     }
 
@@ -72,7 +72,7 @@ class EditorPropertyService @Inject constructor(private val db: VideoFlowDatabas
         require(opacity in 0f..1f)
         db.openHelper.writableDatabase.execSQL(
             "UPDATE clips SET opacity=? WHERE id=?",
-            arrayOf(opacity, clip.id)
+            arrayOf<Any?>(opacity, clip.id)
         )
     }
 
@@ -90,14 +90,20 @@ class EditorPropertyService @Inject constructor(private val db: VideoFlowDatabas
                     endUs > it.timelineStartUs
             }
             if (overlap) throw TimelineOverlapException("Speed change would overlap another clip on the same track")
-            db.openHelper.writableDatabase.execSQL("UPDATE clips SET speed=? WHERE id=?", arrayOf(speed, clip.id))
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE clips SET speed=? WHERE id=?",
+                arrayOf<Any?>(speed, clip.id)
+            )
             touch(projectId)
         }
     }
 
     suspend fun setClipGain(projectId: String, clipId: String, gainDb: Float) = mutate(projectId, clipId) { clip ->
         require(gainDb.isFinite() && gainDb in -60f..24f)
-        db.openHelper.writableDatabase.execSQL("UPDATE clips SET gainDb=? WHERE id=?", arrayOf(gainDb, clip.id))
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE clips SET gainDb=? WHERE id=?",
+            arrayOf<Any?>(gainDb, clip.id)
+        )
     }
 
     suspend fun setFades(projectId: String, clipId: String, fadeInUs: Long, fadeOutUs: Long) = mutate(projectId, clipId) { clip ->
@@ -105,7 +111,7 @@ class EditorPropertyService @Inject constructor(private val db: VideoFlowDatabas
         require(fadeInUs in 0..duration && fadeOutUs in 0..duration)
         db.openHelper.writableDatabase.execSQL(
             "UPDATE clips SET fadeInUs=?, fadeOutUs=? WHERE id=?",
-            arrayOf(fadeInUs, fadeOutUs, clip.id)
+            arrayOf<Any?>(fadeInUs, fadeOutUs, clip.id)
         )
     }
 
