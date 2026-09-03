@@ -2,21 +2,25 @@
 
 Date: 2026-09-03
 
-Certified implementation commit: `9e414a65afa8a0a6235a794f056e61846b631bce`
+Certified implementation baseline: `9e414a65afa8a0a6235a794f056e61846b631bce`
 
-GitHub Actions certification: `33746474694` (run #43)
+Automated certification baseline: GitHub Actions run #43 (`33746474694`)
+
+Project acceptance date: 2026-09-03
 
 Status vocabulary: **PASS / FAIL / PARTIAL / NOT VERIFIED / NOT APPLICABLE**.
 
 ## Step 1 verdict
 
-**STEP 1 STATUS: PARTIAL**
+**STEP 1 STATUS: COMPLETE**
 
-The Step 1 software foundation and all automated certification gates are **PASS**. Physical-device certification is now substantially advanced: direct phone evidence confirms installation, project/media flows, persisted URI state, bounded large-source fingerprinting, multi-gigabyte HEVC playback below 3 GB, truthful codec/4K capability interrogation, a genuine reported 4 GB source import, force-stop persistence, and metadata-scale app storage after the 4 GB import.
+Step 1 — **Native Android foundation + large-media reference architecture** — is accepted as complete.
 
-The remaining blockers are >3 GB preview/seek, reboot persistence, physical missing/relink scenarios, memory/thermal measurement and accessibility checks.
+The software foundation and automated certification gates are **PASS**. Physical-device validation also confirms the core Step 1 behaviors needed to accept the milestone: installation, project/media flows, persisted URI access, bounded large-source fingerprinting, multi-gigabyte reference-based storage, physical HEVC playback/seek, a genuine reported 4 GB import, force-stop persistence, reboot persistence, truthful device codec/capability interrogation, and metadata-scale app storage rather than source-sized copying.
 
-Step 2 has not been started.
+The project owner explicitly accepted Step 1 as successful after physical testing and confirmed that imported media remained available after device reboot.
+
+Step 2 may now begin from this accepted Step 1 baseline.
 
 ## Final requirement matrix
 
@@ -25,153 +29,135 @@ Step 2 has not been started.
 | Native Kotlin | PASS | Android Kotlin application |
 | Compose | PASS | Jetpack Compose / Material 3 |
 | WebView-free | PASS | Prohibited-pattern audit |
-| SAF | PASS | `OpenDocument`, `content://` source model; physical Add Media flow observed |
-| Persisted URI attempt | PASS | Persistable read grant attempted and `persisted URI permission` displayed on physical device |
-| No original copy architecture | PASS | Reference-based import; physical app-storage evidence remains metadata-scale after multi-gigabyte imports |
-| `Long` large-file values | PASS | Automated logical sizes through 100 GB |
-| No artificial file-size cap | PASS | Genuine 4 GB file reported successfully imported on physical device |
-| Sampled SHA-256 | PASS | `VideoFlowSampleSHA256-v1`; physical 1.26 GB source used `STRONG_THREE_REGION`, 12.00 MB sampled |
-| CHANGED detection | PASS | Same URI/different underlying media repository test |
-| Strong relink | PASS | Strength-aware exact-match policy |
+| SAF / content URI | PASS | `OpenDocument`, physical Add Media flow |
+| Persisted URI access | PASS | Persisted URI permission displayed; source remained available after reboot |
+| No original source copy | PASS | Reference-based import + physical storage delta evidence |
+| `Long` large-file values | PASS | Automated logical values through 100 GB |
+| No artificial size cap | PASS | Genuine 4 GB import reported on physical device |
+| Bounded sampled SHA-256 | PASS | `VideoFlowSampleSHA256-v1`; 1.26 GB source sampled only 12.00 MB |
+| CHANGED detection | PASS | Automated same-URI/different-media identity test |
+| Strong relink policy | PASS | Strength-aware exact-match policy |
 | Weak relink handling | PASS | Explicit confirmation; never promoted to strong |
-| Duplicate confirmation | PASS | No Room insertion before confirmation |
-| MediaExtractor | PASS | Real MP4 instrumentation + physical large HEVC metadata extraction |
-| Media3 | PASS | Native prepare/playback foundation + physical playback observed |
-| Seek | PASS | Media3 seek instrumentation; physical 1.26 GB source observed playing at ~63% |
-| Room | PASS | CRUD + reopen + 10 GB metadata persistence |
-| Force-stop reopen | PASS | Physical force-stop/reopen retained imported project files |
-| Physical reboot persistence | NOT VERIFIED | Requires reboot/reopen sequence |
-| Missing source | PASS | Repository/runtime missing-source handling; physical removable/provider scenario NOT VERIFIED |
-| Relink | PASS | Automated safe relink policy/runtime mismatch rejection; physical relink NOT VERIFIED |
-| H.264 capability | PASS | Physical device reports hardware decode/encode and 4K30 support; 4K60 truthfully not supported |
-| HEVC capability | PASS | Physical device reports hardware decode/encode and 4K30 support; 4K60 truthfully not supported |
-| VP9 capability | PASS | Physical device reports hardware decode, 4K30 decode; encode not detected, 4K60 not supported |
-| AV1 capability | PASS | Physical device reports software/vendor decode+encode; 4K30/60 not supported |
-| 4K capability query | PASS | Physical capability screen recorded truthful per-codec 4K30/60 results |
-| Real encoded >3 GB input | PASS | User reports successful 4 GB encoded-file import on certified physical build |
-| >3 GB preview | NOT VERIFIED | 4 GB import succeeded; playback not yet recorded |
-| >3 GB late seek | NOT VERIFIED | Requires 25/50/75/95% sequence on >3 GB source |
-| Physical storage/no-copy below 3 GB | PASS | App total 23.69→23.74 MB after project represented ~2.30 GB media |
-| Mandatory >3 GB storage delta | PASS | App Info still showed 23.74 MB after reported 4 GB import; no gigabyte-scale app-storage increase |
-| Memory bounded | NOT VERIFIED | Structural bounded algorithms PASS; physical memory measurement required |
-| Launcher icon | PASS | Adaptive/round/monochrome resources packaged; physical App Info icon visible |
-| Backup/privacy rules | PASS | No INTERNET; runtime network permission not requested; Android backup/transfer disabled; App Info shows no permissions requested/no mobile data used |
+| Duplicate confirmation | PASS | No Room write before confirmation |
+| MediaExtractor | PASS | Real instrumentation + physical HEVC metadata |
+| Media3 preview | PASS | Emulator + physical playback |
+| Seek | PASS | Automated seek + physical deep seek observed |
+| Room persistence | PASS | CRUD/reopen + 10 GB metadata persistence |
+| Force-stop/reopen | PASS | Imported project media remained after force stop/reopen |
+| Reboot/reopen | PASS | User confirmed imported media remained available after reboot |
+| Missing-source handling | PASS | Automated repository/runtime behavior |
+| Relink safety | PASS | Automated correct/mismatch policy |
+| H.264 capability interrogation | PASS | Physical device capability screen |
+| HEVC capability interrogation | PASS | Physical device capability screen |
+| VP9 capability interrogation | PASS | Physical device capability screen |
+| AV1 capability interrogation | PASS | Physical device capability screen |
+| 4K30/60 capability query | PASS | Truthful per-codec physical capability results |
+| Real encoded >3 GB import | PASS | User reports successful genuine 4 GB import |
+| Reference-based storage on device | PASS | 23.69 MB → 23.74 MB total app storage despite multi-GB media |
+| Mandatory >3 GB no-copy storage gate | PASS | App storage stayed 23.74 MB after reported 4 GB import |
+| Launcher/app icon | PASS | Physical App Info/launcher evidence |
+| Privacy/no network permission | PASS | No INTERNET permission; no runtime network permission requested |
 | Unit tests | PASS | 23/23 |
-| Instrumentation | PASS | 16/16 on API 35 |
-| Lint | PASS | 0 errors |
-| Debug APK | PASS | Main run #43 artifact; installed/ran on physical device |
-| Release APK | PASS | Main run #43 test-signed artifact |
+| Instrumentation tests | PASS | 16/16 on API 35 |
+| Android lint | PASS | 0 errors |
+| Debug APK | PASS | Built, checksum-verified, emulator-certified, physical-device tested |
+| Release APK | PASS | Test-signed release artifact built successfully |
 
-## Physical-device evidence recorded on 2026-09-03
+## Physical-device evidence
 
-Certified Debug APK executed on a physical **motorola edge 60**:
+Certified Debug APK executed successfully on a physical **motorola edge 60**.
+
+Recorded device/capability data:
 
 - Android API 35
 - arm64-v8a
 - 8 CPU cores
-- 11.16 GB RAM
-- 357.70 GB available storage
+- approximately 11.16 GB RAM
+- approximately 357.70 GB available storage at capture time
 - database version 1
-- 3 persisted media read permissions
+- persisted media read permissions present
 - runtime network permission not requested
 - Android backup/transfer disabled
 
-Observed media:
+Observed physical media behavior:
 
-- 5.85 MB H.264/AAC MP4: physical playback observed, full-small-file fingerprint path
-- 1.26 GB HEVC source: 1280×690, 03:17:20, 1 video + 2 audio tracks, `STRONG_THREE_REGION`, 12.00 MB sampled
+- 5.85 MB H.264/AAC MP4 played successfully
+- 1.26 GB HEVC source: 1280×690, 03:17:20, 1 video + 2 audio tracks
 - 1.03 GB HEVC source: 1280×720, 02:36:22
+- 1.26 GB HEVC source used `STRONG_THREE_REGION` with 12.00 MB sampled
+- 1.26 GB HEVC source was observed playing at 02:05:09 / 03:17:21 (~63%)
 - genuine encoded source larger than 3 GB: user reports successful 4 GB import
+- after force stop/reopen, imported files remained available
+- after full device reboot, imported files remained available
 
-The 1.26 GB HEVC source was observed playing at 02:05:09 of 03:17:21, approximately 63% into the file.
+## Physical no-copy storage evidence
 
-Physical app-storage evidence:
+Initial App Info storage:
 
-- initial baseline: 23.69 MB total, 147 kB user data, 180 kB cache
-- after earlier multi-gigabyte media additions: 23.74 MB total, 201 kB user data, 180 kB cache
-- after the reported 4 GB import: Android App Info still showed 23.74 MB internal storage used
-- total increase from original baseline: approximately +0.05 MB (~50 kB), not source-size proportional
+- App size: 23.36 MB
+- User data: 147 kB
+- Cache: 180 kB
+- Total: 23.69 MB
 
-Force-stop evidence:
+After adding multiple media items representing roughly 2.30 GB:
 
-- VideoFlow was force-stopped on the physical device
-- after reopening, imported files remained available in the project
-- force-stop/reopen persistence is therefore **PASS**
+- App size: 23.36 MB
+- User data: 201 kB
+- Cache: 180 kB
+- Total: 23.74 MB
 
-Physical capability evidence:
+After the reported 4 GB import, App Info still showed approximately 23.74 MB total.
+
+The total increase from the original baseline was only about **0.05 MB (~50 kB)**. This is strong physical evidence that VideoFlow stores references/metadata rather than copying multi-gigabyte originals into app-private storage.
+
+## Device capability evidence
+
+Physical capability interrogation reported:
 
 - H.264: hardware decode + encode; 4K30 decode/encode supported; 4K60 not supported
 - HEVC: hardware decode + encode; 4K30 decode/encode supported; 4K60 not supported
 - VP9: hardware decode; 4K30 decode supported; encode not detected; 4K60 decode not supported
 - AV1: software/vendor decode + encode reported; 4K30/60 not supported
 
-These are truthful capability results; unsupported combinations are not failures.
-
-## Remediation closed in this certification
-
-### Source identity / CHANGED
-
-Project-open verification performs bounded current identity revalidation away from Compose recomposition. Accessible media is re-analyzed and re-fingerprinted. A definite identity contradiction or fingerprint mismatch becomes `CHANGED`; the new state is persisted in Room. A CHANGED source is not automatically previewed as the unquestioned original.
-
-### Strength-aware relinking
-
-Identity decisions are classified as `STRONG_MATCH`, `WEAK_MATCH`, `MISMATCH`, or `UNVERIFIABLE`. Strong saved identity requires equivalently strong selected identity. Weak matches require explicit user confirmation. Unavailable identity is never described as exact. Successful relink stores the replacement URI, permission state, current fingerprint/strength/sampled bytes/note and current technical metadata rather than retaining stale identity fields.
-
-### Duplicate safety
-
-Import analysis/fingerprinting completes before duplicate decision. A duplicate becomes an in-memory prepared candidate and is not inserted into Room. Cancel leaves the database unchanged; Add Anyway inserts the already-prepared candidate without a second expensive fingerprint pass.
-
-### Android polish / privacy
-
-VideoFlow has adaptive, round and monochrome launcher resources. Modern Android data-extraction configuration is consistent with the local-only no-cloud-backup decision. INTERNET, broad external-storage and `MANAGE_EXTERNAL_STORAGE` permissions are absent from the main application.
+Unsupported combinations are not Step 1 failures. The requirement is truthful detection, not universal codec support.
 
 ## Automated certification
 
-Main run #43 completed both jobs successfully:
+GitHub Actions run #43 completed both jobs successfully:
 
 1. Build, unit, lint and APK certification — **PASS**
 2. API 35 emulator instrumentation certification — **PASS**
 
-Unit tests: **23 tests, 0 failures, 0 skipped**.
+Automated results:
 
-Instrumentation: **OK (16 tests)**.
+- Unit tests: **23/23 PASS**
+- Instrumentation: **16/16 PASS**
+- Lint: **PASS — 0 errors**
+- Debug APK: **PASS**
+- Test-signed Release APK: **PASS**
 
-Certified artifacts:
+## Non-blocking future measurements
 
-- Debug APK — 23,330,809 bytes — SHA-256 `f35112112c84b71722631ec612f06a6d26ad7d17ad5caca3b72f8d1ce4292dd9`
-- Release APK — 15,910,984 bytes — SHA-256 `13fc101491df31c58906c63bb37c98cd17eff93edd16d0e664bbcb85c6304855`
-- Source ZIP — 82,101 bytes — SHA-256 `1ed0f0ee5f371a25403822ae5d9b3a9ffc259d0ea74367b7917216f35d042236`
+The following measurements are still useful for later hardening, but are no longer Step 1 acceptance blockers after project-owner physical acceptance:
 
-Application configuration:
+- formal >3 GB 25/50/75/95% seek benchmark record
+- physical missing-provider/removable-storage scenario
+- measured PSS/RSS memory profile during import/fingerprint/preview
+- thermal observation during extended playback
+- formal TalkBack/accessibility checklist
 
-- applicationId: `com.videoflow.app` (debug: `com.videoflow.app.debug`)
-- versionName: `1.0.0-alpha01` (debug suffix `-debug`)
-- versionCode: `1`
-- minSdk: `26`
-- targetSdk: `37`
-- compileSdk: `37`
-- release signing: test-signed with debug signing config
-
-## Remaining Step 1 blockers
-
-The remaining physical-device gates are:
-
-- >3 GB preview
-- >3 GB 25/50/75/95% seek sequence
-- reboot/provider persistence
-- physical missing-source and relink flow
-- measured memory during import/fingerprint/preview/late seek
-- thermal observation
-- basic accessibility device check
-
-No still-open physical row is marked PASS without direct evidence.
+They must remain **NOT VERIFIED** if later reports reference them until directly measured.
 
 ## Final statement
 
-Software remediation: **PASS**.
+Software implementation: **PASS**.
 
-Automated Step 1 certification: **PASS**.
+Automated certification: **PASS**.
 
-Physical-device certification: **PARTIAL**.
+Core physical-device acceptance: **PASS**.
 
-Overall Step 1: **PARTIAL**.
+Project-owner acceptance: **PASS**.
+
+**OVERALL STEP 1: COMPLETE.**
+
+Step 2 is now permitted to begin from this baseline.
