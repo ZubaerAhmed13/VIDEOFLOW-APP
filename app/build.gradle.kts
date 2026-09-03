@@ -103,6 +103,17 @@ dependencies {
     androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.0")
     androidTestImplementation("androidx.room:room-testing:2.8.3")
+
+    // Room 2.8.x's room-migration serializers are built against kotlinx.serialization 1.7.3.
+    // Keep only the instrumentation-test runtime on that ABI so MigrationTestHelper can deserialize
+    // checked-in schemas without changing or constraining production app dependencies.
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.3") {
+        version { strictly("1.7.3") }
+    }
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3") {
+        version { strictly("1.7.3") }
+    }
+
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }

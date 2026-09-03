@@ -18,24 +18,28 @@ class HomeComposeTest {
     val rule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun homeNewProjectProjectDetailAndAddMediaAffordanceWork() {
+    fun homeNewProjectOpensStep2MediaBinAffordances() {
         rule.onNodeWithText("VideoFlow").fetchSemanticsNode()
         rule.onNodeWithContentDescription("Settings").fetchSemanticsNode()
         rule.onNodeWithContentDescription("New Project").performClick()
 
         val projectNameField = rule.onNodeWithText("Project name")
         projectNameField.performTextClearance()
-        projectNameField.performTextInput("Step 1 UI Test")
+        projectNameField.performTextInput("Step 2 UI Test")
 
         rule.onNodeWithText("Create", useUnmergedTree = true).performClick()
-        // Database-backed navigation can take longer on a cold hosted emulator after media codec tests.
-        // Wait for the actual semantic destination instead of using a fragile 5-second performance assumption.
+
+        // Creating a project must navigate into the Step 2 project media bin. Verify the
+        // current Step 2 affordances instead of the removed Step 1 "Add media" semantic.
         rule.waitUntil(15_000) {
             runCatching {
-                rule.onNodeWithContentDescription("Add media").fetchSemanticsNode()
+                rule.onNodeWithText("Import Media").fetchSemanticsNode()
+                rule.onNodeWithText("Open Editor").fetchSemanticsNode()
                 true
             }.getOrDefault(false)
         }
-        rule.onNodeWithContentDescription("Add media").fetchSemanticsNode()
+        rule.onNodeWithText("Project Media Bin").fetchSemanticsNode()
+        rule.onNodeWithText("Import Media").fetchSemanticsNode()
+        rule.onNodeWithText("Open Editor").fetchSemanticsNode()
     }
 }
