@@ -1,102 +1,141 @@
 # VideoFlow Android — Physical Device Step 1 Certification
 
-Use the final certified Step 1 Debug APK. Do not change any physical-device row to **PASS** without direct evidence.
+Date: 2026-09-03
 
-## Certification record
+Certified software baseline: `9e414a65afa8a0a6235a794f056e61846b631bce`
 
-```text
-Device manufacturer: NOT VERIFIED
-Model: NOT VERIFIED
-Android version: NOT VERIFIED
-API: NOT VERIFIED
-ABI: NOT VERIFIED
-RAM: NOT VERIFIED
-Available storage: NOT VERIFIED
+GitHub Actions baseline: `33746474694` (run #43) — automated status **PASS**.
 
-Test filename/sanitized label: NOT VERIFIED
-Size: NOT VERIFIED
-Duration: NOT VERIFIED
-Resolution: NOT VERIFIED
-FPS: NOT VERIFIED
-Video codec: NOT VERIFIED
-Audio codec: NOT VERIFIED
-Storage/provider: NOT VERIFIED
+Physical-device certification status: **NOT VERIFIED**.
 
-App storage before: NOT VERIFIED
-App storage after: NOT VERIFIED
-Storage delta: NOT VERIFIED
+Use only **PASS / FAIL / PARTIAL / NOT VERIFIED / NOT APPLICABLE** for recorded results.
 
-Import: NOT VERIFIED
-Preview: NOT VERIFIED
-25% seek: NOT VERIFIED
-50% seek: NOT VERIFIED
-75% seek: NOT VERIFIED
-95% seek: NOT VERIFIED
-Force-stop reopen: NOT VERIFIED
-Reboot reopen: NOT VERIFIED
-Missing-source handling: NOT VERIFIED
-Strong relink original: NOT VERIFIED
-Wrong-file relink rejection: NOT VERIFIED
-Launcher icon device check: NOT VERIFIED
-Accessibility basic check: NOT VERIFIED
+## Required device
 
-Import memory: NOT VERIFIED
-Fingerprint memory: NOT VERIFIED
-Preview/late-seek memory: NOT VERIFIED
-Thermal observation: NOT VERIFIED
+- Physical Android phone/tablet, API 26 or newer.
+- Enough free storage for normal playback of the test source.
+- Genuine encoded video larger than 3 GB. A sparse/placeholder file is not valid evidence.
+- Prefer a document provider that supports persistable URI read grants for the reboot test.
 
-H.264 decode/encode/4K30/4K60: NOT VERIFIED
-HEVC decode/encode/4K30/4K60: NOT VERIFIED
-VP9: NOT VERIFIED
-AV1: NOT VERIFIED
-```
+## Device record
 
-## Required setup
+| Field | Result |
+|---|---|
+| Manufacturer | NOT VERIFIED |
+| Model | NOT VERIFIED |
+| Android version | NOT VERIFIED |
+| API | NOT VERIFIED |
+| ABI | NOT VERIFIED |
+| RAM | NOT VERIFIED |
+| Available storage | NOT VERIFIED |
 
-- Android phone/tablet running API 26 or newer
-- at least one genuine encoded video larger than 3 GB; sparse placeholders do not qualify
-- enough free storage to open/play that file normally
-- preferably a document provider that supports persisted read URI grants
+## Codec/capability record
 
-## Procedure
+The requirement is truthful detection, not universal support.
 
-1. Install the final `VideoFlow_Android_Step1_Debug.apk`.
-2. Confirm the VideoFlow launcher icon is visible and is not the generic Android icon.
-3. Open VideoFlow > Settings > Device Capability and record manufacturer/model, API, ABI, RAM, available storage, H.264/HEVC/VP9/AV1 inventory, and 4K30/4K60 results exactly as detected.
-4. Record Android Settings > Apps > VideoFlow > Storage usage before media import and preserve a screenshot where possible.
-5. Create a new project.
-6. Tap **Add Media** and select the genuine >3 GB encoded video through Android's system document picker.
-7. Confirm there is no file-size rejection/crash, metadata and fingerprint processing finish, the project remains responsive, and source status becomes `AVAILABLE`.
-8. Record VideoFlow app storage again and calculate the delta. The increase must remain metadata/cache-scale and must not approximate the >3 GB source size.
-9. Preview the file and seek around 25%, 50%, 75% and 95% of duration; verify playback resumes near each point.
-10. Save/leave the project, force-stop VideoFlow, reopen it, and verify the project/source reference and preview still work.
-11. Reboot the device, reopen VideoFlow, and verify persisted access when the selected provider supports persistable URI permissions. If the provider does not support persistence, record that provider limitation and repeat with a persistence-capable provider where reasonably available.
-12. Temporarily make the source unavailable (for example removable/provider-controlled storage), reopen the project, and verify `MISSING` / `PERMISSION_LOST` is presented without a crash and **Locate Original** is offered.
-13. Restore/select the true original via **Locate Original**. With a strong-capable provider, verify a strong match reconnects and preview works.
-14. Repeat Locate Original with a different video. Verify the mismatch is rejected and the saved source reference is not replaced.
-15. If a provider with limited seek/stat behavior is available, test weak identity and confirm VideoFlow does not call it a strong match. If no such provider is available, record this physical case as **NOT VERIFIED**; automated weak-provider coverage remains separate evidence.
-16. If the provider permits same-document content replacement, replace the underlying content while keeping the logical reference and verify `CHANGED`. If not practical on the physical provider, do not fabricate a physical PASS; repository instrumentation covers this logic independently.
-17. Check duplicate import: select the same source again, verify the duplicate dialog appears, choose **Cancel** and confirm no second project media entry; repeat and choose **Add Anyway** to confirm an explicit second reference is added.
-18. With TalkBack or Android accessibility inspection, verify critical controls are identified: New Project, Add Media, Settings, Locate Original, and duplicate-dialog actions.
-19. During >3 GB import/fingerprint/preview/late seek, record memory using Android Studio Memory Profiler, `adb shell dumpsys meminfo`, or another valid measurement. Record Java/native/total app memory where available.
-20. Record thermal behavior (normal/warm/throttled/thermal warning) without overstating Step 1 as long-duration export certification.
+| Capability | Result |
+|---|---|
+| H.264 decode | NOT VERIFIED |
+| H.264 encode | NOT VERIFIED |
+| H.264 4K30 | NOT VERIFIED |
+| H.264 4K60 | NOT VERIFIED |
+| HEVC decode | NOT VERIFIED |
+| HEVC encode | NOT VERIFIED |
+| HEVC 4K30 | NOT VERIFIED |
+| HEVC 4K60 | NOT VERIFIED |
+| VP9 | NOT VERIFIED |
+| AV1 | NOT VERIFIED |
 
-## PASS criteria
+## Test source record
 
-- no app-private source-sized copy is created
-- no arbitrary 3 GB size-cap error appears
-- >3 GB metadata/fingerprint completes with bounded behavior
-- preview and 25/50/75/95% seek work
-- project survives force-stop/reopen
-- persisted access survives reboot with a persistence-capable provider
-- missing source is handled safely
-- strong original relink succeeds and wrong-file relink is rejected
-- memory remains bounded rather than scaling with full source size
-- actual-device codec/4K information is reported truthfully
-- launcher icon and critical accessibility semantics work on device
+Do not record personal media content. A sanitized fixture name is sufficient.
 
-## Current status
+| Field | Result |
+|---|---|
+| Sanitized filename | NOT VERIFIED |
+| Size | NOT VERIFIED |
+| Duration | NOT VERIFIED |
+| Resolution | NOT VERIFIED |
+| FPS | NOT VERIFIED |
+| Video codec | NOT VERIFIED |
+| Audio codec | NOT VERIFIED |
+| Storage/provider | NOT VERIFIED |
 
-Physical-device certification: **NOT VERIFIED**.
+## Required procedure and result record
 
-Automated remediation certification is recorded separately in `STEP_1_TEST_REPORT.md`; automated results must not be used to convert the physical rows above to PASS.
+1. Install `VideoFlow_Android_Step1_Debug.apk` from certified main run #43.
+2. Record Settings → Apps → VideoFlow → Storage before import.
+3. Open VideoFlow → Settings → Device Capability and record device/capability fields above.
+4. Create a project and select the genuine >3 GB encoded video using Add Media/system document picker.
+5. Confirm no size-rejection/crash; metadata and bounded fingerprint complete and source is AVAILABLE.
+6. Record app storage after import and calculate delta.
+7. Preview the source.
+8. Seek to approximately 25%, 50%, 75%, and 95%; confirm playback resumes.
+9. Force-stop VideoFlow, reopen, open the saved project, and verify the source/preview.
+10. Reboot the device and repeat project/source open with a provider supporting persistence.
+11. Make the source unavailable in a controlled provider/removable-storage scenario; verify MISSING or PERMISSION_LOST and Locate Original.
+12. Restore/select the correct original and verify safe relink.
+13. Select a different video and verify mismatch rejection.
+14. Record memory during import/fingerprint/preview/late seek using `adb shell dumpsys meminfo`, Android Studio profiler, or another valid device measurement.
+15. Note thermal warning/throttling observation without overstating long-duration export certification.
+16. Verify launcher icon and critical UI controls on device; use TalkBack/basic accessibility check for New Project, Add Media, Settings, Locate Original and duplicate dialog buttons.
+
+## Result matrix
+
+| Physical gate | Result |
+|---|---|
+| Genuine >3 GB import | NOT VERIFIED |
+| Source status AVAILABLE after import | NOT VERIFIED |
+| Preview | NOT VERIFIED |
+| 25% seek | NOT VERIFIED |
+| 50% seek | NOT VERIFIED |
+| 75% seek | NOT VERIFIED |
+| 95% seek | NOT VERIFIED |
+| Force-stop/reopen | NOT VERIFIED |
+| Reboot/reopen | NOT VERIFIED |
+| Missing source behavior | NOT VERIFIED |
+| Correct-source relink | NOT VERIFIED |
+| Wrong-file rejection | NOT VERIFIED |
+| Launcher icon device appearance | NOT VERIFIED |
+| Basic accessibility device check | NOT VERIFIED |
+
+## Storage evidence
+
+| Field | Result |
+|---|---|
+| App storage before | NOT VERIFIED |
+| App storage after | NOT VERIFIED |
+| Delta | NOT VERIFIED |
+| Source copied into app storage | NOT VERIFIED |
+
+PASS criterion: the app-storage increase remains metadata/cache scale and does not approximate the >3 GB source size.
+
+## Memory evidence
+
+| Stage | Result |
+|---|---|
+| Import | NOT VERIFIED |
+| Fingerprint | NOT VERIFIED |
+| Preview | NOT VERIFIED |
+| Late seek | NOT VERIFIED |
+| Bounded conclusion | NOT VERIFIED |
+
+The physical PASS criterion is not a single fixed MiB number; memory must remain working-set/decoder scale rather than source-size proportional and must not approach multi-gigabyte allocation merely because the source exceeds 3 GB.
+
+## Thermal evidence
+
+Thermal observation: **NOT VERIFIED**.
+
+## Weak-provider physical case
+
+Weak/non-seekable provider physical test: **NOT VERIFIED**.
+
+This specific provider case may remain NOT VERIFIED when no suitable physical provider is available because the weak-identity behavior is covered by automated unit/instrumentation tests. It must never be represented as a physical PASS without evidence.
+
+## Current conclusion
+
+Automated implementation baseline: **PASS**.
+
+Physical-device Step 1 certification: **NOT VERIFIED**.
+
+Overall Step 1: **PARTIAL** until the required physical evidence is recorded.

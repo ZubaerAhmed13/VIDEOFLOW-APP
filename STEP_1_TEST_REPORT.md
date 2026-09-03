@@ -2,161 +2,125 @@
 
 Date: 2026-09-03
 
-Certification commit: `93567c48a1591ec9512a7aa02375ca8a27e534ee`
+Certified code commit: `9e414a65afa8a0a6235a794f056e61846b631bce`
 
-GitHub Actions certification run: `33734581374` (run #8)
+GitHub Actions certification: `33746474694` (run #43)
 
-Status vocabulary in this report is restricted to: **PASS / FAIL / PARTIAL / NOT VERIFIED / NOT APPLICABLE**.
+Status vocabulary: **PASS / FAIL / PARTIAL / NOT VERIFIED / NOT APPLICABLE**.
 
-## Executive result
-
-**Overall Step 1 test status: PARTIAL**
-
-The native Android Step 1 implementation passes all automated build, static-analysis, JVM/unit, APK assembly, APK integrity, API-35 emulator, Room, MediaExtractor, Media3 and Compose certification gates currently executable in CI. Physical-device-only certification items are explicitly **NOT VERIFIED** and therefore Step 1 is not declared complete yet.
-
-## CI certification matrix
-
-| Gate | Status | Evidence |
-|---|---|---|
-| Android API 37 compilation environment | PASS | Run #8 build job |
-| Clean build | PASS | `./gradlew clean` |
-| JVM/unit tests | PASS | `./gradlew test` |
-| Android lint | PASS | `./gradlew lint` |
-| Instrumentation test compilation | PASS | `compileDebugAndroidTestKotlin` |
-| Debug APK assembly | PASS | `assembleDebug` |
-| Instrumentation APK assembly | PASS | `assembleDebugAndroidTest` |
-| Test-signed release APK assembly | PASS | `assembleRelease` |
-| Prohibited-pattern audit | PASS | No WebView, INTERNET permission, source-sized `readBytes()` or unfinished Step 1 markers detected |
-| Runtime APK checksum verification | PASS | SHA-256 bundle verification before emulator execution |
-| API-35 emulator boot | PASS | Android emulator boot completed with KVM |
-| Debug APK installation | PASS | Installed successfully |
-| Instrumentation APK installation | PASS | Installed successfully |
-| API-35 instrumentation suite | PASS | `OK (9 tests)` |
-| Emulator certification job | PASS | Run #8 emulator job concluded success |
-
-## Instrumentation coverage
-
-The API-35 emulator certification executed nine Android instrumentation tests and reported `OK (9 tests)`.
-
-### Room persistence
-
-- Project create / rename / delete behavior: **PASS**
-- Original media is not deleted by project-row deletion: **PASS**
-- 10 GB media-size metadata persists across database close/reopen: **PASS**
-
-### Device capability interrogation
-
-- Actual `MediaCodecList` interrogation executes on Android runtime: **PASS**
-
-### MediaExtractor / content URI analysis
-
-- Real MP4 through a `content://` test provider with video + audio: **PASS**
-- Video-only MP4 without audio track: **PASS**
-- Malformed media produces a controlled failure: **PASS**
-- Rotated MP4 fixture is readable without fabricating rotation metadata: **PASS**
-
-### Media3 playback
-
-- Media3 prepares the real MP4 fixture: **PASS**
-- Duration is available: **PASS**
-- Seek operations across multiple positions in the fixture execute: **PASS**
-- Pause operation executes: **PASS**
-
-### Compose UI
-
-- Home screen: **PASS**
-- New Project flow: **PASS**
-- Project detail screen: **PASS**
-- Add Media affordance: **PASS**
-
-## JVM/unit coverage
-
-### Large-value safety
-
-The codebase uses `Long` for media sizes, byte offsets, durations and related counters. Tests exercise logical media sizes including 500 MB, 2 GB, 3 GB, 5 GB, 10 GB and 100 GB and offsets above `Int.MAX_VALUE`.
-
-Status: **PASS**
-
-### `VideoFlowSampleSHA256-v1`
-
-Automated tests cover:
-
-- deterministic hashing: **PASS**
-- first-region mutation sensitivity: **PASS**
-- middle-region mutation sensitivity: **PASS**
-- end-region mutation sensitivity: **PASS**
-- bounded small-file streaming: **PASS**
-- truncated-reader handling: **PASS**
-- cancellation: **PASS**
-- 100 GB structural reader with bounded 12 MiB sampling and 64-bit offsets: **PASS**
-
-### Relink identity policy
-
-- Exact fingerprint / known identity match: **PASS**
-- Fingerprint mismatch rejection: **PASS**
-- Missing fingerprint rejection: **PASS**
-- Known size mismatch rejection: **PASS**
-- Known dimension mismatch rejection: **PASS**
-
-### Local diagnostics
-
-- 200-event bounded ring behavior: **PASS**
-- Diagnostic message truncation: **PASS**
-
-## Architecture / privacy verification
-
-| Requirement | Status |
-|---|---|
-| Native Kotlin Android application | PASS |
-| Jetpack Compose / Material 3 | PASS |
-| Hilt dependency injection | PASS |
-| Room persistence | PASS |
-| Coroutines / IO dispatching foundation | PASS |
-| Media3 / ExoPlayer preview | PASS |
-| MediaExtractor metadata analysis | PASS |
-| SAF OpenDocument / `content://` source architecture | PASS |
-| Persistable read-permission attempt | PASS |
-| Reference-based source model; original media not copied on normal import path | PASS |
-| No artificial source-file-size cap in application model | PASS |
-| 64-bit `Long` size/offset model | PASS |
-| No WebView/browser wrapper architecture | PASS |
-| No `android.permission.INTERNET` in application manifest | PASS |
-| No broad legacy storage permission | PASS |
-| No telemetry/ads/crash-upload subsystem implemented | PASS |
-
-## Physical-device certification
-
-The following cannot be truthfully certified by GitHub Actions or an x86_64 emulator and remain **NOT VERIFIED** until executed on an actual Android phone/tablet:
-
-| Physical-device gate | Status |
-|---|---|
-| Genuine encoded source video >3 GB selected through the Android document picker | NOT VERIFIED |
-| Import completes without making an app-private copy of the >3 GB source | NOT VERIFIED |
-| Measured app-storage delta remains metadata/cache-scale rather than source-size-scale | NOT VERIFIED |
-| Preview of genuine >3 GB source on device | NOT VERIFIED |
-| Late seek near the end of genuine >3 GB source | NOT VERIFIED |
-| Save project, force-stop, reopen and resume source access | NOT VERIFIED |
-| Persisted SAF read grant survives device reboot when provider supports persistable permissions | NOT VERIFIED |
-| Relink flow against a physically removed/restored source | NOT VERIFIED |
-| Peak Java/native memory during genuine >3 GB import/fingerprint/preview | NOT VERIFIED |
-| Thermal behavior during prolonged large-file preview/fingerprinting | NOT VERIFIED |
-| Actual phone hardware codec inventory and hardware/software classification | NOT VERIFIED |
-| Actual-device 3840×2160 @ 30 fps capability interrogation | NOT VERIFIED |
-| Actual-device 3840×2160 @ 60 fps capability interrogation | NOT VERIFIED |
-
-## Certified artifact hashes
-
-- `VideoFlow_Android_Step1_Debug.apk`
-  - SHA-256: `907e97b96ed1290e0bdeba76501d9fcabeb8ddc34c12dc3b9f693ac74689745b`
-- `VideoFlow_Android_Step1_Release.apk`
-  - SHA-256: `be5f9f04f010371b162116feab707fe48858ac98dd3c3f32071c8b5280c521a4`
-- `VideoFlow_Android_Step1_Source.zip`
-  - SHA-256: `803b56e82196a9ff2bdbd11ad30d011e0ad05f87afe3be146c4db4f8b99c3321`
-
-The release APK produced by Step 1 CI is **test-signed** for certification. Production signing belongs to the later release step.
-
-## Final test verdict
+## Overall status
 
 **PARTIAL**
 
-Automated Step 1 certification is **PASS**. Physical-device certification is **NOT VERIFIED**. No physical-device item is represented as PASS without direct evidence.
+All Step 1 software-remediation, build, static-analysis, JVM/unit, APK-assembly and API-35 emulator gates are **PASS**. Genuine >3 GB physical-device certification remains **NOT VERIFIED**, so Step 1 is not declared complete.
+
+## Software remediation
+
+| Gate | Status | Evidence |
+|---|---|---|
+| Real `SourceStatus.CHANGED` detection | PASS | Same `content://` URI with different underlying media becomes CHANGED in repository instrumentation |
+| Fingerprint-strength-aware identity | PASS | `FULL_SMALL_FILE`, `STRONG_THREE_REGION`, `WEAK_FIRST_REGION_ONLY`, `UNAVAILABLE` participate in decisions |
+| Strong relink | PASS | Strong equivalent identity required; SHA/critical metadata mismatch rejected |
+| Weak relink safety | PASS | Weak match is never called strong and requires explicit confirmation |
+| Unavailable fingerprint safety | PASS | Never auto-identified as exact |
+| Duplicate confirmation | PASS | Duplicate candidate is not inserted into Room before user confirmation |
+| Duplicate cancel | PASS | Room row count remains unchanged |
+| Duplicate Add Anyway | PASS | Prepared candidate can be inserted explicitly without re-analysis |
+| CHANGED playback safety | PASS | CHANGED source is not treated as unquestionably playable original; Locate Original is offered |
+| Launcher icon | PASS | Adaptive, round and Android 13 monochrome resources configured |
+| Backup/data extraction | PASS | `allowBackup=false`; cloud backup/device transfer exclusions configured |
+| Accessibility semantics | PASS | Critical New Project, Settings and Add Media controls are covered by Compose semantics test; relink/duplicate buttons are labeled text controls |
+
+## CI
+
+| Gate | Status | Evidence |
+|---|---|---|
+| Clean | PASS | `./gradlew clean` |
+| Unit tests | PASS | **23 tests, 0 failures, 0 skipped** |
+| Lint | PASS | 0 errors; 12 non-blocking warnings reviewed |
+| Instrumentation compile | PASS | `compileDebugAndroidTestKotlin` |
+| Debug APK | PASS | `assembleDebug` |
+| AndroidTest APK | PASS | `assembleDebugAndroidTest` |
+| Test-signed release APK | PASS | `assembleRelease` |
+| Prohibited-pattern audit | PASS | No WebView, INTERNET permission, source-sized `readBytes()`/ByteArray pattern, or unfinished Step 1 marker |
+| API-35 emulator | PASS | KVM-backed Google APIs x86_64 runtime |
+| Instrumentation | PASS | **OK (16 tests)**, 0 failures |
+
+The remaining lint warnings are non-blocking version-availability/style/debug-test-provider items. Missing launcher-icon and modern backup/data-extraction warnings that motivated this remediation are resolved. Dependency versions were intentionally not churned merely to silence newer-version notices.
+
+## JVM/unit coverage — 23 tests
+
+- `FingerprintEngineTest`: 6/6 PASS, including first/middle/end sensitivity, bounded small-file hashing, truncation, cancellation and 100 GB structural sampling.
+- `RelinkPolicyTest`: 14/14 PASS, covering strong/weak/unavailable identity, mismatches, metadata contradictions and CHANGED classification.
+- `LargeValueTest`: 2/2 PASS, including values beyond 32-bit range.
+- `LocalDiagnosticLogTest`: 1/1 PASS.
+
+## API-35 instrumentation — 16 tests
+
+- Room create/rename/delete and no original-media deletion: PASS.
+- Room reopen with 10 GB metadata value: PASS.
+- Device `MediaCodecList` interrogation: PASS.
+- MP4 A/V metadata: PASS.
+- Video-only MP4: PASS.
+- Malformed media controlled failure: PASS.
+- Rotation fixture handling: PASS.
+- Media3 prepare/seek: PASS.
+- Same URI changed underlying media -> CHANGED: PASS.
+- Unchanged source -> AVAILABLE: PASS.
+- Pipe/non-seekable provider preserves weak fingerprint strength: PASS.
+- Duplicate candidate no pre-confirmation write: PASS.
+- Duplicate cancel leaves Room unchanged: PASS.
+- Wrong strong relink rejected and original URI retained: PASS.
+- Missing provider source -> MISSING: PASS.
+- Compose Home/New Project/Project/Add Media plus critical semantics: PASS.
+
+## Large-media structural evidence
+
+- No artificial application source-size cap: PASS.
+- `Long` media sizes/offsets/counters: PASS.
+- Logical 500 MB, 2 GB, 3 GB, 5 GB, 10 GB and 100 GB test values: PASS.
+- 100 GB random-access fingerprint fixture uses offsets above `Int.MAX_VALUE`: PASS.
+- Normal large-file fingerprint samples approximately 12 MiB total using 256 KiB working buffers: PASS.
+- Normal import path is URI/reference based and contains no source-sized copy implementation: PASS.
+
+## Physical-device certification
+
+| Gate | Status |
+|---|---|
+| Genuine encoded >3 GB Android document | NOT VERIFIED |
+| >3 GB import | NOT VERIFIED |
+| >3 GB preview | NOT VERIFIED |
+| 25% / 50% / 75% / 95% seek | NOT VERIFIED |
+| App-storage before/after delta | NOT VERIFIED |
+| No source-sized physical app-storage increase | NOT VERIFIED |
+| Force-stop/reopen | NOT VERIFIED |
+| Reboot persisted-URI access | NOT VERIFIED |
+| Physical missing-source flow | NOT VERIFIED |
+| Physical strong relink | NOT VERIFIED |
+| Physical wrong-file relink rejection | NOT VERIFIED |
+| Peak import/fingerprint/preview memory | NOT VERIFIED |
+| Thermal observation | NOT VERIFIED |
+| Actual-device codec/4K profile | NOT VERIFIED |
+| Launcher icon on physical launcher | NOT VERIFIED |
+
+## Certified main artifacts
+
+- `VideoFlow_Android_Step1_Debug.apk`
+  - Size: **23,330,809 bytes**
+  - SHA-256: `f35112112c84b71722631ec612f06a6d26ad7d17ad5caca3b72f8d1ce4292dd9`
+- `VideoFlow_Android_Step1_Release.apk`
+  - Size: **15,910,984 bytes**
+  - SHA-256: `13fc101491df31c58906c63bb37c98cd17eff93edd16d0e664bbcb85c6304855`
+- `VideoFlow_Android_Step1_Source.zip`
+  - Size: **82,101 bytes**
+  - SHA-256: `1ed0f0ee5f371a25403822ae5d9b3a9ffc259d0ea74367b7917216f35d042236`
+
+Release signing status: **test-signed using the debug signing configuration**. Production signing is outside Step 1.
+
+## Verdict
+
+Automated Step 1 certification: **PASS**.
+
+Physical-device certification: **NOT VERIFIED**.
+
+Overall Step 1: **PARTIAL**.

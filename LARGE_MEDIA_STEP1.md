@@ -1,38 +1,72 @@
 # Large Media Architecture — Step 1
 
-VideoFlow Android has no artificial source-file-size cap. Practical limits belong to the selected document provider/filesystem, free storage, Android codec stack, and device hardware.
+Date: 2026-09-03
 
-## Reference-based import
+Automated certification baseline: main commit `9e414a65afa8a0a6235a794f056e61846b631bce`, run #43 (`33746474694`).
 
-The normal import path stores a `content://` URI and attempts a persistable read grant. It never copies the original video into app-private storage.
+## Structural evidence — PASS
 
-## 64-bit safety
+VideoFlow has no artificial application source-file-size cap. The 3 GB requirement is a target to certify, not a hard-coded limit.
 
-Source size, media duration, byte offsets, counters, available storage, and fingerprint sample locations use `Long`. Automated tests exercise 500 MB, 2 GB, 3 GB, 5 GB, 10 GB and 100 GB logical values, including offsets beyond `Int.MAX_VALUE`.
+The normal import path stores a SAF `content://` reference and technical/identity metadata. It does not copy the original source into app-private storage.
 
-## Bounded fingerprint and revalidation
+Media size, duration, byte offsets, counters and relevant storage values use 64-bit `Long`. Automated tests exercise 500 MB, 2 GB, 3 GB, 5 GB, 10 GB and 100 GB logical values and offsets above `Int.MAX_VALUE`.
+
+## Bounded fingerprinting — PASS
 
 Algorithm: `VideoFlowSampleSHA256-v1`.
 
-Digest input includes algorithm label, source size, duration, width and height. Files larger than 12 MiB are sampled in three 4 MiB regions: first, centered middle, and final. Working buffers are 256 KiB. Smaller files are streamed through bounded chunks rather than allocated as one source-sized byte array.
+For large media, the strong random-access path samples:
 
-Random access uses `ParcelFileDescriptor` → `FileInputStream` → `FileChannel.position(Long)`. If a provider cannot expose stable size or reliable random seek, VideoFlow degrades to a first-region-only bounded fingerprint and records `WEAK_FIRST_REGION_ONLY`; it does not silently copy the full source.
+- first 4 MiB
+- centered middle 4 MiB
+- final 4 MiB
 
-Project-open source revalidation and Locate Original relink reuse the same bounded fingerprint architecture. Detecting `SourceStatus.CHANGED` therefore does not require a full-file hash, a source-sized cache, or a source-sized RAM allocation.
+Normal total sampled source data is approximately 12 MiB, using bounded 256 KiB working buffers. Smaller files use deterministic bounded streaming rather than source-sized allocation.
 
-## Structural automated evidence
+Random access uses Android file descriptors and `FileChannel.position(Long)`. A provider that lacks stable size/reliable random seek falls back to a bounded first-region fingerprint and persists `WEAK_FIRST_REGION_ONLY`; VideoFlow does not compensate by copying or fully hashing a huge source.
 
-- 64-bit size/offset tests cover logical values through 100 GB.
-- Strong fingerprint tests prove first, middle, and final sampled regions affect identity.
-- Small-file full fingerprinting uses bounded streaming chunks.
-- Non-seekable/provider-limited behavior is tested as weak identity.
-- Room persistence includes 10 GB media-size metadata.
-- Repository instrumentation verifies that the same logical `content://` URI changing underlying media becomes `CHANGED`.
+## Source revalidation — PASS
 
-These tests establish architecture and decision correctness; they do not substitute for physical-device large-media measurement.
+Project/source verification reuses the same bounded identity system. It does not full-hash a 3 GB/20 GB source and is not triggered by Compose recomposition. Project-open verification uses background IO and small bounded concurrency.
+
+## Structural certification evidence
+
+| Requirement | Status |
+|---|---|
+| No application 3 GB cap | PASS |
+| 64-bit file sizes/offsets | PASS |
+| 100 GB logical fingerprint fixture | PASS |
+| Offsets beyond 32-bit range | PASS |
+| Approx. 12 MiB strong large-file sampling | PASS |
+| 256 KiB working buffers | PASS |
+| No whole-source `readBytes()` import path | PASS |
+| No source-sized ByteArray pattern | PASS |
+| Reference-based SAF source model | PASS |
+| 10 GB size metadata Room reopen | PASS |
+| Strong first/middle/end mutation sensitivity | PASS |
 
 ## Real-device evidence
 
-A genuine encoded >3 GB Android document is still required to verify actual-device import, preview, 25/50/75/95% seek, force-stop/reopen, source-storage delta, memory behavior, actual codec capability reporting, and provider-backed persisted URI behavior.
+A structural fixture does not prove real Android provider/decoder/device behavior. The following remain physical certification gates:
 
-Until those measurements are supplied, the real-device rows remain **NOT VERIFIED** and overall Step 1 remains **PARTIAL** even when automated certification is fully green.
+| Requirement | Status |
+|---|---|
+| Genuine encoded >3 GB Android document | NOT VERIFIED |
+| >3 GB import on physical device | NOT VERIFIED |
+| >3 GB preview | NOT VERIFIED |
+| 25/50/75/95% late seek | NOT VERIFIED |
+| App-storage before/after delta | NOT VERIFIED |
+| No source-sized physical storage increase | NOT VERIFIED |
+| Force-stop/reopen | NOT VERIFIED |
+| Reboot persisted-URI behavior | NOT VERIFIED |
+| Physical memory measurement | NOT VERIFIED |
+| Thermal observation | NOT VERIFIED |
+
+## Conclusion
+
+Large-media architecture and automated structural certification: **PASS**.
+
+Genuine >3 GB physical-device certification: **NOT VERIFIED**.
+
+Overall Step 1 remains **PARTIAL** until the physical evidence is completed.

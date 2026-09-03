@@ -1,32 +1,78 @@
 # Android Architecture — Step 1
 
+Date: 2026-09-03
+
+Certified software baseline: main commit `9e414a65afa8a0a6235a794f056e61846b631bce`, GitHub Actions run #43 (`33746474694`).
+
 ```text
-Jetpack Compose UI
+Jetpack Compose / Material 3 UI
         ↓
-Hilt ViewModels + lifecycle-aware StateFlow
+Hilt ViewModels + lifecycle-bound coroutine jobs
         ↓
 ProjectRepository / DeviceCapabilityRepository
         ↓
-┌────────────────────┬────────────────────────┬──────────────────┐
-│ Room               │ SAF / ContentResolver  │ Native Media     │
-│ ProjectEntity      │ content:// references  │ MediaExtractor   │
-│ MediaAssetEntity   │ persisted read grants  │ Media3/ExoPlayer │
-└────────────────────┴────────────────────────┴──────────────────┘
-                           ↓
-                   bounded media fingerprint
-                   first / middle / end SHA-256
+┌────────────────────┬──────────────────────────┬─────────────────────┐
+│ Room               │ Android SAF             │ Native Media        │
+│ ProjectEntity      │ content:// references   │ MediaExtractor      │
+│ MediaAssetEntity   │ persistable read grant  │ Media3 / ExoPlayer  │
+└────────────────────┴──────────────────────────┴─────────────────────┘
+        ↓                         ↓                         ↓
+project/source state      bounded source identity       native preview/seek
+                         + safe relink decisions
 ```
 
-Hilt supplies the Room database and application-scoped repositories/services. UI code does not construct storage/database components and does not perform media I/O on the main thread.
+## Native boundary — PASS
 
-Room schema version and `projectFormatVersion` both start at 1. Media rows are one-to-many under projects with cascade deletion limited to database rows; deleting a VideoFlow project never deletes the user's original media.
+VideoFlow Step 1 is a native Kotlin Android application. It contains no WebView/browser-wrapper architecture, IndexedDB, service worker, FFmpeg/WASM or browser File System API path.
 
-Media metadata analysis and fingerprinting execute on `Dispatchers.IO`. Import and verification work is owned by ViewModel scope so obsolete project checks are cancelled with lifecycle/project changes. Project-open revalidation is limited to two concurrent media checks to avoid saturating storage when a project contains several sources.
+## Persistence — PASS
 
-The source-of-truth media reference remains the Android document URI plus persisted metadata/fingerprint identity. A readable URI is not automatically trusted as unchanged: project-open verification recalculates the existing bounded fingerprint and compares fingerprint strength plus critical technical metadata. Definitive mismatch becomes `SourceStatus.CHANGED` and playback is blocked until the original is safely located.
+Room schema version and project format version are 1. Projects own one-to-many media-reference rows with database cascade deletion only. Deleting a VideoFlow project never deletes the user's original document.
 
-Duplicate analysis is performed before Room insertion. A duplicate candidate remains an in-memory metadata/reference object until the user chooses **Add Anyway**; cancellation leaves Room unchanged and confirmation reuses the prepared analysis instead of re-reading the source.
+## Source architecture — PASS
 
-Relinking is confidence-aware. Strong identities may reconnect automatically only on strong exact match, provider-limited weak matches require explicit confirmation, and unverifiable or contradictory replacements are not accepted as exact originals. See `SOURCE_IDENTITY_STEP1.md`.
+The source of truth is the Android document URI. VideoFlow uses SAF/OpenDocument, `ContentResolver`, `ParcelFileDescriptor`/FileDescriptor and native media APIs. The original media is not imported into a Room BLOB or source-sized app-private cache.
 
-There is no browser filesystem layer, WebView, IndexedDB, service worker, FFmpeg/WASM path, source-sized import copy, or whole-source RAM load in the Android Step 1 architecture.
+## Source identity — PASS
+
+`MediaIdentity` includes fingerprint SHA, fingerprint strength, known size, duration, dimensions and video codec. Fingerprint strength is a decision input, not merely diagnostic metadata.
+
+Identity outcomes are explicit:
+
+- `STRONG_MATCH`
+- `WEAK_MATCH`
+- `MISMATCH`
+- `UNVERIFIABLE`
+
+Strong identities are `FULL_SMALL_FILE` and `STRONG_THREE_REGION`. `WEAK_FIRST_REGION_ONLY` requires explicit confirmation for relink and is never silently promoted to strong. `UNAVAILABLE` is never described as an exact cryptographic match.
+
+## CHANGED verification — PASS
+
+At project-open/source-verification boundaries, accessible media is re-analyzed and re-fingerprinted on background IO. Definite fingerprint or critical-metadata difference becomes `SourceStatus.CHANGED` and is persisted. Verification is not launched by Compose recomposition. Multiple assets are verified with a small bounded concurrency limit and work is cancellable with ViewModel lifecycle.
+
+## Duplicate import — PASS
+
+Analyze/fingerprint precede persistence. A duplicate is returned as an in-memory prepared candidate; no second media row exists before explicit Add Anyway confirmation. Cancel performs no Room write. Add Anyway persists the prepared candidate without repeating expensive media analysis.
+
+## Relink — PASS
+
+Relink analyzes the selected URI, fingerprints it, applies strength-aware identity policy and only auto-accepts a strong match. A weak compatible result requires explicit user confirmation. Mismatch is rejected. Confirmed relink replaces stale URI, permission, fingerprint and technical metadata with the current selected-source identity.
+
+## Threading and resource bounds — PASS
+
+Room/media/fingerprint work is routed away from the main UI path. Debug StrictMode remains enabled. Fingerprinting is bounded; no whole-source RAM load is used. Media3 player lifecycle is released with Compose/lifecycle disposal.
+
+## Step 1 scope
+
+Timeline editing, proxy generation, production rendering/export, GPU composition, AI/Watermark Studio, advanced audio, recorder/camera and production signing are **NOT APPLICABLE** to Step 1.
+
+## Certification
+
+- Unit tests: **PASS — 23/23**
+- API-35 instrumentation: **PASS — 16/16**
+- Lint: **PASS**
+- Debug APK: **PASS**
+- Test-signed Release APK: **PASS**
+- Physical genuine >3 GB device certification: **NOT VERIFIED**
+
+Overall Step 1: **PARTIAL** until physical-device gates are measured.
