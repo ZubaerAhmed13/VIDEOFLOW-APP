@@ -1,6 +1,7 @@
 package com.videoflow.app.project
 
 import android.content.Context
+import android.net.Uri
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.videoflow.app.data.db.VideoFlowDatabase
@@ -10,6 +11,7 @@ import com.videoflow.app.data.media.UriFingerprintService
 import com.videoflow.app.data.project.AddMediaResult
 import com.videoflow.app.data.project.IdentityMatch
 import com.videoflow.app.data.project.ProjectRepository
+import com.videoflow.app.domain.model.FingerprintStrength
 import com.videoflow.app.domain.model.SourceStatus
 import com.videoflow.app.test.TestMediaProvider
 import kotlinx.coroutines.runBlocking
@@ -110,6 +112,32 @@ class ProjectRepositoryIdentityInstrumentationTest {
         val saved = repository.getProject(projectId)!!.mediaAssets.single()
 
         assertEquals(SourceStatus.AVAILABLE, repository.verifySource(saved))
+    }
+
+    @Test
+    fun missingProviderSourceBecomesMissing() = runBlocking {
+        val projectId = repository.createProject("Missing")
+        val uri = TestMediaProvider.uri("sample_av.mp4")
+        repository.addMedia(projectId, uri)
+        val saved = repository.getProject(projectId)!!.mediaAssets.single()
+        val inaccessible = saved.copy(sourceUri = Uri.parse("content://com.videoflow.app.missing/source.mp4").toString())
+
+        assertEquals(SourceStatus.MISSING, repository.verifySource(inaccessible))
+        assertEquals(SourceStatus.MISSING, repository.getProject(projectId)!!.mediaAssets.single().sourceStatus)
+    }
+
+    @Test
+    fun pipeBackedProviderPreservesWeakFingerprintStrength() = runBlocking {
+        val result = UriFingerprintService(context).fingerprint(
+            uri = TestMediaProvider.uri("weak_sample_av.mp4"),
+            sizeHint = null,
+            durationUs = 2_000_000L,
+            width = 320,
+            height = 240
+        )
+
+        assertEquals(FingerprintStrength.WEAK_FIRST_REGION_ONLY, result.strength)
+        assertTrue(result.sampledBytes > 0L)
     }
 
     private fun overwriteMaterializedFixture(targetName: String, assetName: String) {
