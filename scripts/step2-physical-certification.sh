@@ -48,6 +48,18 @@ require_adb() {
   }
 }
 
+sha256_file() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file"
+  else
+    echo "ERROR: neither sha256sum nor shasum is available on this host." >&2
+    return 1
+  fi
+}
+
 sanitize_label() {
   printf '%s' "$1" | tr '[:space:]/:' '---' | tr -cd '[:alnum:]_.-'
 }
@@ -83,7 +95,11 @@ capture_installed_apk_identity() {
   if [ -n "$remote_apk" ]; then
     local temp_apk="$dir/.installed-base.apk"
     if adb pull "$remote_apk" "$temp_apk" >/dev/null 2>&1; then
-      sha256sum "$temp_apk" | sed 's#  .*/#  #' >"$dir/INSTALLED_APK_SHA256.txt"
+      if sha256_file "$temp_apk" | sed 's#  .*/#  #' >"$dir/INSTALLED_APK_SHA256.txt"; then
+        :
+      else
+        echo "Host SHA-256 tool unavailable; installed APK hash not captured." >"$dir/INSTALLED_APK_SHA256.txt"
+      fi
       rm -f "$temp_apk"
     else
       echo "Installed APK pull was not permitted by this device; SHA-256 not captured." >"$dir/INSTALLED_APK_SHA256.txt"
@@ -305,7 +321,11 @@ show_status() {
   [ -f "$session/SESSION.txt" ] && cat "$session/SESSION.txt"
   echo
   echo "Checkpoints:"
-  find "$session/checkpoints" -mindepth 1 -maxdepth 1 -type d -printf '  %f\n' 2>/dev/null | sort || true
+  local entry
+  for entry in "$session"/checkpoints/*; do
+    [ -d "$entry" ] || continue
+    printf '  %s\n' "$(basename "$entry")"
+  done
   echo
   [ -f "$session/FINALIZE_STATUS.txt" ] && cat "$session/FINALIZE_STATUS.txt" || echo "Not finalized."
 }
