@@ -2,6 +2,7 @@ package com.videoflow.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.videoflow.app.data.db.MIGRATION_1_2
 import com.videoflow.app.data.db.VideoFlowDatabase
 import dagger.Module
 import dagger.Provides
@@ -17,5 +18,6 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): VideoFlowDatabase =
         Room.databaseBuilder(context, VideoFlowDatabase::class.java, "videoflow.db")
+            .addMigrations(MIGRATION_1_2)
             .build()
 }
