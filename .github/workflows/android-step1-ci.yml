@@ -46,6 +46,9 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
+          rm -f /tmp/platform-37.0_r02.zip
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -103,6 +106,7 @@ jobs:
           sudo chmod 660 /dev/kvm
           test -r /dev/kvm
           test -w /dev/kvm
+          df -h /
 
       - name: Emulator instrumentation and Compose tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -113,7 +117,7 @@ jobs:
           disable-animations: true
           disable-linux-hw-accel: false
           emulator-boot-timeout: 600
-          disk-size: 4096M
+          disk-size: 1536M
           script: ./gradlew connectedDebugAndroidTest --stacktrace
 
       - name: Package certification artifacts
