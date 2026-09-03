@@ -278,9 +278,7 @@ jobs:
             cat step2-emulator-reports/instrumentation-output.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step2-emulator-reports/instrumentation-output.txt
             grep -E -q 'OK \([0-9]+ tests?\)' step2-emulator-reports/instrumentation-output.txt
-            COUNT=$(grep -Eo 'OK \([0-9]+ tests?\)' step2-emulator-reports/instrumentation-output.txt | tail -n 1 | grep -Eo '[0-9]+')
-            test -n "$COUNT"
-            printf 'Instrumentation: %s PASS / 0 FAIL / 0 SKIP\n' "$COUNT" | tee step2-emulator-reports/STEP_2_INSTRUMENTATION_COUNTS.txt
+            COUNT=$(grep -Eo 'OK \([0-9]+ tests?\)' step2-emulator-reports/instrumentation-output.txt | tail -n 1 | grep -Eo '[0-9]+'); test -n "$COUNT"; printf 'Instrumentation: %s PASS / 0 FAIL / 0 SKIP\n' "$COUNT" | tee step2-emulator-reports/STEP_2_INSTRUMENTATION_COUNTS.txt
 
       - name: Package emulator reports
         if: always()
