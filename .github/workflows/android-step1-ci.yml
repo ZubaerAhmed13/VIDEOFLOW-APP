@@ -109,7 +109,10 @@ jobs:
           mkdir -p step1-runtime
           cp "$APP_APK" step1-runtime/VideoFlow_Android_Step1_Debug.apk
           cp "$TEST_APK" step1-runtime/VideoFlow_Android_Step1_Debug-androidTest.apk
-          sha256sum step1-runtime/*.apk | tee step1-runtime/SHA256SUMS.txt
+          (
+            cd step1-runtime
+            sha256sum *.apk | tee SHA256SUMS.txt
+          )
 
       - name: Upload exact runtime certification APK bundle
         uses: actions/upload-artifact@v4
