@@ -12,6 +12,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -34,16 +36,19 @@ class WaveformService @Inject constructor(
     private val db: VideoFlowDatabase
 ) {
     private val resolver: ContentResolver = context.contentResolver
+    private val decoderSlots = Semaphore(1)
 
-    suspend fun loadOrGenerate(assetId: String, requestedBins: Int = 1024): WaveformPeaks = withContext(Dispatchers.IO) {
-        val bins = requestedBins.coerceIn(64, 4096)
-        val asset = db.mediaAssetDao().get(assetId) ?: error("Media asset not found")
-        val durationUs = asset.durationUs?.takeIf { it > 0 } ?: error("Audio duration unavailable")
-        val cache = cacheFile(assetId, asset.fingerprintSha256, bins)
-        readCache(cache, assetId, durationUs)?.let { return@withContext it }
-        val generated = decodePeaks(assetId, Uri.parse(asset.sourceUri), durationUs, bins)
-        writeCache(cache, generated)
-        generated
+    suspend fun loadOrGenerate(assetId: String, requestedBins: Int = 1024): WaveformPeaks = decoderSlots.withPermit {
+        withContext(Dispatchers.IO) {
+            val bins = requestedBins.coerceIn(64, 4096)
+            val asset = db.mediaAssetDao().get(assetId) ?: error("Media asset not found")
+            val durationUs = asset.durationUs?.takeIf { it > 0 } ?: error("Audio duration unavailable")
+            val cache = cacheFile(assetId, asset.fingerprintSha256, bins)
+            readCache(cache, assetId, durationUs)?.let { return@withContext it }
+            val generated = decodePeaks(assetId, Uri.parse(asset.sourceUri), durationUs, bins)
+            writeCache(cache, generated)
+            generated
+        }
     }
 
     suspend fun deleteCache(assetId: String) = withContext(Dispatchers.IO) {
