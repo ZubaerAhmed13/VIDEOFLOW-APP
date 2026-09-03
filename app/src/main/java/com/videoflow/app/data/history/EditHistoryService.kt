@@ -42,6 +42,16 @@ data class TrackHistoryEntry(
     init { require(before != null || after != null) }
 }
 
+data class TrackBundleHistoryEntry(
+    override val projectId: String,
+    override val label: String,
+    val track: TimelineTrack,
+    val clips: List<TimelineClip>,
+    val textOverlays: List<TextOverlay>,
+    val imageOverlays: List<ImageOverlay>,
+    val keyframes: List<Keyframe>
+) : HistoryEntry
+
 data class KeyframeHistoryEntry(
     override val projectId: String,
     override val label: String,
@@ -97,10 +107,6 @@ class EditHistoryService @Inject constructor(private val db: VideoFlowDatabase) 
         lastCoalesceKey = null
     }
 
-    /**
-     * Coalesces repeated edits to the same semantic target (for example a drag or transform nudge)
-     * while preserving the very first before-state and the most recent after-state.
-     */
     fun recordCoalesced(entry: HistoryEntry, key: String, nowMs: Long = System.currentTimeMillis()) {
         activateProject(entry.projectId)
         val previous = undo.lastOrNull()
@@ -152,19 +158,13 @@ class EditHistoryService @Inject constructor(private val db: VideoFlowDatabase) 
         previous is ClipHistoryEntry && next is ClipHistoryEntry &&
             previous.projectId == next.projectId &&
             previous.afterClips.map { it.id }.toSet() == next.beforeClips.map { it.id }.toSet() ->
-            previous.copy(
-                label = next.label,
-                afterClips = next.afterClips,
-                afterKeyframes = next.afterKeyframes
-            )
+            previous.copy(label = next.label, afterClips = next.afterClips, afterKeyframes = next.afterKeyframes)
 
         previous is TrackHistoryEntry && next is TrackHistoryEntry &&
-            previous.projectId == next.projectId &&
-            previous.after?.id == next.before?.id ->
+            previous.projectId == next.projectId && previous.after?.id == next.before?.id ->
             previous.copy(label = next.label, after = next.after)
 
-        previous is KeyframeHistoryEntry && next is KeyframeHistoryEntry &&
-            previous.projectId == next.projectId ->
+        previous is KeyframeHistoryEntry && next is KeyframeHistoryEntry && previous.projectId == next.projectId ->
             previous.copy(label = next.label, after = next.after)
 
         previous is TextOverlayHistoryEntry && next is TextOverlayHistoryEntry &&
@@ -199,6 +199,24 @@ class EditHistoryService @Inject constructor(private val db: VideoFlowDatabase) 
                     if (desired == null) db.editorDao().deleteTrack(trackId) else db.editorDao().putTrack(desired.toEntity())
                 }
 
+                is TrackBundleHistoryEntry -> {
+                    if (before) {
+                        db.editorDao().putTrack(entry.track.toEntity())
+                        if (entry.clips.isNotEmpty()) db.editorDao().putClips(entry.clips.map { it.toEntity() })
+                        entry.textOverlays.forEach { db.editorDao().putTextOverlay(it.toEntity()) }
+                        entry.imageOverlays.forEach { db.editorDao().putImageOverlay(it.toEntity()) }
+                        entry.keyframes.forEach { db.editorDao().putKeyframe(it.toEntity()) }
+                    } else {
+                        val ownerIds = buildList {
+                            addAll(entry.clips.map { it.id })
+                            addAll(entry.textOverlays.map { it.id })
+                            addAll(entry.imageOverlays.map { it.id })
+                        }
+                        ownerIds.forEach { db.editorDao().deleteKeyframes(it) }
+                        db.editorDao().deleteTrack(entry.track.id)
+                    }
+                }
+
                 is KeyframeHistoryEntry -> {
                     val allOwnerIds = (entry.before.map { it.ownerId } + entry.after.map { it.ownerId }).distinct()
                     allOwnerIds.forEach { db.editorDao().deleteKeyframes(it) }
@@ -209,10 +227,7 @@ class EditHistoryService @Inject constructor(private val db: VideoFlowDatabase) 
                 is TextOverlayHistoryEntry -> {
                     val id = entry.before?.id ?: entry.after?.id ?: error("Text history has no target")
                     db.editorDao().deleteKeyframes(id)
-                    db.openHelper.writableDatabase.execSQL(
-                        "DELETE FROM text_overlays WHERE id=?",
-                        arrayOf<Any?>(id)
-                    )
+                    db.openHelper.writableDatabase.execSQL("DELETE FROM text_overlays WHERE id=?", arrayOf<Any?>(id))
                     val desired = if (before) entry.before else entry.after
                     val frames = if (before) entry.beforeKeyframes else entry.afterKeyframes
                     if (desired != null) db.editorDao().putTextOverlay(desired.toEntity())
@@ -222,10 +237,7 @@ class EditHistoryService @Inject constructor(private val db: VideoFlowDatabase) 
                 is ImageOverlayHistoryEntry -> {
                     val id = entry.before?.id ?: entry.after?.id ?: error("Image history has no target")
                     db.editorDao().deleteKeyframes(id)
-                    db.openHelper.writableDatabase.execSQL(
-                        "DELETE FROM image_overlays WHERE id=?",
-                        arrayOf<Any?>(id)
-                    )
+                    db.openHelper.writableDatabase.execSQL("DELETE FROM image_overlays WHERE id=?", arrayOf<Any?>(id))
                     val desired = if (before) entry.before else entry.after
                     val frames = if (before) entry.beforeKeyframes else entry.afterKeyframes
                     if (desired != null) db.editorDao().putImageOverlay(desired.toEntity())
