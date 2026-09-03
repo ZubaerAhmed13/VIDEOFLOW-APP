@@ -16,16 +16,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,9 +37,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -73,6 +78,16 @@ import com.videoflow.app.util.formatBytes
 import com.videoflow.app.util.formatDurationUs
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+
+private val EditorBackground = Color(0xFF0A0D12)
+private val EditorTopBar = Color(0xFF0E131A)
+private val EditorPanel = Color(0xFF11161E)
+private val EditorPanel2 = Color(0xFF171D27)
+private val EditorPanel3 = Color(0xFF1C2430)
+private val EditorLine = Color(0xFF293340)
+private val EditorMuted = Color(0xFF8994A4)
+private val EditorGreen = Color(0xFF32D583)
+private val EditorBlue = Color(0xFF64A7FF)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,7 +161,7 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
             rotation = value(KeyframeProperty.ROTATION, clip.transform.rotationDegrees),
             opacity = value(KeyframeProperty.OPACITY, clip.opacity),
             flipHorizontal = clip.transform.flipHorizontal,
-            flipVertical = clip.transform.flipVertical
+            flipVertical = clip.transform.flipVertical,
         )
     }
 
@@ -161,34 +176,94 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
     }
 
     Scaffold(
+        containerColor = EditorBackground,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = EditorTopBar,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
                 title = {
-                    Column {
-                        Text(project?.name ?: "VideoFlow Editor")
-                        Text(if (saving) "Saving…" else "Saved", style = MaterialTheme.typography.labelSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            modifier = Modifier.size(27.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            color = EditorGreen,
+                            contentColor = Color(0xFF06130C),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("V", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Black)
+                            }
+                        }
+                        Spacer(Modifier.width(9.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text("VIDEOFLOW EDITOR", style = MaterialTheme.typography.labelSmall, color = EditorGreen)
+                            Text(project?.name ?: "Untitled Project", style = MaterialTheme.typography.titleMedium)
+                        }
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
                 },
                 actions = {
+                    Surface(
+                        color = if (saving) Color(0xFF241D12) else Color(0xFF11271E),
+                        border = BorderStroke(1.dp, if (saving) Color(0xFF5B4C2E) else Color(0xFF244C3C)),
+                        shape = RoundedCornerShape(5.dp),
+                    ) {
+                        Text(
+                            if (saving) "SAVING" else "SAVED",
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (saving) Color(0xFFE6BF72) else Color(0xFF8FE9BA),
+                        )
+                    }
                     TextButton(onClick = vm::undo, enabled = history.canUndo && !saving) { Text("Undo") }
                     TextButton(onClick = vm::redo, enabled = history.canRedo && !saving) { Text("Redo") }
-                }
+                },
             )
-        }
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Card(Modifier.fillMaxWidth()) {
+                EditorPanelCard {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text("PROGRAM MONITOR", style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+                            Text(
+                                when {
+                                    activeProxy != null -> "${activeProxy.quality.name} proxy preview"
+                                    activeVideoAsset != null -> "Original source preview"
+                                    else -> "Project background"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                        }
+                        Surface(color = EditorPanel2, shape = RoundedCornerShape(4.dp)) {
+                            Text(
+                                if (activeProxy != null) "PROXY" else "LOCAL",
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (activeProxy != null) EditorBlue else EditorGreen,
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = EditorLine)
                     Box(
-                        Modifier.fillMaxWidth().height(300.dp).background(Color.Black).clipToBounds(),
-                        contentAlignment = Alignment.Center
+                        Modifier.fillMaxWidth().height(300.dp).background(Color(0xFF070A0E)).clipToBounds(),
+                        contentAlignment = Alignment.Center,
                     ) {
                         if (previewSource != null && activeVideoAsset?.mimeType?.startsWith("video/") == true) {
                             val t = evalTransform ?: EvaluatedTransform()
@@ -202,20 +277,28 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
                                     .fillMaxWidth()
                                     .offset(
                                         x = ((t.x - 0.5f) * 160f).dp,
-                                        y = ((t.y - 0.5f) * 100f).dp
+                                        y = ((t.y - 0.5f) * 100f).dp,
                                     )
                                     .graphicsLayer(
                                         scaleX = t.scaleX * if (t.flipHorizontal) -1f else 1f,
                                         scaleY = t.scaleY * if (t.flipVertical) -1f else 1f,
                                         rotationZ = t.rotation,
-                                        alpha = t.opacity.coerceIn(0f, 1f)
-                                    )
+                                        alpha = t.opacity.coerceIn(0f, 1f),
+                                    ),
                             )
                         } else {
-                            Text(
-                                if (durationUs == 0L) "Add media to the timeline" else "Timeline gap • project background",
-                                color = Color.White
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Text(
+                                    if (durationUs == 0L) "ADD MEDIA TO TIMELINE" else "TIMELINE GAP",
+                                    color = Color(0xFFAEB8C4),
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                                Text(
+                                    if (durationUs == 0L) "The program monitor will appear here" else "Project background",
+                                    color = Color(0xFF667282),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
 
                         activeImages.forEach { overlay ->
@@ -227,14 +310,14 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
                                         .widthIn(max = 220.dp)
                                         .offset(
                                             x = ((overlay.transform.x - 0.5f) * 160f).dp,
-                                            y = ((overlay.transform.y - 0.5f) * 100f).dp
+                                            y = ((overlay.transform.y - 0.5f) * 100f).dp,
                                         )
                                         .graphicsLayer(
                                             scaleX = overlay.transform.scaleX,
                                             scaleY = overlay.transform.scaleY,
                                             rotationZ = overlay.transform.rotationDegrees,
-                                            alpha = overlay.transform.opacity
-                                        )
+                                            alpha = overlay.transform.opacity,
+                                        ),
                                 )
                             }
                         }
@@ -249,25 +332,50 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
                                 modifier = Modifier
                                     .offset(
                                         x = ((overlay.transform.x - 0.5f) * 160f).dp,
-                                        y = ((overlay.transform.y - 0.5f) * 100f).dp
+                                        y = ((overlay.transform.y - 0.5f) * 100f).dp,
                                     )
                                     .graphicsLayer(
                                         scaleX = overlay.transform.scaleX,
                                         scaleY = overlay.transform.scaleY,
                                         rotationZ = overlay.transform.rotationDegrees,
-                                        alpha = overlay.opacity
-                                    )
+                                        alpha = overlay.opacity,
+                                    ),
                             )
                         }
                     }
-                    Column(Modifier.padding(8.dp)) {
-                        Text(
-                            when {
-                                activeProxy != null -> "Preview source: ${activeProxy.quality.name} proxy • render source remains original"
-                                activeVideoAsset != null -> "Preview source: original"
-                                else -> "Preview source: project background"
+                    HorizontalDivider(color = EditorLine)
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${formatDurationUs(playheadUs)}  /  ${formatDurationUs(durationUs)}",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Button(onClick = { isPlaying = !isPlaying }, enabled = durationUs > 0L) {
+                                Text(if (isPlaying) "Pause" else "Play")
+                            }
+                        }
+                        Slider(
+                            value = if (durationUs <= 0L) 0f else (playheadUs.toDouble() / durationUs.toDouble()).toFloat().coerceIn(0f, 1f),
+                            onValueChange = { fraction ->
+                                isPlaying = false
+                                vm.setPlayheadUs((durationUs * fraction.toDouble()).toLong())
                             },
-                            style = MaterialTheme.typography.bodySmall
+                            valueRange = 0f..1f,
+                            enabled = durationUs > 0L,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(onClick = { isPlaying = false; vm.setPlayheadUs(0) }) { Text("Start") }
+                            OutlinedButton(onClick = { isPlaying = false; vm.setPlayheadUs((playheadUs - 1_000_000).coerceAtLeast(0)) }) { Text("−1s") }
+                            OutlinedButton(onClick = { isPlaying = false; vm.setPlayheadUs((playheadUs + 1_000_000).coerceAtMost(durationUs)) }) { Text("+1s") }
+                        }
+                        Text(
+                            if (activeProxy != null) "Proxy is preview-only • final render source remains original" else "Preview remains local and non-destructive",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = EditorMuted,
                         )
                     }
                 }
@@ -283,71 +391,62 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
                         startPositionMs = ((clip.sourceStartUs + localUs * clip.speed) / 1000.0).toLong(),
                         playWhenReady = isPlaying,
                         speed = clip.speed.toFloat(),
-                        volume = (gain * fade).coerceIn(0f, 1f)
+                        volume = (gain * fade).coerceIn(0f, 1f),
                     )
                 }
             }
 
             item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("${formatDurationUs(playheadUs)} / ${formatDurationUs(durationUs)}")
-                    Button(onClick = { isPlaying = !isPlaying }, enabled = durationUs > 0L) {
-                        Text(if (isPlaying) "Pause" else "Play")
-                    }
-                }
-                Slider(
-                    value = if (durationUs <= 0L) 0f else (playheadUs.toDouble() / durationUs.toDouble()).toFloat().coerceIn(0f, 1f),
-                    onValueChange = { fraction ->
-                        isPlaying = false
-                        vm.setPlayheadUs((durationUs * fraction.toDouble()).toLong())
-                    },
-                    valueRange = 0f..1f,
-                    enabled = durationUs > 0L
+                EditorSectionHeader(
+                    eyebrow = "MEDIA BIN",
+                    title = "Referenced assets",
+                    meta = "${project?.mediaAssets?.size ?: 0} ITEMS",
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick = { isPlaying = false; vm.setPlayheadUs(0) }) { Text("Start") }
-                    OutlinedButton(onClick = { isPlaying = false; vm.setPlayheadUs((playheadUs - 1_000_000).coerceAtLeast(0)) }) { Text("−1s") }
-                    OutlinedButton(onClick = { isPlaying = false; vm.setPlayheadUs((playheadUs + 1_000_000).coerceAtMost(durationUs)) }) { Text("+1s") }
-                }
-            }
-
-            item {
-                Text("Media Bin", style = MaterialTheme.typography.titleMedium)
-                Text("Original media remains referenced; proxies are derived editor files only.", style = MaterialTheme.typography.bodySmall)
             }
             items(project?.mediaAssets.orEmpty(), key = { "asset-${it.id}" }) { asset ->
                 val proxy = editor?.proxies?.firstOrNull { it.assetId == asset.id }
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
+                EditorPanelCard(containerColor = EditorPanel) {
+                    Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(asset.displayName, style = MaterialTheme.typography.titleSmall)
                                 Text(
                                     listOfNotNull(
                                         asset.mimeType,
                                         asset.sizeBytes?.let(::formatBytes),
-                                        if (asset.width != null && asset.height != null) "${asset.width}×${asset.height}" else null
+                                        if (asset.width != null && asset.height != null) "${asset.width}×${asset.height}" else null,
                                     ).joinToString(" • "),
-                                    style = MaterialTheme.typography.bodySmall
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = EditorMuted,
                                 )
                             }
                             Button(onClick = { vm.addAsset(asset.id) }, enabled = asset.sourceStatus.name == "AVAILABLE") { Text("Add") }
                         }
-                        Text("Source: ${asset.sourceStatus.name.replace('_', ' ')}", style = MaterialTheme.typography.bodySmall)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            EditorInfoCell("SOURCE", asset.sourceStatus.name.replace('_', ' '), Modifier.weight(1f))
+                            EditorInfoCell("PROXY", proxy?.status?.name?.replace('_', ' ') ?: "NONE", Modifier.weight(1f))
+                        }
                         if (asset.mimeType?.startsWith("video/") == true) {
-                            Text(
-                                "Proxy: ${proxy?.status?.name?.replace('_', ' ') ?: "NONE"}" +
-                                    (proxy?.let { " • ${it.width}×${it.height} • ${it.sizeBytes?.let(::formatBytes) ?: "size pending"}" } ?: ""),
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            if (proxy != null) {
+                                Text(
+                                    "${proxy.width}×${proxy.height} • ${proxy.sizeBytes?.let(::formatBytes) ?: "size pending"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = EditorMuted,
+                                )
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (proxyProgress.assetId == asset.id && proxyProgress.status == ProxyStatus.GENERATING) {
                                     OutlinedButton(onClick = { vm.cancelProxy(asset.id) }) { Text("Cancel Proxy") }
                                     Text(proxyProgress.percent?.let { "$it%" } ?: "Working…", modifier = Modifier.padding(top = 12.dp))
                                 } else {
-                                    OutlinedButton(onClick = { vm.generateProxy(asset.id, ProxyQuality.BALANCED) }, enabled = asset.sourceStatus.name == "AVAILABLE") {
-                                        Text(if (proxy?.status == ProxyStatus.READY) "Regenerate" else "Proxy 720p")
-                                    }
+                                    OutlinedButton(
+                                        onClick = { vm.generateProxy(asset.id, ProxyQuality.BALANCED) },
+                                        enabled = asset.sourceStatus.name == "AVAILABLE",
+                                    ) { Text(if (proxy?.status == ProxyStatus.READY) "Regenerate" else "Proxy 720p") }
                                     if (proxy != null) OutlinedButton(onClick = { vm.deleteProxy(asset.id) }) { Text("Delete Proxy") }
                                 }
                             }
@@ -357,7 +456,11 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
                                 OutlinedButton(onClick = { vm.generateWaveform(asset.id) }) { Text("Waveform") }
                                 Spacer(Modifier.width(8.dp))
                                 val peaks = waveforms[asset.id]
-                                Text(if (peaks == null) "Not cached in editor session" else "${peaks.size} bounded peaks", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    if (peaks == null) "Not cached" else "${peaks.size} bounded peaks",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = EditorMuted,
+                                )
                             }
                         }
                     }
@@ -365,21 +468,29 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
             }
 
             item {
-                HorizontalDivider()
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column {
-                        Text("Timeline", style = MaterialTheme.typography.titleMedium)
-                        Text("${pixelsPerSecond.roundToInt()} dp/s • pinch or buttons to zoom", style = MaterialTheme.typography.bodySmall)
+                EditorPanelCard(containerColor = EditorPanel) {
+                    Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                Text("TIMELINE", style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+                                Text("${pixelsPerSecond.roundToInt()} dp/s • pinch or buttons to zoom", style = MaterialTheme.typography.titleSmall)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                TextButton(onClick = { pixelsPerSecond = (pixelsPerSecond / 1.35f).coerceAtLeast(12f) }) { Text("− Zoom") }
+                                TextButton(onClick = { pixelsPerSecond = (pixelsPerSecond * 1.35f).coerceAtMost(240f) }) { Text("+ Zoom") }
+                            }
+                        }
+                        HorizontalDivider(color = EditorLine)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { vm.createTrack(TrackType.VIDEO) }) { Text("+ Video") }
+                            TextButton(onClick = { vm.createTrack(TrackType.AUDIO) }) { Text("+ Audio") }
+                            TextButton(onClick = { vm.createTrack(TrackType.OVERLAY) }) { Text("+ Overlay") }
+                        }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = { pixelsPerSecond = (pixelsPerSecond / 1.35f).coerceAtLeast(12f) }) { Text("− Zoom") }
-                        TextButton(onClick = { pixelsPerSecond = (pixelsPerSecond * 1.35f).coerceAtMost(240f) }) { Text("+ Zoom") }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { vm.createTrack(TrackType.VIDEO) }) { Text("+ Video") }
-                    TextButton(onClick = { vm.createTrack(TrackType.AUDIO) }) { Text("+ Audio") }
-                    TextButton(onClick = { vm.createTrack(TrackType.OVERLAY) }) { Text("+ Overlay") }
                 }
             }
 
@@ -397,47 +508,65 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
                     onSolo = { vm.toggleTrackSolo(track.id, !track.solo) },
                     onLock = { vm.toggleTrackLock(track.id, !track.locked) },
                     onVisible = { vm.toggleTrackVisible(track.id, !track.visible) },
-                    onGain = { vm.setTrackGain(track.id, it) }
+                    onGain = { vm.setTrackGain(track.id, it) },
                 )
             }
 
             selectedClip?.let { clip ->
                 item {
+                    EditorSectionHeader("INSPECTOR", "Selected clip", "ACTIVE")
                     ClipInspector(clip = clip, vm = vm)
                 }
             }
 
             if (!timeline?.textOverlays.isNullOrEmpty() || !timeline?.imageOverlays.isNullOrEmpty()) {
-                item { Text("Overlays", style = MaterialTheme.typography.titleMedium) }
+                item { EditorSectionHeader("OVERLAYS", "Timeline overlays", null) }
                 items(timeline?.textOverlays.orEmpty(), key = { "text-${it.id}" }) { overlay ->
-                    Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(10.dp)) {
-                            Text("Text: ${overlay.content}")
-                            Text("${formatDurationUs(overlay.timelineStartUs)} → ${formatDurationUs(overlay.timelineEndUs)}", style = MaterialTheme.typography.bodySmall)
+                    EditorPanelCard {
+                        Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Text: ${overlay.content}", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "${formatDurationUs(overlay.timelineStartUs)} → ${formatDurationUs(overlay.timelineEndUs)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = EditorMuted,
+                            )
                         }
                     }
                 }
                 items(timeline?.imageOverlays.orEmpty(), key = { "image-${it.id}" }) { overlay ->
-                    Card(Modifier.fillMaxWidth()) {
+                    EditorPanelCard {
                         Text(
                             "Image overlay • ${formatDurationUs(overlay.timelineStartUs)} → ${formatDurationUs(overlay.timelineEndUs)}",
-                            modifier = Modifier.padding(10.dp)
+                            modifier = Modifier.padding(9.dp),
+                            style = MaterialTheme.typography.bodySmall,
                         )
                     }
                 }
             }
 
             item {
-                HorizontalDivider()
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Snapshots", style = MaterialTheme.typography.titleMedium)
-                    Button(onClick = { vm.createSnapshot("Snapshot ${snapshots.size + 1}") }) { Text("Save Snapshot") }
+                EditorPanelCard {
+                    Row(
+                        Modifier.fillMaxWidth().padding(9.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text("RECOVERY", style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+                            Text("Snapshots", style = MaterialTheme.typography.titleSmall)
+                        }
+                        Button(onClick = { vm.createSnapshot("Snapshot ${snapshots.size + 1}") }) { Text("Save Snapshot") }
+                    }
                 }
             }
             items(snapshots, key = { "snapshot-${it.id}" }) { snapshot ->
-                Card(Modifier.fillMaxWidth()) {
-                    Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(snapshot.name, modifier = Modifier.weight(1f))
+                EditorPanelCard {
+                    Row(
+                        Modifier.fillMaxWidth().padding(9.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(snapshot.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                         OutlinedButton(onClick = { isPlaying = false; vm.restoreSnapshot(snapshot.id) }) { Text("Restore") }
                         Spacer(Modifier.width(4.dp))
                         TextButton(onClick = { vm.deleteSnapshot(snapshot.id) }) { Text("Delete") }
@@ -447,8 +576,10 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
 
             item {
                 Text(
-                    "Step 2 is non-destructive. Professional final encoding/export is intentionally excluded and remains Step 3.",
-                    style = MaterialTheme.typography.bodySmall
+                    "STEP 2 • NON-DESTRUCTIVE EDITING • FINAL ENCODING / EXPORT REMAINS STEP 3",
+                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF5F6B79),
                 )
             }
         }
@@ -456,63 +587,115 @@ fun EditorScreen(id: String, onBack: () -> Unit, vm: EditorViewModel) {
 
     message?.let {
         AlertDialog(
+            containerColor = EditorPanel2,
             onDismissRequest = vm::clearMessage,
             title = { Text("VideoFlow Editor") },
             text = { Text(it) },
-            confirmButton = { TextButton(onClick = vm::clearMessage) { Text("OK") } }
+            confirmButton = { TextButton(onClick = vm::clearMessage) { Text("OK") } },
         )
     }
 }
 
 @Composable
+private fun EditorPanelCard(
+    containerColor: Color = EditorPanel,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.dp, EditorLine),
+        shape = RoundedCornerShape(6.dp),
+    ) { content() }
+}
+
+@Composable
+private fun EditorSectionHeader(eyebrow: String, title: String, meta: String?) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 3.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(eyebrow, style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+            Text(title, style = MaterialTheme.typography.titleMedium)
+        }
+        if (meta != null) {
+            Text(meta, style = MaterialTheme.typography.labelSmall, color = EditorMuted)
+        }
+    }
+}
+
+@Composable
+private fun EditorInfoCell(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, color = EditorPanel2, shape = RoundedCornerShape(4.dp)) {
+        Column(Modifier.padding(7.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+            Text(value, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
 private fun ClipInspector(clip: TimelineClip, vm: EditorViewModel) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Selected Clip Inspector", style = MaterialTheme.typography.titleMedium)
+    EditorPanelCard(containerColor = EditorPanel) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("TRANSFORM", style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+                    Text("Clip properties", style = MaterialTheme.typography.titleSmall)
+                }
+                Surface(color = Color(0xFF173126), shape = RoundedCornerShape(4.dp)) {
+                    Text("SELECTED", Modifier.padding(horizontal = 7.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFFB5EFCE))
+                }
+            }
             Text(
                 "Position (${"%.2f".format(clip.transform.x)}, ${"%.2f".format(clip.transform.y)}) • Scale ${"%.2f".format(clip.transform.scaleX)} • Rotation ${clip.transform.rotationDegrees.roundToInt()}° • Opacity ${"%.2f".format(clip.opacity)}",
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                color = EditorMuted,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedButton(onClick = { vm.moveTransform(-0.05f, 0f) }) { Text("←") }
                 OutlinedButton(onClick = { vm.moveTransform(0f, -0.05f) }) { Text("↑") }
                 OutlinedButton(onClick = { vm.moveTransform(0f, 0.05f) }) { Text("↓") }
                 OutlinedButton(onClick = { vm.moveTransform(0.05f, 0f) }) { Text("→") }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedButton(onClick = { vm.setScale((clip.transform.scaleX - 0.1f).coerceAtLeast(0.05f)) }) { Text("Scale −") }
                 OutlinedButton(onClick = { vm.setScale(clip.transform.scaleX + 0.1f) }) { Text("Scale +") }
                 OutlinedButton(onClick = vm::rotateSelected90) { Text("Rotate 90°") }
                 OutlinedButton(onClick = vm::resetTransform) { Text("Reset") }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedButton(onClick = vm::toggleFlipHorizontal) { Text("Flip H") }
                 OutlinedButton(onClick = vm::toggleFlipVertical) { Text("Flip V") }
                 OutlinedButton(onClick = { vm.setOpacity((clip.opacity - 0.1f).coerceAtLeast(0f)) }) { Text("Opacity −") }
                 OutlinedButton(onClick = { vm.setOpacity((clip.opacity + 0.1f).coerceAtMost(1f)) }) { Text("Opacity +") }
             }
-            Text("Crop presets", style = MaterialTheme.typography.labelLarge)
+            Text("CROP PRESETS", style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(16 to 9, 9 to 16, 4 to 3, 3 to 2, 1 to 1, 4 to 5).forEach { (w, h) ->
                     OutlinedButton(onClick = { vm.setCropPreset(w, h) }) { Text("$w:$h") }
                 }
             }
-            Text("Speed", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("SPEED", style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 listOf(0.5, 1.0, 1.5, 2.0).forEach { speed ->
                     OutlinedButton(onClick = { vm.setSpeed(speed) }) { Text("${speed}×") }
                 }
             }
-            Text("Audio", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(-6f, 0f, 6f).forEach { gain -> OutlinedButton(onClick = { vm.setClipGain(gain) }) { Text("${gain.roundToInt()} dB") } }
+            Text("AUDIO", style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(-6f, 0f, 6f).forEach { gain ->
+                    OutlinedButton(onClick = { vm.setClipGain(gain) }) { Text("${gain.roundToInt()} dB") }
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedButton(onClick = { vm.setFades(1_000_000L.coerceAtMost(clip.timelineDurationUs), clip.fadeOutUs) }) { Text("Fade In 1s") }
                 OutlinedButton(onClick = { vm.setFades(clip.fadeInUs, 1_000_000L.coerceAtMost(clip.timelineDurationUs)) }) { Text("Fade Out 1s") }
                 OutlinedButton(onClick = { vm.setFades(0L, 0L) }) { Text("Clear Fades") }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(onClick = vm::splitSelected) { Text("Split") }
                 OutlinedButton(onClick = vm::duplicateSelected) { Text("Duplicate") }
                 OutlinedButton(onClick = vm::deleteSelected) { Text("Delete") }
@@ -536,13 +719,20 @@ private fun TrackLane(
     onSolo: () -> Unit,
     onLock: () -> Unit,
     onVisible: () -> Unit,
-    onGain: (Float) -> Unit
+    onGain: (Float) -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("${track.name} • ${track.type.name}", style = MaterialTheme.typography.titleSmall)
-                Text("${track.gainDb.roundToInt()} dB", style = MaterialTheme.typography.labelSmall)
+    EditorPanelCard(containerColor = EditorPanel) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(track.type.name, style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
+                    Text(track.name, style = MaterialTheme.typography.titleSmall)
+                }
+                Text("${track.gainDb.roundToInt()} dB", style = MaterialTheme.typography.labelSmall, color = EditorMuted)
             }
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedButton(onClick = onMute) { Text(if (track.muted) "Muted" else "Mute") }
@@ -557,17 +747,19 @@ private fun TrackLane(
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .background(Color(0xFF0D1218), RoundedCornerShape(4.dp))
                     .horizontalScroll(scroll)
                     .pointerInput(track.id) {
                         detectTransformGestures { _, _, zoom, _ ->
                             if (zoom.isFinite() && zoom > 0f) onZoom(zoom)
                         }
-                    },
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    }
+                    .padding(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (clips.isEmpty()) {
                     Box(Modifier.width(320.dp).height(70.dp), contentAlignment = Alignment.CenterStart) {
-                        Text("Empty track", style = MaterialTheme.typography.bodySmall)
+                        Text("EMPTY TRACK", style = MaterialTheme.typography.labelSmall, color = Color(0xFF667282))
                     }
                 } else {
                     var cursorUs = 0L
@@ -577,16 +769,24 @@ private fun TrackLane(
                         val width = timeWidthDp(clip.timelineDurationUs, pixelsPerSecond).coerceAtLeast(72.dp)
                         Card(
                             onClick = { onSelect(clip.id) },
-                            border = if (clip.id == selectedClipId) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-                            modifier = Modifier.width(width).height(86.dp)
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (clip.id == selectedClipId) Color(0xFF173126) else EditorPanel3,
+                            ),
+                            border = if (clip.id == selectedClipId) BorderStroke(1.dp, EditorGreen) else BorderStroke(1.dp, EditorLine),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.width(width).height(86.dp),
                         ) {
                             Column(Modifier.padding(7.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(if (clip.id == selectedClipId) "Selected" else "Clip", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    if (clip.id == selectedClipId) "SELECTED" else "CLIP",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (clip.id == selectedClipId) EditorGreen else Color(0xFF8F9BAA),
+                                )
                                 Text("${formatDurationUs(clip.timelineStartUs)} • ${formatDurationUs(clip.timelineDurationUs)}", style = MaterialTheme.typography.bodySmall)
-                                Text("${clip.speed}× • ${clip.gainDb.roundToInt()} dB", style = MaterialTheme.typography.bodySmall)
+                                Text("${clip.speed}× • ${clip.gainDb.roundToInt()} dB", style = MaterialTheme.typography.bodySmall, color = EditorMuted)
                                 val frameCount = keyframes.count { it.ownerId == clip.id }
-                                if (frameCount > 0) Text("◆ $frameCount keyframe${if (frameCount == 1) "" else "s"}", style = MaterialTheme.typography.bodySmall)
-                                waveforms[clip.assetId]?.let { Text("Waveform ${it.size} peaks", style = MaterialTheme.typography.bodySmall) }
+                                if (frameCount > 0) Text("◆ $frameCount keyframe${if (frameCount == 1) "" else "s"}", style = MaterialTheme.typography.bodySmall, color = EditorBlue)
+                                waveforms[clip.assetId]?.let { Text("Waveform ${it.size} peaks", style = MaterialTheme.typography.bodySmall, color = EditorMuted) }
                             }
                         }
                         cursorUs = maxOf(cursorUs, clip.timelineEndUs)
@@ -608,5 +808,5 @@ private data class EvaluatedTransform(
     val rotation: Float = 0f,
     val opacity: Float = 1f,
     val flipHorizontal: Boolean = false,
-    val flipVertical: Boolean = false
+    val flipVertical: Boolean = false,
 )
