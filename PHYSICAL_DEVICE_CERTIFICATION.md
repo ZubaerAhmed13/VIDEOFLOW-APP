@@ -21,13 +21,13 @@ Use only **PASS / FAIL / PARTIAL / NOT VERIFIED / NOT APPLICABLE** for recorded 
 
 | Field | Result |
 |---|---|
-| Manufacturer | NOT VERIFIED |
-| Model | NOT VERIFIED |
-| Android version | NOT VERIFIED |
-| API | NOT VERIFIED |
-| ABI | NOT VERIFIED |
-| RAM | NOT VERIFIED |
-| Available storage | NOT VERIFIED |
+| Manufacturer | PASS — motorola |
+| Model | PASS — motorola edge 60 |
+| Android version/API | PASS — API 35 |
+| ABI | PASS — arm64-v8a |
+| CPU cores | PASS — 8 |
+| RAM | PASS — 11.16 GB |
+| Available storage | PASS — 357.70 GB |
 
 ## Codec/capability record
 
@@ -35,32 +35,38 @@ The requirement is truthful detection, not universal support.
 
 | Capability | Result |
 |---|---|
-| H.264 decode | NOT VERIFIED |
-| H.264 encode | NOT VERIFIED |
-| H.264 4K30 | NOT VERIFIED |
-| H.264 4K60 | NOT VERIFIED |
-| HEVC decode | PARTIAL — physical 1280×690 HEVC playback observed; capability screen not yet recorded |
-| HEVC encode | NOT VERIFIED |
-| HEVC 4K30 | NOT VERIFIED |
-| HEVC 4K60 | NOT VERIFIED |
-| VP9 | NOT VERIFIED |
-| AV1 | NOT VERIFIED |
+| H.264 decode | PASS — hardware supported |
+| H.264 encode | PASS — hardware supported |
+| H.264 4K30 | PASS — decode + encode supported |
+| H.264 4K60 | PASS — truthful result: decode + encode not supported |
+| HEVC decode | PASS — hardware supported |
+| HEVC encode | PASS — hardware supported |
+| HEVC 4K30 | PASS — decode + encode supported |
+| HEVC 4K60 | PASS — truthful result: decode + encode not supported |
+| VP9 | PASS — hardware decode supported; encode not detected |
+| VP9 4K30 | PASS — decode supported |
+| VP9 4K60 | PASS — truthful result: decode not supported |
+| AV1 | PASS — decode/encode software/vendor reported |
+| AV1 4K30 | PASS — truthful result: decode/encode not supported |
+| AV1 4K60 | PASS — truthful result: decode/encode not supported |
 
 ## Physical evidence captured on 2026-09-03
 
-The certified debug APK was installed and launched successfully on a physical Android phone.
+The certified debug APK was installed and launched successfully on a physical Motorola edge 60.
 
 Observed physical-media evidence:
 
 - small H.264/AAC MP4: 5.85 MB, 1360×768, playback observed
 - large HEVC source A: 1.26 GB, 1280×690, 03:17:20, 1 video + 2 audio tracks
 - large HEVC source B: 1.03 GB, 1280×720, 02:36:22
-- large-source fingerprint mode: `STRONG_THREE_REGION`
+- genuine encoded source larger than 3 GB: user reports successful import of a 4 GB file on the same certified build
+- large-source fingerprint mode observed: `STRONG_THREE_REGION`
 - sampled bytes for the 1.26 GB source: 12.00 MB
 - persisted URI permission displayed by the app
 - playback of the 1.26 GB HEVC source observed at 02:05:09 of 03:17:21, approximately 63% into the file
+- after force-stopping and reopening VideoFlow, the imported files remained in the project; force-stop persistence therefore passed
 
-This is valid physical evidence for reference-based import, bounded fingerprinting and large-source playback below the >3 GB certification threshold. It does not replace the genuine >3 GB gate.
+The exact metadata screen for the 4 GB file has not yet been captured in a screenshot, so its detailed duration/resolution/codec fields remain unrecorded even though the import itself was reported successful.
 
 ## Test source record
 
@@ -68,14 +74,14 @@ Do not record personal media content. A sanitized fixture name is sufficient.
 
 | Field | Result |
 |---|---|
-| Sanitized filename | Physical HEVC large-source A |
-| Size | 1.26 GB — below mandatory >3 GB threshold |
-| Duration | 03:17:20 |
-| Resolution | 1280×690 |
+| Sanitized filename | Genuine 4 GB encoded physical-device source |
+| Size | PASS — user reports 4 GB |
+| Duration | NOT VERIFIED |
+| Resolution | NOT VERIFIED |
 | FPS | NOT VERIFIED |
-| Video codec | HEVC |
-| Audio codec | AAC-family MIME reported as `audio/mp4a-latm` |
-| Storage/provider | Android document picker; persisted URI permission displayed |
+| Video codec | NOT VERIFIED |
+| Audio codec | NOT VERIFIED |
+| Storage/provider | Android document picker / persisted URI workflow |
 
 ## Required procedure and result record
 
@@ -106,20 +112,20 @@ Do not record personal media content. A sanitized fixture name is sufficient.
 | Persisted URI permission shown on device | PASS |
 | Large-source bounded fingerprint below 3 GB | PASS — 1.26 GB source, 12.00 MB sampled |
 | Large-source physical playback below 3 GB | PASS — 1.26 GB HEVC source |
-| Deep seek below 3 GB | PARTIAL — playback observed at ~63%; 25/50/75/95 sequence not yet completed |
-| Genuine >3 GB import | NOT VERIFIED |
-| Source status AVAILABLE after >3 GB import | NOT VERIFIED |
+| Deep seek below 3 GB | PARTIAL — playback observed at ~63%; formal 25/50/75/95 sequence not yet completed |
+| Genuine >3 GB import | PASS — user reports successful 4 GB encoded-file import on the physical device |
+| Source status AVAILABLE after >3 GB import | PARTIAL — import persisted; explicit AVAILABLE screenshot for the 4 GB source not yet captured |
 | >3 GB preview | NOT VERIFIED |
 | >3 GB 25% seek | NOT VERIFIED |
 | >3 GB 50% seek | NOT VERIFIED |
 | >3 GB 75% seek | NOT VERIFIED |
 | >3 GB 95% seek | NOT VERIFIED |
-| Force-stop/reopen | NOT VERIFIED |
+| Force-stop/reopen | PASS — files remained after force stop and reopen |
 | Reboot/reopen | NOT VERIFIED |
 | Missing source behavior | NOT VERIFIED |
 | Correct-source relink | NOT VERIFIED |
 | Wrong-file rejection | NOT VERIFIED |
-| Launcher icon device appearance | NOT VERIFIED |
+| Launcher icon device appearance | PASS — launcher/app icon visible in Android App Info |
 | Basic accessibility device check | NOT VERIFIED |
 
 ## Storage evidence
@@ -129,16 +135,28 @@ Do not record personal media content. A sanitized fixture name is sufficient.
 | App storage before media additions | 23.69 MB total |
 | User data before | 147 kB |
 | Cache before | 180 kB |
-| App storage after 3 media items | 23.74 MB total |
-| User data after | 201 kB |
+| App storage after three earlier media items | 23.74 MB total |
+| User data after earlier media additions | 201 kB |
 | Cache after | 180 kB |
-| Total-storage delta | approximately +0.05 MB (~50 kB) |
-| User-data delta | +54 kB |
-| Imported media represented in project | approximately 2.30 GB total (1.26 GB + 1.03 GB + 5.85 MB) |
-| Source-sized copy observed | PASS — no source-sized increase observed for the ~2.30 GB imported set |
-| Mandatory >3 GB storage-delta gate | NOT VERIFIED |
+| Post-4 GB test app storage | 23.74 MB shown in Android App Info |
+| Total-storage delta from original baseline | approximately +0.05 MB (~50 kB) |
+| Imported media represented before the 4 GB addition | approximately 2.30 GB total |
+| Genuine >3 GB source added | PASS — 4 GB reported |
+| Source-sized copy observed | PASS — no source-sized increase observed; app storage remained 23.74 MB |
+| Mandatory >3 GB storage-delta gate | PASS — post-4 GB app storage remained metadata-scale rather than increasing by gigabytes |
 
-This is strong physical evidence that VideoFlow is storing references/metadata rather than copying the tested multi-gigabyte source set into app-private storage. The mandatory >3 GB single-source storage-delta test remains separate and NOT VERIFIED.
+This is strong physical evidence that VideoFlow stores references/metadata rather than copying imported multi-gigabyte source media into app-private storage.
+
+## Diagnostics/privacy evidence
+
+| Field | Result |
+|---|---|
+| Database version | PASS — 1 |
+| Persisted media read permissions | PASS — 3 |
+| Runtime network permission | PASS — not requested |
+| Android backup/transfer | PASS — disabled |
+| Android App Info permissions | PASS — no permissions requested |
+| Mobile data usage | PASS — no data used shown |
 
 ## Memory evidence
 
@@ -168,6 +186,6 @@ Automated implementation baseline: **PASS**.
 
 Physical-device Step 1 certification: **PARTIAL**.
 
-The reference-based storage design, persisted URI display, bounded large-source fingerprinting and physical playback below 3 GB now have direct device evidence. The mandatory genuine >3 GB source, complete >3 GB seek sequence, force-stop/reboot persistence, physical relink/missing-source flow, memory/thermal measurements, capability screen and accessibility checks remain open.
+Direct physical evidence now covers installation, device capability interrogation, multi-gigabyte reference-based storage, a genuine 4 GB import, force-stop persistence, persisted URI state, privacy diagnostics, and large HEVC playback below 3 GB. Remaining open gates are >3 GB preview/seek, reboot persistence, physical missing/relink behavior, memory/thermal measurement, and accessibility.
 
-Overall Step 1: **PARTIAL** until those required physical gates are recorded.
+Overall Step 1: **PARTIAL** until those remaining required physical gates are recorded.
