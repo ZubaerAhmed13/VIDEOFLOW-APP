@@ -61,7 +61,7 @@ private val VideoFlowTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 34.sp,
         lineHeight = 40.sp,
-        letterSpacing = (-0.5).sp,
+        letterSpacing = (-0.5f).sp,
     ),
     headlineLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
