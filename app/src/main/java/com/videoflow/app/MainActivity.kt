@@ -12,12 +12,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.videoflow.app.ui.HomeViewModel
-import com.videoflow.app.ui.ProjectViewModel
 import com.videoflow.app.ui.screens.DeviceCapabilityScreen
 import com.videoflow.app.ui.screens.DiagnosticsScreen
+import com.videoflow.app.ui.screens.EditorScreen
 import com.videoflow.app.ui.screens.HomeScreen
-import com.videoflow.app.ui.screens.ProjectScreen
 import com.videoflow.app.ui.screens.SettingsScreen
+import com.videoflow.app.ui.screens.Step2ProjectScreen
 import com.videoflow.app.ui.theme.VideoFlowTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -46,11 +46,22 @@ private fun VideoFlowNavigation() {
             route = "project/{id}",
             arguments = listOf(navArgument("id") { type = NavType.StringType })
         ) { entry ->
-            val vm: ProjectViewModel = hiltViewModel()
-            ProjectScreen(
+            val id = requireNotNull(entry.arguments?.getString("id"))
+            Step2ProjectScreen(
+                id = id,
+                onBack = { nav.popBackStack() },
+                onOpenEditor = { nav.navigate("editor/$id") },
+                vm = hiltViewModel()
+            )
+        }
+        composable(
+            route = "editor/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.StringType })
+        ) { entry ->
+            EditorScreen(
                 id = requireNotNull(entry.arguments?.getString("id")),
                 onBack = { nav.popBackStack() },
-                vm = vm
+                vm = hiltViewModel()
             )
         }
         composable("settings") {

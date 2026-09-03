@@ -28,11 +28,16 @@ import androidx.media3.ui.PlayerView
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun NativeVideoPlayer(uri: String, modifier: Modifier = Modifier) {
+fun NativeVideoPlayer(
+    uri: String,
+    modifier: Modifier = Modifier,
+    startPositionMs: Long = 0L,
+    showControls: Boolean = true
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var playbackError by remember(uri) { mutableStateOf<String?>(null) }
-    val player = remember(uri) {
+    var playbackError by remember(uri, startPositionMs) { mutableStateOf<String?>(null) }
+    val player = remember(uri, startPositionMs) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
             addListener(object : Player.Listener {
@@ -41,6 +46,7 @@ fun NativeVideoPlayer(uri: String, modifier: Modifier = Modifier) {
                 }
             })
             prepare()
+            seekTo(startPositionMs.coerceAtLeast(0L))
         }
     }
 
@@ -64,12 +70,15 @@ fun NativeVideoPlayer(uri: String, modifier: Modifier = Modifier) {
             factory = { viewContext ->
                 PlayerView(viewContext).apply {
                     this.player = player
-                    useController = true
+                    useController = showControls
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    contentDescription = "Video preview with playback and seek controls"
+                    contentDescription = "Native video preview"
                 }
             },
-            update = { it.player = player },
+            update = {
+                it.player = player
+                it.useController = showControls
+            },
             modifier = modifier.heightIn(min = 220.dp, max = 420.dp)
         )
         playbackError?.let {
