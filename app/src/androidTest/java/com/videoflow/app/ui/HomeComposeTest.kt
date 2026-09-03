@@ -1,6 +1,7 @@
 package com.videoflow.app.ui
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
@@ -19,7 +20,8 @@ class HomeComposeTest {
     @Test
     fun homeNewProjectProjectDetailAndAddMediaAffordanceWork() {
         rule.onNodeWithText("VideoFlow").fetchSemanticsNode()
-        rule.onNodeWithText("New Project", useUnmergedTree = true).performClick()
+        rule.onNodeWithContentDescription("Settings").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("New Project").performClick()
 
         val projectNameField = rule.onNodeWithText("Project name")
         projectNameField.performTextClearance()
@@ -28,10 +30,10 @@ class HomeComposeTest {
         rule.onNodeWithText("Create", useUnmergedTree = true).performClick()
         rule.waitUntil(5_000) {
             runCatching {
-                rule.onNodeWithText("Add Media", useUnmergedTree = true).fetchSemanticsNode()
+                rule.onNodeWithContentDescription("Add media").fetchSemanticsNode()
                 true
             }.getOrDefault(false)
         }
-        rule.onNodeWithText("Add Media", useUnmergedTree = true).fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Add media").fetchSemanticsNode()
     }
 }
