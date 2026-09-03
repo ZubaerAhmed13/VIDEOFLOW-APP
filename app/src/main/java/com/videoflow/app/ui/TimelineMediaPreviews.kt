@@ -41,17 +41,18 @@ fun WaveformPreview(
     modifier: Modifier = Modifier,
     color: Color = Color.White
 ) {
-    if (peaks.isNullOrEmpty()) return
+    val waveform = peaks ?: return
+    if (waveform.isEmpty()) return
     Canvas(modifier = modifier) {
         val centerY = size.height / 2f
         val visibleBins = max(1, size.width.toInt())
-        val stride = max(1, ceil(peaks.size.toDouble() / visibleBins.toDouble()).toInt())
+        val stride = max(1, ceil(waveform.size.toDouble() / visibleBins.toDouble()).toInt())
         var outputIndex = 0
         var sourceIndex = 0
-        while (sourceIndex < peaks.size && outputIndex < visibleBins) {
+        while (sourceIndex < waveform.size && outputIndex < visibleBins) {
             var peak = 0f
-            val end = (sourceIndex + stride).coerceAtMost(peaks.size)
-            for (index in sourceIndex until end) peak = max(peak, peaks[index].coerceIn(0f, 1f))
+            val end = (sourceIndex + stride).coerceAtMost(waveform.size)
+            for (index in sourceIndex until end) peak = max(peak, waveform[index].coerceIn(0f, 1f))
             val x = if (visibleBins <= 1) 0f else outputIndex.toFloat() / (visibleBins - 1).toFloat() * size.width
             val halfHeight = peak * centerY
             drawLine(
