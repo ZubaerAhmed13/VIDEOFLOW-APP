@@ -17,35 +17,36 @@ class TrackLifecycleService @Inject constructor(
     private val db: VideoFlowDatabase,
     private val editorRepository: EditorRepository
 ) {
-    suspend fun deleteTrack(projectId: String, trackId: String, confirmed: Boolean): DeletedTrackBundle =
+    suspend fun deleteTrack(projectId: String, trackId: String, confirmed: Boolean): DeletedTrackBundle {
+        val editor = editorRepository.load(projectId)
+        val track = editor.timeline.tracks.firstOrNull { it.id == trackId } ?: error("Track not found")
+        if (track.locked) throw LockedTrackException("Track ${track.name} is locked")
+        val clips = editor.timeline.clips.filter { it.trackId == trackId }
+        val text = editor.timeline.textOverlays.filter { it.trackId == trackId }
+        val images = editor.timeline.imageOverlays.filter { it.trackId == trackId }
+        val ownerIds = buildSet {
+            addAll(clips.map { it.id })
+            addAll(text.map { it.id })
+            addAll(images.map { it.id })
+        }
+        val keyframes = editor.timeline.keyframes.filter { it.ownerId in ownerIds }
+        val itemCount = clips.size + text.size + images.size
+        if (itemCount > 0 && !confirmed) {
+            throw TrackDeleteConfirmationRequired(track.name, itemCount)
+        }
+
         withContext(Dispatchers.IO) {
             db.withTransaction {
-                val editor = editorRepository.load(projectId)
-                val track = editor.timeline.tracks.firstOrNull { it.id == trackId }
-                    ?: error("Track not found")
-                if (track.locked) throw LockedTrackException("Track ${track.name} is locked")
-                val clips = editor.timeline.clips.filter { it.trackId == trackId }
-                val text = editor.timeline.textOverlays.filter { it.trackId == trackId }
-                val images = editor.timeline.imageOverlays.filter { it.trackId == trackId }
-                val ownerIds = buildSet {
-                    addAll(clips.map { it.id })
-                    addAll(text.map { it.id })
-                    addAll(images.map { it.id })
-                }
-                val keyframes = editor.timeline.keyframes.filter { it.ownerId in ownerIds }
-                val itemCount = clips.size + text.size + images.size
-                if (itemCount > 0 && !confirmed) {
-                    throw TrackDeleteConfirmationRequired(track.name, itemCount)
-                }
                 ownerIds.forEach { db.editorDao().deleteKeyframes(it) }
                 db.editorDao().deleteTrack(trackId)
                 val project = db.projectDao().get(projectId)?.project
                 if (project != null) {
                     db.projectDao().update(project.copy(projectFormatVersion = 2, updatedAt = System.currentTimeMillis()))
                 }
-                DeletedTrackBundle(track, clips, text, images, keyframes)
             }
         }
+        return DeletedTrackBundle(track, clips, text, images, keyframes)
+    }
 }
 
 class TrackDeleteConfirmationRequired(
