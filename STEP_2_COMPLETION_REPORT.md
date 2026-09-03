@@ -2,9 +2,22 @@
 
 ## Overall status
 
-PARTIAL
+**PARTIAL — implementation and automated certification are complete; required physical-device acceptance remains NOT VERIFIED.**
 
-The professional editor core is implemented. COMPLETE is intentionally withheld until the required physical-device editor workflow is verified. Hosted automated certification is performed by `.github/workflows/android-step2-ci.yml` and must be green for the exact merge SHA.
+The professional editor core is implemented and merged. Hosted automated certification is green on the merged `main` baseline. COMPLETE is intentionally withheld only because the Step 2 master acceptance specification requires a real Android-device editor/proxy workflow before final acceptance.
+
+## Certified automated baseline
+
+- Pre-merge certified Step 2 head: `055c9ee9f2f369f24a8a27008bdb6f704659e8de`
+- Merged `main` SHA: `a343178fa3c42a58986d9264ff2697e0dfe7fa78`
+- Step 2 post-merge run: `33795909104` (#27) — **PASS**
+- Step 1 regression post-merge run: `33795909032` (#83) — **PASS**
+- JVM tests: **43 PASS / 0 FAIL / 0 SKIP**
+- API 35 instrumentation: **19 PASS / 0 FAIL / 0 SKIP**
+- Android lint: **PASS**
+- Debug APK: **PASS**
+- Test-signed Release APK: **PASS**
+- Runtime bundle integrity: **PASS**
 
 ## Implemented core
 
@@ -38,45 +51,67 @@ PASS — Autosaved Room project state and explicit create/restore/delete snapsho
 
 ## Certification matrix
 
-Step 1 regression: NOT VERIFIED for the final completion commit until CI concludes.
-Room migration 1→2: PASS.
-Project format 2: PASS.
-Media Bin: PASS.
-Video asset: PASS.
-Audio asset: PASS.
-Image asset: PASS.
-Video tracks: PASS.
-Audio tracks: PASS.
-Overlay tracks: PASS.
-Track create/delete/rename/lock/mute/solo/visibility: PASS.
-Clip add/move/track move/trim/split/duplicate/delete: PASS.
-Same-source multi-clip: PASS.
-Snapping/zoom/scroll/playhead/transport/timeline duration: PASS.
-Long timeline: PASS.
-Project FPS rational: PASS.
-Transform/crop/rotate/flip/opacity/speed: PASS.
-Text: PASS.
-Image overlay: PASS.
-Audio-only clip/clip gain/track gain/mute/solo/fade/waveform: PASS.
-Proxy generation/persistence/cancellation/invalidation/deletion/offline-edit architecture: PASS.
-Thumbnail pipeline: PASS.
-PreviewPlan: PASS.
-RenderPlan foundation: PASS.
-Timeline preview: PASS.
-Overlay preview: PASS.
-Generic/linear/hold keyframes and keyframe preview/split: PASS.
-Undo/redo/redo invalidation/gesture coalescing: PASS.
-Autosave: PASS.
-Snapshot create/restore/delete: PASS.
-Force-stop persistence: PARTIAL — state architecture is persistent; final physical acceptance is NOT VERIFIED.
-Activity recreation: PARTIAL — architecture/UI state is designed for recreation; final device acceptance is NOT VERIFIED.
-Large source timeline: PARTIAL — architecture is bounded; Step 2 physical multi-GB workflow is NOT VERIFIED.
-Physical device: NOT VERIFIED.
-Unit tests: NOT VERIFIED for the final completion commit until CI concludes.
-Instrumentation: NOT VERIFIED for the final completion commit until CI concludes.
-Lint: NOT VERIFIED for the final completion commit until CI concludes.
-Debug APK: NOT VERIFIED for the final completion commit until CI concludes.
-Release APK: NOT VERIFIED for the final completion commit until CI concludes.
+| Area | Result |
+|---|---|
+| Step 1 regression on merged Step 2 SHA | PASS |
+| Room migration 1→2 | PASS |
+| Project format 2 | PASS |
+| Media Bin | PASS |
+| Video/audio/image assets | PASS |
+| Video/audio/overlay tracks | PASS |
+| Track create/delete/rename/lock/mute/solo/visibility | PASS |
+| Clip add/move/track move/trim/split/duplicate/delete | PASS |
+| Same-source multi-clip | PASS |
+| Snapping/zoom/scroll/playhead/transport/timeline duration | PASS |
+| Long-timeline model | PASS |
+| Rational project FPS | PASS |
+| Transform/crop/rotate/flip/opacity/speed | PASS |
+| Text overlay | PASS |
+| Image overlay | PASS |
+| Audio-only clip/gain/mute/solo/fade/waveform | PASS |
+| Proxy generation/persistence/cancellation/invalidation/deletion architecture | PASS |
+| Thumbnail pipeline | PASS |
+| PreviewPlan | PASS |
+| RenderPlan foundation | PASS |
+| Timeline/overlay preview automated coverage | PASS |
+| Generic LINEAR/HOLD keyframes + preview/split behavior | PASS |
+| Undo/redo/redo invalidation/coalescing | PASS |
+| Autosave | PASS |
+| Snapshot create/restore/delete | PASS |
+| JVM tests | PASS — 43/43 |
+| API 35 instrumentation | PASS — 19/19 |
+| Android lint | PASS |
+| Debug APK | PASS |
+| Test-signed Release APK | PASS |
+| Source ZIP and checksums | PASS |
+| Post-merge Step 1 API 35 regression | PASS |
+| Physical force-stop restore of full Step 2 editor state | NOT VERIFIED |
+| Physical real-media proxy generation | NOT VERIFIED |
+| Physical edited timeline playback/scrub | NOT VERIFIED |
+| Physical multi-GB Step 2 workflow | NOT VERIFIED — preferred source case |
+| Physical memory/storage/ANR observation | NOT VERIFIED |
+| Required Step 2 physical-device editor workflow | NOT VERIFIED — hard blocker |
+
+## Artifact identity
+
+- Debug APK SHA-256: `28499e7d441c17fface88ff4b03580689721132fa715d37bee4c746d58b856aa`
+- AndroidTest APK SHA-256: `ddaa63153adc70a30a5f4624ec532119e147850e2b46ae617d31ec812912a28e`
+- Release APK SHA-256: `97debc2ae5c96273872b2ca09244a107a26bed13dcb4eaa3906ed14804ff49da`
+- Source ZIP SHA-256: `c874530829da527820a3e1e9a391e1f43ceccde5d50181d41e43128043347262`
+
+Post-merge Step 2 artifacts:
+
+- `VideoFlow-Android-Step2-Runtime-Bundle` — ID `9909293881`
+- `VideoFlow-Android-Step2-Build-Certification` — ID `9909295620`
+- `VideoFlow-Android-Step2-Emulator-Certification` — ID `9909410212`
+
+## Required physical acceptance
+
+The authoritative procedure is `STEP_2_PHYSICAL_DEVICE_CERTIFICATION.md`. Objective evidence can be collected with `scripts/step2-physical-certification.sh`.
+
+The physical scenario must use at least one real video, one real image and one real audio clip and must exercise import, proxy generation, clip add/move/trim/split/duplicate/delete, text/image overlays, scale/rotation/opacity, audio gain/fade, two keyframes and animation preview, Undo/Redo, snapshot, force-stop/reopen and restored continued editing. A multi-gigabyte source already validated in Step 1 is preferred.
+
+Until every required physical row is PASS, the truthful overall status remains **PARTIAL** even though the software implementation and automated certification are complete.
 
 ## Deliverables
 
@@ -85,10 +120,10 @@ CI produces:
 - `VideoFlow_Android_Step2_Debug.apk`
 - `VideoFlow_Android_Step2_Release.apk` (test signed; production signing belongs to Step 5)
 - `VideoFlow_Android_Step2_Source.zip`
-- required architecture/test/completion documents
+- Step 2 architecture/test/completion/physical-certification documents
 - `SHA256SUMS.txt`
 - exact automated test-count files
 
 ## Boundary
 
-Step 3 final rendering/export, Step 4 AI Watermark Studio and Step 5 production release hardening have not been started by this Step 2 completion work.
+Step 3 final rendering/export, Step 4 AI Watermark Studio and Step 5 production release hardening remain outside Step 2 and have not been substituted for missing physical evidence.

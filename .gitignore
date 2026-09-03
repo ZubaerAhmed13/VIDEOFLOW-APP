@@ -11,3 +11,5 @@ captures/
 app/src/androidTest/assets/
 app/src/debug/assets/
 gradle/wrapper/gradle-wrapper.jar
+.step2-physical-session
+step2-physical-evidence/
