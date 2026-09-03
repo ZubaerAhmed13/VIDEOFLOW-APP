@@ -2,6 +2,7 @@ package com.videoflow.app.data.media
 
 import android.content.ContentResolver
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
@@ -41,6 +42,52 @@ class MediaAnalyzer @Inject constructor(@ApplicationContext context: Context) {
     suspend fun analyze(uri: Uri): Result = withContext(Dispatchers.IO) {
         currentCoroutineContext().ensureActive()
         val (name, size) = queryNameSize(uri)
+        val mimeType = resolver.getType(uri)
+        if (mimeType?.startsWith("image/") == true) {
+            return@withContext analyzeImage(uri, name, size, mimeType)
+        }
+        analyzeAudioVideo(uri, name, size, mimeType)
+    }
+
+    private fun analyzeImage(uri: Uri, name: String, size: Long?, mimeType: String): Result {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        try {
+            resolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, options)
+            } ?: throw FileNotFoundException("Unable to open image source")
+        } catch (t: Throwable) {
+            if (t is FileNotFoundException) throw t
+            throw CorruptedMediaException("Android could not read image bounds", t)
+        }
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            throw CorruptedMediaException("Image dimensions are unavailable or unsupported")
+        }
+        return Result(
+            displayName = name,
+            mimeType = mimeType,
+            sizeBytes = size,
+            metadata = MediaTechnicalMetadata(
+                durationUs = null,
+                width = options.outWidth,
+                height = options.outHeight,
+                rotationDegrees = 0,
+                frameRate = null,
+                videoCodecMime = null,
+                audioCodecMime = null,
+                audioSampleRate = null,
+                audioChannelCount = null,
+                videoTracks = emptyList(),
+                audioTracks = emptyList()
+            )
+        )
+    }
+
+    private fun analyzeAudioVideo(
+        uri: Uri,
+        name: String,
+        size: Long?,
+        mimeType: String?
+    ): Result {
         val extractor = MediaExtractor()
         try {
             val opened = resolver.openFileDescriptor(uri, "r")
@@ -56,7 +103,6 @@ class MediaAnalyzer @Inject constructor(@ApplicationContext context: Context) {
             val videos = mutableListOf<VideoTrackInfo>()
             val audios = mutableListOf<AudioTrackInfo>()
             for (index in 0 until extractor.trackCount) {
-                currentCoroutineContext().ensureActive()
                 val format = extractor.getTrackFormat(index)
                 val mime = format.string(MediaFormat.KEY_MIME)
                 if (mime?.startsWith("video/") == true) {
@@ -94,9 +140,9 @@ class MediaAnalyzer @Inject constructor(@ApplicationContext context: Context) {
             val primaryVideo = videos.firstOrNull()
             val primaryAudio = audios.firstOrNull()
             val duration = (videos.mapNotNull { it.durationUs } + audios.mapNotNull { it.durationUs }).maxOrNull()
-            Result(
+            return Result(
                 displayName = name,
-                mimeType = resolver.getType(uri),
+                mimeType = mimeType,
                 sizeBytes = size,
                 metadata = MediaTechnicalMetadata(
                     durationUs = duration,
@@ -120,13 +166,7 @@ class MediaAnalyzer @Inject constructor(@ApplicationContext context: Context) {
     private fun queryNameSize(uri: Uri): Pair<String, Long?> {
         var name = "Media"
         var size: Long? = null
-        resolver.query(
-            uri,
-            arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-            null,
-            null,
-            null
-        )?.use { cursor ->
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
@@ -165,15 +205,7 @@ class UriFingerprintService @Inject constructor(@ApplicationContext context: Con
                     else -> -1L
                 }
                 if (stableSize < 0L) {
-                    return@withContext weakFirst(
-                        uri = uri,
-                        sizeHint = sizeHint,
-                        durationUs = durationUs,
-                        width = width,
-                        height = height,
-                        note = "Provider did not expose a stable size",
-                        job = job
-                    )
+                    return@withContext weakFirst(uri, sizeHint, durationUs, width, height, "Provider did not expose a stable size", job)
                 }
 
                 FileInputStream(pfd.fileDescriptor).use { input ->
@@ -192,15 +224,7 @@ class UriFingerprintService @Inject constructor(@ApplicationContext context: Con
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
                     } catch (_: Throwable) {
-                        weakFirst(
-                            uri = uri,
-                            sizeHint = stableSize,
-                            durationUs = durationUs,
-                            width = width,
-                            height = height,
-                            note = "Provider does not support reliable random seek",
-                            job = job
-                        )
+                        weakFirst(uri, stableSize, durationUs, width, height, "Provider does not support reliable random seek", job)
                     }
                 }
             } ?: FingerprintResult(
