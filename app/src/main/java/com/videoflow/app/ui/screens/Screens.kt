@@ -81,6 +81,7 @@ fun HomeScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { dialog = true },
+                modifier = Modifier.semantics { contentDescription = "New Project" },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("New Project") }
             )
@@ -145,6 +146,9 @@ fun ProjectScreen(id: String, onBack: () -> Unit, vm: ProjectViewModel) {
     val project by vm.project.collectAsState()
     val importState by vm.importState.collectAsState()
     val message by vm.message.collectAsState()
+    val isVerifying by vm.isVerifying.collectAsState()
+    val pendingDuplicate by vm.pendingDuplicate.collectAsState()
+    val pendingWeakRelink by vm.pendingWeakRelink.collectAsState()
     var relinkAsset by remember { mutableStateOf<String?>(null) }
 
     val add = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -193,6 +197,9 @@ fun ProjectScreen(id: String, onBack: () -> Unit, vm: ProjectViewModel) {
                     Text(importStateLabel(importState))
                 }
             }
+            if (isVerifying) {
+                item { Text("Checking source…", style = MaterialTheme.typography.bodyMedium) }
+            }
             project?.mediaAssets?.forEach { media ->
                 item(key = media.id) {
                     MediaCard(
@@ -206,6 +213,54 @@ fun ProjectScreen(id: String, onBack: () -> Unit, vm: ProjectViewModel) {
                 }
             }
         }
+    }
+
+    pendingDuplicate?.let {
+        AlertDialog(
+            onDismissRequest = vm::cancelDuplicate,
+            title = { Text("Media already in project") },
+            text = { Text("This media is already part of the project. No second reference has been saved yet.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { vm.confirmDuplicate(id) },
+                    modifier = Modifier.semantics { contentDescription = "Add duplicate media anyway" }
+                ) { Text("Add Anyway") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = vm::cancelDuplicate,
+                    modifier = Modifier.semantics { contentDescription = "Cancel duplicate media" }
+                ) { Text("Cancel") }
+            }
+        )
+    }
+
+    pendingWeakRelink?.let { validation ->
+        AlertDialog(
+            onDismissRequest = vm::cancelWeakRelink,
+            title = { Text("VideoFlow cannot strongly verify this media") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("The selected document provider only allows weak identity verification. Technical characteristics match the saved source.")
+                    validation.selectedName?.let { Text("Selected: $it") }
+                    if (validation.selectedWidth != null && validation.selectedHeight != null) {
+                        Text("Current: ${validation.selectedWidth}×${validation.selectedHeight} • ${formatDurationUs(validation.selectedDurationUs)} • ${formatBytes(validation.selectedSizeBytes)}")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { vm.confirmWeakRelink(id) },
+                    modifier = Modifier.semantics { contentDescription = "Use this weakly verified source" }
+                ) { Text("Use This Source") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = vm::cancelWeakRelink,
+                    modifier = Modifier.semantics { contentDescription = "Cancel weak relink" }
+                ) { Text("Cancel") }
+            }
+        )
     }
 
     message?.let { text ->
@@ -225,14 +280,33 @@ private fun MediaCard(media: MediaAsset, onLocate: () -> Unit) {
             Text("${media.width ?: "?"}×${media.height ?: "?"} • ${formatDurationUs(media.durationUs)} • ${formatBytes(media.sizeBytes)}")
             Text("Video: ${media.videoCodecMime ?: "none"} • Audio: ${media.audioCodecMime ?: "none"}")
             Text("Tracks: ${media.videoTrackCount} video • ${media.audioTrackCount} audio")
-            if (media.sourceStatus == SourceStatus.AVAILABLE) {
-                NativeVideoPlayer(media.sourceUri, Modifier.fillMaxWidth())
-            } else {
-                Text(
-                    "Original media unavailable\nVideoFlow cannot currently access this source.",
-                    color = MaterialTheme.colorScheme.error
-                )
-                Button(onClick = onLocate) { Text("Locate Original") }
+            when (media.sourceStatus) {
+                SourceStatus.AVAILABLE -> NativeVideoPlayer(media.sourceUri, Modifier.fillMaxWidth())
+                SourceStatus.CHANGED -> {
+                    Text(
+                        "Original media appears to have changed",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text("VideoFlow can access this location, but the current media no longer matches the source saved with this project. Playback is blocked until the original is safely located.")
+                    Text("Saved: ${media.displayName} • ${media.width ?: "?"}×${media.height ?: "?"} • ${formatDurationUs(media.durationUs)} • ${formatBytes(media.sizeBytes)}")
+                    LocateOriginalButton(onLocate)
+                }
+                SourceStatus.UNKNOWN -> {
+                    Text(
+                        "Source identity could not be verified",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Text("VideoFlow can access this source but cannot currently verify it with the saved identity. Playback is blocked for safety.")
+                    LocateOriginalButton(onLocate)
+                }
+                else -> {
+                    Text(
+                        "Original media unavailable\nVideoFlow cannot currently access this source (${media.sourceStatus.name}).",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    LocateOriginalButton(onLocate)
+                }
             }
             Text(
                 "Access: ${if (media.permissionPersisted) "persisted URI permission" else "provider did not confirm persistent access"}",
@@ -244,6 +318,14 @@ private fun MediaCard(media: MediaAsset, onLocate: () -> Unit) {
             )
         }
     }
+}
+
+@Composable
+private fun LocateOriginalButton(onLocate: () -> Unit) {
+    Button(
+        onClick = onLocate,
+        modifier = Modifier.semantics { contentDescription = "Locate Original" }
+    ) { Text("Locate Original") }
 }
 
 private fun importStateLabel(state: ImportState): String = when (state) {
@@ -274,9 +356,15 @@ fun SettingsScreen(onBack: () -> Unit, onDevice: () -> Unit, onDiagnostics: () -
             Modifier.padding(padding).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Button(onClick = onDevice, modifier = Modifier.fillMaxWidth()) { Text("Device Capability") }
-            OutlinedButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) { Text("Diagnostics") }
-            Text("Privacy: Step 1 performs media analysis and playback locally. No telemetry or upload SDK is included.")
+            Button(
+                onClick = onDevice,
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Device Capability" }
+            ) { Text("Device Capability") }
+            OutlinedButton(
+                onClick = onDiagnostics,
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Diagnostics" }
+            ) { Text("Diagnostics") }
+            Text("Privacy: Step 1 performs media analysis and playback locally. No telemetry or upload SDK is included, and project metadata is excluded from Android backup/transfer.")
         }
     }
 }
@@ -366,6 +454,7 @@ fun DiagnosticsScreen(onBack: () -> Unit, vm: DeviceViewModel) {
             Text("Codec entries ${device.codecs.size}")
             Text("Bounded local diagnostic events ${vm.diagnostics.size}")
             Text("Runtime network permission: not requested")
+            Text("Android backup/transfer: disabled")
         }
     }
 }
