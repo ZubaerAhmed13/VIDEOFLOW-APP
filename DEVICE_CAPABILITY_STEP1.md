@@ -36,22 +36,48 @@ The application reports detected capability rather than assuming every device su
 
 API-35 instrumentation includes actual Android runtime codec-list interrogation and completed successfully in main run #43 as part of **OK (16 tests)**.
 
-## Physical-device capability evidence
+## Physical-device capability evidence — PASS
 
-Actual target-phone results remain **NOT VERIFIED** until the certified Debug APK is installed on a real device and the Device Capability screen is recorded.
+The certified Debug APK was executed on a physical Motorola edge 60 and the Device Capability / Diagnostics screens were recorded.
 
-| Physical capability | Status |
+### Physical device profile
+
+| Field | Result |
 |---|---|
-| H.264 decode | NOT VERIFIED |
-| H.264 encode | NOT VERIFIED |
-| H.264 4K30 | NOT VERIFIED |
-| H.264 4K60 | NOT VERIFIED |
-| HEVC decode | NOT VERIFIED |
-| HEVC encode | NOT VERIFIED |
-| HEVC 4K30 | NOT VERIFIED |
-| HEVC 4K60 | NOT VERIFIED |
-| VP9 | NOT VERIFIED |
-| AV1 | NOT VERIFIED |
-| Actual physical RAM/storage profile | NOT VERIFIED |
+| Manufacturer / model | motorola motorola edge 60 |
+| Android API | 35 |
+| ABI | arm64-v8a |
+| CPU cores | 8 |
+| RAM | 11.16 GB |
+| Available storage | 357.70 GB |
+| Database version | 1 |
+| Persisted media read permissions | 3 |
+| Runtime network permission | not requested |
+| Android backup/transfer | disabled |
 
-Unsupported physical codecs are not a Step 1 failure by themselves. Incorrect/fabricated detection would be a failure; the physical test must record the device's truthful result.
+### Physical codec result
+
+| Capability | Physical result |
+|---|---|
+| H.264 / AVC decode | PASS — hardware supported |
+| H.264 / AVC encode | PASS — hardware supported |
+| H.264 4K30 decode | PASS — supported |
+| H.264 4K30 encode | PASS — supported |
+| H.264 4K60 decode | PASS — truthful result: not supported |
+| H.264 4K60 encode | PASS — truthful result: not supported |
+| HEVC decode | PASS — hardware supported |
+| HEVC encode | PASS — hardware supported |
+| HEVC 4K30 decode | PASS — supported |
+| HEVC 4K30 encode | PASS — supported |
+| HEVC 4K60 decode | PASS — truthful result: not supported |
+| HEVC 4K60 encode | PASS — truthful result: not supported |
+| VP9 decode | PASS — hardware supported |
+| VP9 encode | PASS — truthful result: not detected |
+| VP9 4K30 decode | PASS — supported |
+| VP9 4K60 decode | PASS — truthful result: not supported |
+| AV1 decode | PASS — software/vendor reported |
+| AV1 encode | PASS — software/vendor reported |
+| AV1 4K30 decode/encode | PASS — truthful result: not supported |
+| AV1 4K60 decode/encode | PASS — truthful result: not supported |
+
+Unsupported physical codecs or frame-rate/resolution combinations are not Step 1 failures. The Step 1 requirement is truthful interrogation and reporting; the physical screen now confirms that behavior on the tested device.
