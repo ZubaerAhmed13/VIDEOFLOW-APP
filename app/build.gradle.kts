@@ -25,7 +25,7 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            // Step 1 produces a locally installable test-signed release. No private key is committed.
+            // Step 2 continues to produce a locally installable test-signed release. No private key is committed.
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -77,8 +77,12 @@ dependencies {
     implementation("androidx.room:room-ktx:2.8.3")
     ksp("androidx.room:room-compiler:2.8.3")
 
+    // Keep every Media3 module on one version. Transformer/effect are used for local editor proxies only.
+    implementation("androidx.media3:media3-common:1.11.0")
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-ui:1.11.0")
+    implementation("androidx.media3:media3-transformer:1.11.0")
+    implementation("androidx.media3:media3-effect:1.11.0")
 
     implementation("com.google.dagger:hilt-android:2.60.1")
     ksp("com.google.dagger:hilt-android-compiler:2.60.1")
