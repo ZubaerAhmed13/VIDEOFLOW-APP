@@ -20,6 +20,8 @@ Random access uses `ParcelFileDescriptor` → `FileInputStream` → `FileChannel
 
 ## Certification status
 
-Automated structural Long/offset coverage: implemented and subject to CI.
+Automated structural `Long` / offset coverage: **PASS**.
 
-A genuine encoded >3 GB physical-device import/playback/late-seek/save/reopen test, source-storage delta measurement, reboot-persistence test, and profiler memory scaling remain physical-device certification gates and must not be reported as PASS until actually measured.
+GitHub Actions run `33734581374` (run #8) also passed the Android build, unit, lint and API-35 instrumentation gates, including a Room persistence test that stores and reloads 10 GB media-size metadata.
+
+A genuine encoded >3 GB physical-device import/playback/late-seek/save/reopen test, source-storage delta measurement, reboot-persistence test, and profiler memory/thermal measurement remain **NOT VERIFIED** physical-device certification gates and must not be reported as PASS until actually measured.
