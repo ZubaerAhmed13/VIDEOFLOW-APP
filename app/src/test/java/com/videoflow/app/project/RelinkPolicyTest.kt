@@ -1,8 +1,11 @@
 package com.videoflow.app.project
 
+import com.videoflow.app.data.media.CorruptedMediaException
+import com.videoflow.app.data.media.UnsupportedMediaException
 import com.videoflow.app.data.project.IdentityMatch
 import com.videoflow.app.data.project.MediaIdentity
 import com.videoflow.app.data.project.RelinkIdentity
+import com.videoflow.app.data.project.SourceAccessFailurePolicy
 import com.videoflow.app.data.project.SourceIdentityPolicy
 import com.videoflow.app.domain.model.FingerprintStrength
 import com.videoflow.app.domain.model.SourceStatus
@@ -10,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.FileNotFoundException
 
 class RelinkPolicyTest {
     private val strongOriginal = identity("abc", FingerprintStrength.STRONG_THREE_REGION)
@@ -156,6 +160,15 @@ class RelinkPolicyTest {
                 identity("abc", FingerprintStrength.WEAK_FIRST_REGION_ONLY)
             )
         )
+    }
+
+    @Test
+    fun sourceAccessFailuresMapToSpecificStatuses() {
+        assertEquals(SourceStatus.PERMISSION_LOST, SourceAccessFailurePolicy.classify(SecurityException()))
+        assertEquals(SourceStatus.MISSING, SourceAccessFailurePolicy.classify(FileNotFoundException()))
+        assertEquals(SourceStatus.UNSUPPORTED, SourceAccessFailurePolicy.classify(UnsupportedMediaException("unsupported")))
+        assertEquals(SourceStatus.CORRUPTED, SourceAccessFailurePolicy.classify(CorruptedMediaException("corrupt")))
+        assertEquals(SourceStatus.UNKNOWN, SourceAccessFailurePolicy.classify(IllegalStateException("other")))
     }
 
     private fun identity(
