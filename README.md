@@ -2,13 +2,17 @@
 
 Native Android implementation of VideoFlow. This repository is dedicated to the Android application and does not contain the earlier web/WASM editor.
 
-## Current release gate
+## Project status
 
-**Step 1 — Native Android foundation + large-media reference architecture**
+### Step 1 — Native Android foundation + large-media reference architecture
 
-Step 2 must not begin until Step 1 passes the complete certification gate.
+**STATUS: COMPLETE — accepted 2026-09-03**
 
-### Step 1 principles
+Step 1 passed its automated build/unit/lint/emulator certification and was subsequently validated on a physical Android device. Physical evidence includes persisted URI access, reference-based multi-gigabyte media handling, bounded large-file fingerprinting, physical playback/seek, successful reported 4 GB import, metadata-scale app storage, force-stop persistence, reboot persistence and truthful codec/4K capability interrogation.
+
+Step 2 may now begin from the accepted Step 1 baseline.
+
+### Step 1 principles preserved
 
 - Kotlin + Jetpack Compose + Material 3
 - Android native media APIs and Media3; no WebView/browser wrapper
@@ -20,7 +24,7 @@ Step 2 must not begin until Step 1 passes the complete certification gate.
 - Device codec/capability diagnostics
 - No `INTERNET` permission, ads, or telemetry
 
-See `README_ANDROID.md` and the architecture documents for details.
+See `README_ANDROID.md`, `STEP_1_COMPLETION_REPORT.md`, `PHYSICAL_DEVICE_CERTIFICATION.md`, and the architecture documents for detailed evidence.
 
 ## Gradle wrapper bootstrap
 
