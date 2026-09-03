@@ -239,27 +239,13 @@ jobs:
           emulator-boot-timeout: 600
           disk-size: 1536M
           script: |
-            set -eu
             mkdir -p step1-emulator-reports
             adb install -r step1-runtime/VideoFlow_Android_Step1_Debug.apk
             adb install -r step1-runtime/VideoFlow_Android_Step1_Debug-androidTest.apk
-            set +e
             adb shell am instrument -w -r com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step1-emulator-reports/instrumentation-output.txt 2>&1
-            TEST_EXIT=$?
-            set -e
             cat step1-emulator-reports/instrumentation-output.txt
-            if [ "$TEST_EXIT" -ne 0 ]; then
-              echo "Instrumentation command failed with exit code $TEST_EXIT"
-              exit "$TEST_EXIT"
-            fi
-            if grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step1-emulator-reports/instrumentation-output.txt; then
-              echo 'Instrumentation reported a test/runtime failure.'
-              exit 1
-            fi
-            if ! grep -E -q 'OK \([0-9]+ tests?\)' step1-emulator-reports/instrumentation-output.txt; then
-              echo 'Instrumentation did not report a complete successful test run.'
-              exit 1
-            fi
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step1-emulator-reports/instrumentation-output.txt
+            grep -E -q 'OK \([0-9]+ tests?\)' step1-emulator-reports/instrumentation-output.txt
 
       - name: Package emulator test reports
         if: always()
