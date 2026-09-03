@@ -15,6 +15,8 @@ import com.videoflow.app.data.media.CorruptedMediaException
 import com.videoflow.app.data.media.MediaAnalyzer
 import com.videoflow.app.data.media.UnsupportedMediaException
 import com.videoflow.app.data.media.UriFingerprintService
+import com.videoflow.app.domain.model.FingerprintResult
+import com.videoflow.app.domain.model.FingerprintStrength
 import com.videoflow.app.domain.model.ImportState
 import com.videoflow.app.domain.model.MediaAsset
 import com.videoflow.app.domain.model.SourceStatus
@@ -29,19 +31,37 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class PreparedMediaImport(
+    val entity: MediaAssetEntity
+)
+
 sealed interface AddMediaResult {
     data class Added(val asset: MediaAsset) : AddMediaResult
-    data class Duplicate(val asset: MediaAsset, val existingAssetId: String) : AddMediaResult
+    data class DuplicateCandidate(
+        val candidate: PreparedMediaImport,
+        val existingAssetId: String
+    ) : AddMediaResult
 }
 
+data class PreparedRelink(
+    val assetId: String,
+    val sourceUri: String,
+    val info: MediaAnalyzer.Result,
+    val fingerprint: FingerprintResult
+)
+
 data class RelinkValidation(
-    val matches: Boolean,
+    val match: IdentityMatch,
     val reason: String,
+    val prepared: PreparedRelink? = null,
     val selectedName: String? = null,
+    val selectedSizeBytes: Long? = null,
     val selectedWidth: Int? = null,
     val selectedHeight: Int? = null,
     val selectedDurationUs: Long? = null
-)
+) {
+    val matches: Boolean get() = match == IdentityMatch.STRONG_MATCH
+}
 
 @Singleton
 class ProjectRepository @Inject constructor(
@@ -112,14 +132,187 @@ class ProjectRepository @Inject constructor(
             height = info.metadata.height
         )
 
-        val duplicate = fingerprint.sha256?.let {
-            db.mediaAssetDao().findByFingerprint(projectId, it).firstOrNull()
-        } ?: db.mediaAssetDao().findByUri(projectId, uri.toString())
+        val entity = buildEntity(
+            projectId = projectId,
+            uri = uri,
+            info = info,
+            fingerprint = fingerprint,
+            permissionPersisted = permissionPersisted
+        )
+        val duplicate = findDuplicate(projectId, entity)
+        if (duplicate != null) {
+            onState(ImportState.Ready)
+            diagnosticLog.add(DiagnosticLevel.INFO, "Duplicate media candidate detected before database insert")
+            return@withContext AddMediaResult.DuplicateCandidate(
+                candidate = PreparedMediaImport(entity),
+                existingAssetId = duplicate.assetId
+            )
+        }
 
         onState(ImportState.Saving)
+        insertPrepared(entity)
+        onState(ImportState.Ready)
+        diagnosticLog.add(DiagnosticLevel.INFO, "Media import completed; persisted permission=$permissionPersisted")
+        AddMediaResult.Added(entity.toDomain())
+    }
+
+    suspend fun confirmAddDuplicate(candidate: PreparedMediaImport): MediaAsset = withContext(Dispatchers.IO) {
+        insertPrepared(candidate.entity)
+        diagnosticLog.add(DiagnosticLevel.INFO, "Duplicate media reference added after explicit confirmation")
+        candidate.entity.toDomain()
+    }
+
+    suspend fun verifySource(asset: MediaAsset): SourceStatus = withContext(Dispatchers.IO) {
+        val uri = Uri.parse(asset.sourceUri)
+        val status = try {
+            resolver.openFileDescriptor(uri, "r")?.use { } ?: return@withContext persistVerifiedStatus(asset, SourceStatus.MISSING)
+            val info = analyzer.analyze(uri)
+            val fingerprint = fingerprinter.fingerprint(
+                uri = uri,
+                sizeHint = info.sizeBytes,
+                durationUs = info.metadata.durationUs,
+                width = info.metadata.width,
+                height = info.metadata.height
+            )
+            SourceIdentityPolicy.classifyCurrentSource(
+                original = asset.toIdentity(),
+                current = identityOf(info, fingerprint)
+            )
+        } catch (_: SecurityException) {
+            SourceStatus.PERMISSION_LOST
+        } catch (_: FileNotFoundException) {
+            SourceStatus.MISSING
+        } catch (_: UnsupportedMediaException) {
+            SourceStatus.UNSUPPORTED
+        } catch (_: CorruptedMediaException) {
+            SourceStatus.CORRUPTED
+        } catch (_: Throwable) {
+            SourceStatus.UNKNOWN
+        }
+        persistVerifiedStatus(asset, status)
+    }
+
+    suspend fun updateStatus(assetId: String, status: SourceStatus) = withContext(Dispatchers.IO) {
+        val entity = db.mediaAssetDao().get(assetId) ?: return@withContext
+        db.mediaAssetDao().update(entity.copy(sourceStatus = status.name))
+    }
+
+    suspend fun relink(assetId: String, newUri: Uri): RelinkValidation = withContext(Dispatchers.IO) {
+        val old = db.mediaAssetDao().get(assetId)
+            ?: return@withContext RelinkValidation(IdentityMatch.MISMATCH, "Original media reference was not found.")
+
+        val info = analyzer.analyze(newUri)
+        val fingerprint = fingerprinter.fingerprint(
+            uri = newUri,
+            sizeHint = info.sizeBytes,
+            durationUs = info.metadata.durationUs,
+            width = info.metadata.width,
+            height = info.metadata.height
+        )
+        val selectedIdentity = identityOf(info, fingerprint)
+        val decision = SourceIdentityPolicy.classifyRelink(old.toIdentity(), selectedIdentity)
+        val prepared = PreparedRelink(assetId, newUri.toString(), info, fingerprint)
+
+        when (decision.match) {
+            IdentityMatch.STRONG_MATCH -> {
+                persistRelink(old, prepared)
+                diagnosticLog.add(DiagnosticLevel.INFO, "Strong relink identity validation passed")
+                RelinkValidation(
+                    match = IdentityMatch.STRONG_MATCH,
+                    reason = "Original media reconnected.",
+                    selectedName = info.displayName,
+                    selectedSizeBytes = info.sizeBytes,
+                    selectedWidth = info.metadata.width,
+                    selectedHeight = info.metadata.height,
+                    selectedDurationUs = info.metadata.durationUs
+                )
+            }
+            IdentityMatch.WEAK_MATCH -> RelinkValidation(
+                match = IdentityMatch.WEAK_MATCH,
+                reason = "VideoFlow cannot strongly verify this media. Technical characteristics and the weak provider-limited fingerprint match; explicit confirmation is required.",
+                prepared = prepared,
+                selectedName = info.displayName,
+                selectedSizeBytes = info.sizeBytes,
+                selectedWidth = info.metadata.width,
+                selectedHeight = info.metadata.height,
+                selectedDurationUs = info.metadata.durationUs
+            )
+            IdentityMatch.MISMATCH -> RelinkValidation(
+                match = IdentityMatch.MISMATCH,
+                reason = "This file does not match the saved original media. ${decision.reason}",
+                selectedName = info.displayName,
+                selectedSizeBytes = info.sizeBytes,
+                selectedWidth = info.metadata.width,
+                selectedHeight = info.metadata.height,
+                selectedDurationUs = info.metadata.durationUs
+            )
+            IdentityMatch.UNVERIFIABLE -> RelinkValidation(
+                match = IdentityMatch.UNVERIFIABLE,
+                reason = "VideoFlow cannot verify this selection strongly enough to relink it safely. ${decision.reason}",
+                selectedName = info.displayName,
+                selectedSizeBytes = info.sizeBytes,
+                selectedWidth = info.metadata.width,
+                selectedHeight = info.metadata.height,
+                selectedDurationUs = info.metadata.durationUs
+            )
+        }
+    }
+
+    suspend fun confirmWeakRelink(prepared: PreparedRelink): RelinkValidation = withContext(Dispatchers.IO) {
+        val old = db.mediaAssetDao().get(prepared.assetId)
+            ?: return@withContext RelinkValidation(IdentityMatch.MISMATCH, "Original media reference was not found.")
+        val decision = SourceIdentityPolicy.classifyRelink(old.toIdentity(), identityOf(prepared.info, prepared.fingerprint))
+        if (decision.match != IdentityMatch.WEAK_MATCH) {
+            return@withContext RelinkValidation(
+                match = decision.match,
+                reason = "Relink confirmation was rejected because the prepared identity is no longer a weak compatible match."
+            )
+        }
+        persistRelink(old, prepared)
+        diagnosticLog.add(DiagnosticLevel.INFO, "Weak relink accepted after explicit user confirmation")
+        RelinkValidation(IdentityMatch.WEAK_MATCH, "Original media reconnected with weak provider-limited verification.")
+    }
+
+    private suspend fun persistVerifiedStatus(asset: MediaAsset, status: SourceStatus): SourceStatus {
+        if (status != asset.sourceStatus) {
+            updateStatus(asset.id, status)
+            diagnosticLog.add(DiagnosticLevel.WARN, "Media source status changed to ${status.name}")
+        }
+        return status
+    }
+
+    private suspend fun findDuplicate(projectId: String, candidate: MediaAssetEntity): MediaAssetEntity? {
+        db.mediaAssetDao().findByUri(projectId, candidate.sourceUri)?.let { return it }
+        val sha = candidate.fingerprintSha256 ?: return null
+        val possible = db.mediaAssetDao().findByFingerprint(projectId, sha)
+        return possible.firstOrNull { existing ->
+            SourceIdentityPolicy.classifyRelink(existing.toIdentity(), candidate.toIdentity()).match in setOf(
+                IdentityMatch.STRONG_MATCH,
+                IdentityMatch.WEAK_MATCH
+            )
+        }
+    }
+
+    private suspend fun insertPrepared(entity: MediaAssetEntity) {
         val now = System.currentTimeMillis()
+        db.withTransaction {
+            db.mediaAssetDao().insert(entity)
+            val project = db.projectDao().get(entity.projectId)?.project
+            if (project != null) {
+                db.projectDao().update(project.copy(updatedAt = now, lastOpenedAt = now))
+            }
+        }
+    }
+
+    private fun buildEntity(
+        projectId: String,
+        uri: Uri,
+        info: MediaAnalyzer.Result,
+        fingerprint: FingerprintResult,
+        permissionPersisted: Boolean
+    ): MediaAssetEntity {
         val primaryVideo = info.metadata.videoTracks.firstOrNull()
-        val entity = MediaAssetEntity(
+        return MediaAssetEntity(
             assetId = UUID.randomUUID().toString(),
             projectId = projectId,
             sourceUri = uri.toString(),
@@ -151,74 +344,19 @@ class ProjectRepository @Inject constructor(
             fingerprintNote = fingerprint.note,
             permissionPersisted = permissionPersisted,
             sourceStatus = SourceStatus.AVAILABLE.name,
-            createdAt = now
+            createdAt = System.currentTimeMillis()
         )
-
-        db.withTransaction {
-            db.mediaAssetDao().insert(entity)
-            val project = db.projectDao().get(projectId)?.project
-            if (project != null) {
-                db.projectDao().update(project.copy(updatedAt = now, lastOpenedAt = now))
-            }
-        }
-
-        onState(ImportState.Ready)
-        diagnosticLog.add(DiagnosticLevel.INFO, "Media import completed; persisted permission=$permissionPersisted")
-        if (duplicate == null) AddMediaResult.Added(entity.toDomain())
-        else AddMediaResult.Duplicate(entity.toDomain(), duplicate.assetId)
     }
 
-    suspend fun verifySource(asset: MediaAsset): SourceStatus = withContext(Dispatchers.IO) {
-        val uri = Uri.parse(asset.sourceUri)
-        val status = try {
-            resolver.openFileDescriptor(uri, "r")?.use { } ?: return@withContext SourceStatus.MISSING
-            analyzer.analyze(uri)
-            SourceStatus.AVAILABLE
-        } catch (_: SecurityException) {
-            SourceStatus.PERMISSION_LOST
-        } catch (_: FileNotFoundException) {
-            SourceStatus.MISSING
-        } catch (_: UnsupportedMediaException) {
-            SourceStatus.UNSUPPORTED
-        } catch (_: CorruptedMediaException) {
-            SourceStatus.CORRUPTED
-        } catch (_: Throwable) {
-            SourceStatus.UNKNOWN
-        }
-        if (status != asset.sourceStatus) {
-            updateStatus(asset.id, status)
-            diagnosticLog.add(DiagnosticLevel.WARN, "Media source status changed to ${status.name}")
-        }
-        status
-    }
-
-    suspend fun updateStatus(assetId: String, status: SourceStatus) = withContext(Dispatchers.IO) {
-        val entity = db.mediaAssetDao().get(assetId) ?: return@withContext
-        db.mediaAssetDao().update(entity.copy(sourceStatus = status.name))
-    }
-
-    suspend fun relink(assetId: String, newUri: Uri): RelinkValidation = withContext(Dispatchers.IO) {
-        val old = db.mediaAssetDao().get(assetId)
-            ?: return@withContext RelinkValidation(false, "Original media reference was not found.")
-
-        val info = analyzer.analyze(newUri)
-        val fingerprint = fingerprinter.fingerprint(
-            uri = newUri,
-            sizeHint = info.sizeBytes,
-            durationUs = info.metadata.durationUs,
-            width = info.metadata.width,
-            height = info.metadata.height
-        )
-
-        val validation = validateRelink(old, info, fingerprint.sha256)
-        if (!validation.matches) return@withContext validation
-
+    private suspend fun persistRelink(old: MediaAssetEntity, prepared: PreparedRelink) {
+        val newUri = Uri.parse(prepared.sourceUri)
+        val info = prepared.info
+        val fingerprint = prepared.fingerprint
         val permissionPersisted = persistReadPermission(newUri)
         val primaryVideo = info.metadata.videoTracks.firstOrNull()
-        diagnosticLog.add(DiagnosticLevel.INFO, "Relink fingerprint validation passed")
         db.mediaAssetDao().update(
             old.copy(
-                sourceUri = newUri.toString(),
+                sourceUri = prepared.sourceUri,
                 displayName = info.displayName,
                 mimeType = info.mimeType,
                 sizeBytes = info.sizeBytes,
@@ -240,33 +378,47 @@ class ProjectRepository @Inject constructor(
                 colorTransfer = primaryVideo?.colorTransfer,
                 colorRange = primaryVideo?.colorRange,
                 hdrStaticInfoPresent = primaryVideo?.hdrStaticInfoPresent == true,
+                fingerprintSha256 = fingerprint.sha256,
+                fingerprintAlgorithm = fingerprint.algorithm,
+                fingerprintStrength = fingerprint.strength.name,
+                fingerprintSampledBytes = fingerprint.sampledBytes,
+                fingerprintNote = fingerprint.note,
                 permissionPersisted = permissionPersisted,
                 sourceStatus = SourceStatus.AVAILABLE.name
             )
         )
-        validation.copy(reason = "Original media reconnected.")
     }
 
-    private fun validateRelink(
-        old: MediaAssetEntity,
-        selected: MediaAnalyzer.Result,
-        selectedFingerprint: String?
-    ): RelinkValidation {
-        val selectedMeta = selected.metadata
-        val matches = RelinkIdentity.matches(
-            original = MediaIdentity(old.fingerprintSha256, old.sizeBytes, old.width, old.height),
-            selected = MediaIdentity(selectedFingerprint, selected.sizeBytes, selectedMeta.width, selectedMeta.height)
-        )
-        return RelinkValidation(
-            matches = matches,
-            reason = if (matches) "Fingerprint and known technical identity match."
-            else "This file does not match the original media.",
-            selectedName = selected.displayName,
-            selectedWidth = selectedMeta.width,
-            selectedHeight = selectedMeta.height,
-            selectedDurationUs = selectedMeta.durationUs
-        )
-    }
+    private fun MediaAsset.toIdentity(): MediaIdentity = MediaIdentity(
+        fingerprintSha256 = fingerprintSha256,
+        fingerprintStrength = fingerprintStrength,
+        sizeBytes = sizeBytes,
+        durationUs = durationUs,
+        width = width,
+        height = height,
+        videoCodecMime = videoCodecMime
+    )
+
+    private fun MediaAssetEntity.toIdentity(): MediaIdentity = MediaIdentity(
+        fingerprintSha256 = fingerprintSha256,
+        fingerprintStrength = runCatching { FingerprintStrength.valueOf(fingerprintStrength) }
+            .getOrDefault(FingerprintStrength.UNAVAILABLE),
+        sizeBytes = sizeBytes,
+        durationUs = durationUs,
+        width = width,
+        height = height,
+        videoCodecMime = videoCodecMime
+    )
+
+    private fun identityOf(info: MediaAnalyzer.Result, fingerprint: FingerprintResult): MediaIdentity = MediaIdentity(
+        fingerprintSha256 = fingerprint.sha256,
+        fingerprintStrength = fingerprint.strength,
+        sizeBytes = info.sizeBytes,
+        durationUs = info.metadata.durationUs,
+        width = info.metadata.width,
+        height = info.metadata.height,
+        videoCodecMime = info.metadata.videoCodecMime
+    )
 
     private fun persistReadPermission(uri: Uri): Boolean {
         return try {
