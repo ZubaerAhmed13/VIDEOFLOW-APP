@@ -1,7 +1,10 @@
 package com.videoflow.app.data.project
 
+import com.videoflow.app.data.media.CorruptedMediaException
+import com.videoflow.app.data.media.UnsupportedMediaException
 import com.videoflow.app.domain.model.FingerprintStrength
 import com.videoflow.app.domain.model.SourceStatus
+import java.io.FileNotFoundException
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -129,6 +132,16 @@ object SourceIdentityPolicy {
 
     private fun FingerprintStrength.isStrong(): Boolean =
         this == FingerprintStrength.FULL_SMALL_FILE || this == FingerprintStrength.STRONG_THREE_REGION
+}
+
+object SourceAccessFailurePolicy {
+    fun classify(error: Throwable): SourceStatus = when (error) {
+        is SecurityException -> SourceStatus.PERMISSION_LOST
+        is FileNotFoundException -> SourceStatus.MISSING
+        is UnsupportedMediaException -> SourceStatus.UNSUPPORTED
+        is CorruptedMediaException -> SourceStatus.CORRUPTED
+        else -> SourceStatus.UNKNOWN
+    }
 }
 
 /** Compatibility helper retained for existing callers/tests; exact match means strong only. */
