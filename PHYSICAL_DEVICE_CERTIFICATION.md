@@ -6,7 +6,7 @@ Certified software baseline: `9e414a65afa8a0a6235a794f056e61846b631bce`
 
 GitHub Actions baseline: `33746474694` (run #43) — automated status **PASS**.
 
-Physical-device certification status: **NOT VERIFIED**.
+Physical-device certification status: **PARTIAL**.
 
 Use only **PASS / FAIL / PARTIAL / NOT VERIFIED / NOT APPLICABLE** for recorded results.
 
@@ -39,12 +39,28 @@ The requirement is truthful detection, not universal support.
 | H.264 encode | NOT VERIFIED |
 | H.264 4K30 | NOT VERIFIED |
 | H.264 4K60 | NOT VERIFIED |
-| HEVC decode | NOT VERIFIED |
+| HEVC decode | PARTIAL — physical 1280×690 HEVC playback observed; capability screen not yet recorded |
 | HEVC encode | NOT VERIFIED |
 | HEVC 4K30 | NOT VERIFIED |
 | HEVC 4K60 | NOT VERIFIED |
 | VP9 | NOT VERIFIED |
 | AV1 | NOT VERIFIED |
+
+## Physical evidence captured on 2026-09-03
+
+The certified debug APK was installed and launched successfully on a physical Android phone.
+
+Observed physical-media evidence:
+
+- small H.264/AAC MP4: 5.85 MB, 1360×768, playback observed
+- large HEVC source A: 1.26 GB, 1280×690, 03:17:20, 1 video + 2 audio tracks
+- large HEVC source B: 1.03 GB, 1280×720, 02:36:22
+- large-source fingerprint mode: `STRONG_THREE_REGION`
+- sampled bytes for the 1.26 GB source: 12.00 MB
+- persisted URI permission displayed by the app
+- playback of the 1.26 GB HEVC source observed at 02:05:09 of 03:17:21, approximately 63% into the file
+
+This is valid physical evidence for reference-based import, bounded fingerprinting and large-source playback below the >3 GB certification threshold. It does not replace the genuine >3 GB gate.
 
 ## Test source record
 
@@ -52,14 +68,14 @@ Do not record personal media content. A sanitized fixture name is sufficient.
 
 | Field | Result |
 |---|---|
-| Sanitized filename | NOT VERIFIED |
-| Size | NOT VERIFIED |
-| Duration | NOT VERIFIED |
-| Resolution | NOT VERIFIED |
+| Sanitized filename | Physical HEVC large-source A |
+| Size | 1.26 GB — below mandatory >3 GB threshold |
+| Duration | 03:17:20 |
+| Resolution | 1280×690 |
 | FPS | NOT VERIFIED |
-| Video codec | NOT VERIFIED |
-| Audio codec | NOT VERIFIED |
-| Storage/provider | NOT VERIFIED |
+| Video codec | HEVC |
+| Audio codec | AAC-family MIME reported as `audio/mp4a-latm` |
+| Storage/provider | Android document picker; persisted URI permission displayed |
 
 ## Required procedure and result record
 
@@ -84,13 +100,20 @@ Do not record personal media content. A sanitized fixture name is sufficient.
 
 | Physical gate | Result |
 |---|---|
+| Certified APK install/launch | PASS |
+| Project creation UI | PASS |
+| System document-picker Add Media flow | PASS |
+| Persisted URI permission shown on device | PASS |
+| Large-source bounded fingerprint below 3 GB | PASS — 1.26 GB source, 12.00 MB sampled |
+| Large-source physical playback below 3 GB | PASS — 1.26 GB HEVC source |
+| Deep seek below 3 GB | PARTIAL — playback observed at ~63%; 25/50/75/95 sequence not yet completed |
 | Genuine >3 GB import | NOT VERIFIED |
-| Source status AVAILABLE after import | NOT VERIFIED |
-| Preview | NOT VERIFIED |
-| 25% seek | NOT VERIFIED |
-| 50% seek | NOT VERIFIED |
-| 75% seek | NOT VERIFIED |
-| 95% seek | NOT VERIFIED |
+| Source status AVAILABLE after >3 GB import | NOT VERIFIED |
+| >3 GB preview | NOT VERIFIED |
+| >3 GB 25% seek | NOT VERIFIED |
+| >3 GB 50% seek | NOT VERIFIED |
+| >3 GB 75% seek | NOT VERIFIED |
+| >3 GB 95% seek | NOT VERIFIED |
 | Force-stop/reopen | NOT VERIFIED |
 | Reboot/reopen | NOT VERIFIED |
 | Missing source behavior | NOT VERIFIED |
@@ -103,12 +126,19 @@ Do not record personal media content. A sanitized fixture name is sufficient.
 
 | Field | Result |
 |---|---|
-| App storage before | NOT VERIFIED |
-| App storage after | NOT VERIFIED |
-| Delta | NOT VERIFIED |
-| Source copied into app storage | NOT VERIFIED |
+| App storage before media additions | 23.69 MB total |
+| User data before | 147 kB |
+| Cache before | 180 kB |
+| App storage after 3 media items | 23.74 MB total |
+| User data after | 201 kB |
+| Cache after | 180 kB |
+| Total-storage delta | approximately +0.05 MB (~50 kB) |
+| User-data delta | +54 kB |
+| Imported media represented in project | approximately 2.30 GB total (1.26 GB + 1.03 GB + 5.85 MB) |
+| Source-sized copy observed | PASS — no source-sized increase observed for the ~2.30 GB imported set |
+| Mandatory >3 GB storage-delta gate | NOT VERIFIED |
 
-PASS criterion: the app-storage increase remains metadata/cache scale and does not approximate the >3 GB source size.
+This is strong physical evidence that VideoFlow is storing references/metadata rather than copying the tested multi-gigabyte source set into app-private storage. The mandatory >3 GB single-source storage-delta test remains separate and NOT VERIFIED.
 
 ## Memory evidence
 
@@ -136,6 +166,8 @@ This specific provider case may remain NOT VERIFIED when no suitable physical pr
 
 Automated implementation baseline: **PASS**.
 
-Physical-device Step 1 certification: **NOT VERIFIED**.
+Physical-device Step 1 certification: **PARTIAL**.
 
-Overall Step 1: **PARTIAL** until the required physical evidence is recorded.
+The reference-based storage design, persisted URI display, bounded large-source fingerprinting and physical playback below 3 GB now have direct device evidence. The mandatory genuine >3 GB source, complete >3 GB seek sequence, force-stop/reboot persistence, physical relink/missing-source flow, memory/thermal measurements, capability screen and accessibility checks remain open.
+
+Overall Step 1: **PARTIAL** until those required physical gates are recorded.
