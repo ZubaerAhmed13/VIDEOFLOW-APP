@@ -12,17 +12,24 @@ object TimelineEngine {
         require(newSourceStartUs in 0 until clip.sourceEndUs)
         val deltaSourceUs = newSourceStartUs - clip.sourceStartUs
         val deltaTimelineUs = (deltaSourceUs.toDouble() / clip.speed).roundToLong()
-        val next = clip.copy(
+        val newDurationUs = timelineDurationUs(clip.sourceEndUs - newSourceStartUs, clip.speed)
+        return clip.copy(
             sourceStartUs = newSourceStartUs,
-            timelineStartUs = (clip.timelineStartUs + deltaTimelineUs).coerceAtLeast(0)
+            timelineStartUs = (clip.timelineStartUs + deltaTimelineUs).coerceAtLeast(0),
+            fadeInUs = clip.fadeInUs.coerceAtMost(newDurationUs),
+            fadeOutUs = clip.fadeOutUs.coerceAtMost(newDurationUs)
         )
-        return clampFades(next)
     }
 
     fun trimEnd(clip: TimelineClip, newSourceEndUs: Long, sourceDurationUs: Long): TimelineClip {
         require(newSourceEndUs > clip.sourceStartUs)
         require(newSourceEndUs <= sourceDurationUs)
-        return clampFades(clip.copy(sourceEndUs = newSourceEndUs))
+        val newDurationUs = timelineDurationUs(newSourceEndUs - clip.sourceStartUs, clip.speed)
+        return clip.copy(
+            sourceEndUs = newSourceEndUs,
+            fadeInUs = clip.fadeInUs.coerceAtMost(newDurationUs),
+            fadeOutUs = clip.fadeOutUs.coerceAtMost(newDurationUs)
+        )
     }
 
     fun splitClip(clip: TimelineClip, playheadUs: Long, rightClipId: String): Pair<TimelineClip, TimelineClip> {
@@ -33,13 +40,19 @@ object TimelineEngine {
             clip.sourceStartUs + 1,
             clip.sourceEndUs - 1
         )
-        val left = clampFades(clip.copy(sourceEndUs = sourceSplitUs))
-        val right = clampFades(
-            clip.copy(
-                id = rightClipId,
-                timelineStartUs = playheadUs,
-                sourceStartUs = sourceSplitUs
-            )
+        val leftDurationUs = timelineDurationUs(sourceSplitUs - clip.sourceStartUs, clip.speed)
+        val rightDurationUs = timelineDurationUs(clip.sourceEndUs - sourceSplitUs, clip.speed)
+        val left = clip.copy(
+            sourceEndUs = sourceSplitUs,
+            fadeInUs = clip.fadeInUs.coerceAtMost(leftDurationUs),
+            fadeOutUs = clip.fadeOutUs.coerceAtMost(leftDurationUs)
+        )
+        val right = clip.copy(
+            id = rightClipId,
+            timelineStartUs = playheadUs,
+            sourceStartUs = sourceSplitUs,
+            fadeInUs = clip.fadeInUs.coerceAtMost(rightDurationUs),
+            fadeOutUs = clip.fadeOutUs.coerceAtMost(rightDurationUs)
         )
         return left to right
     }
@@ -96,13 +109,8 @@ object TimelineEngine {
         return left to right
     }
 
-    private fun clampFades(clip: TimelineClip): TimelineClip {
-        val duration = clip.timelineDurationUs
-        return clip.copy(
-            fadeInUs = clip.fadeInUs.coerceAtMost(duration),
-            fadeOutUs = clip.fadeOutUs.coerceAtMost(duration)
-        )
-    }
+    private fun timelineDurationUs(sourceDurationUs: Long, speed: Double): Long =
+        (sourceDurationUs.toDouble() / speed).roundToLong().coerceAtLeast(1)
 }
 
 object KeyframeEvaluator {

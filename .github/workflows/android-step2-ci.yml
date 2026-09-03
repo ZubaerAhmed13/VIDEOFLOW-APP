@@ -80,19 +80,50 @@ jobs:
             exit 1
           fi
 
-      - name: Verify Step 2 schema and migration are present
+      - name: Verify Step 2 schema, migration and required documents
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'version = 2' app/src/main/java/com/videoflow/app/data/db/Entities.kt
           grep -q 'MIGRATION_1_2' app/src/main/java/com/videoflow/app/data/db/Migrations.kt
           grep -q 'addMigrations(MIGRATION_1_2)' app/src/main/java/com/videoflow/app/di/AppModule.kt
+          for doc in README_ANDROID.md TIMELINE_ARCHITECTURE.md PROXY_ARCHITECTURE.md PREVIEW_ENGINE.md KEYFRAME_ARCHITECTURE.md EDIT_HISTORY.md AUDIO_EDITING_STEP2.md LARGE_MEDIA_STEP2.md STEP_2_TEST_REPORT.md STEP_2_COMPLETION_REPORT.md; do
+            test -s "$doc"
+          done
 
       - name: Clean
         run: ./gradlew clean --stacktrace
 
       - name: Step 1 regression and Step 2 unit tests
         run: ./gradlew test --stacktrace
+
+      - name: Record exact JVM test counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob
+          import xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          files = glob.glob('app/build/test-results/**/*.xml', recursive=True)
+          if not files:
+              raise SystemExit('No JVM test result XML files found')
+          for path in files:
+              root = ET.parse(path).getroot()
+              suites = [root] if root.tag == 'testsuite' else list(root.findall('testsuite'))
+              for suite in suites:
+                  for key in totals:
+                      totals[key] += int(suite.attrib.get(key, '0'))
+          passed = totals['tests'] - totals['failures'] - totals['errors'] - totals['skipped']
+          text = (
+              f"Unit: {passed} PASS / {totals['failures'] + totals['errors']} FAIL / {totals['skipped']} SKIP\n"
+              f"Total executed/listed: {totals['tests']}\n"
+          )
+          print(text, end='')
+          open('STEP_2_UNIT_TEST_COUNTS.txt', 'w', encoding='utf-8').write(text)
+          if totals['failures'] or totals['errors']:
+              raise SystemExit('JVM tests contain failures/errors')
+          PY
 
       - name: Android lint
         run: ./gradlew lint --stacktrace
@@ -119,7 +150,7 @@ jobs:
           mkdir -p step2-runtime
           cp "$APP_APK" step2-runtime/VideoFlow_Android_Step2_Debug.apk
           cp "$TEST_APK" step2-runtime/VideoFlow_Android_Step2_Debug-androidTest.apk
-          cp "$RELEASE_APK" step2-runtime/VideoFlow_Android_Step2_Release-TestSigned.apk
+          cp "$RELEASE_APK" step2-runtime/VideoFlow_Android_Step2_Release.apk
           (
             cd step2-runtime
             sha256sum *.apk | tee SHA256SUMS.txt
@@ -140,14 +171,22 @@ jobs:
           set -u
           mkdir -p step2-deliverables/reports
           [ ! -f app/build/outputs/apk/debug/app-debug.apk ] || cp app/build/outputs/apk/debug/app-debug.apk step2-deliverables/VideoFlow_Android_Step2_Debug.apk
-          [ ! -f app/build/outputs/apk/release/app-release.apk ] || cp app/build/outputs/apk/release/app-release.apk step2-deliverables/VideoFlow_Android_Step2_Release-TestSigned.apk
+          [ ! -f app/build/outputs/apk/release/app-release.apk ] || cp app/build/outputs/apk/release/app-release.apk step2-deliverables/VideoFlow_Android_Step2_Release.apk
           cp -R app/build/reports step2-deliverables/reports/app-build-reports 2>/dev/null || true
-          cp STEP_2_IMPLEMENTATION_STATUS.md step2-deliverables/ 2>/dev/null || true
+          for doc in README_ANDROID.md TIMELINE_ARCHITECTURE.md PROXY_ARCHITECTURE.md PREVIEW_ENGINE.md KEYFRAME_ARCHITECTURE.md EDIT_HISTORY.md AUDIO_EDITING_STEP2.md LARGE_MEDIA_STEP2.md STEP_2_TEST_REPORT.md STEP_2_COMPLETION_REPORT.md STEP_2_IMPLEMENTATION_STATUS.md; do
+            [ ! -f "$doc" ] || cp "$doc" step2-deliverables/
+          done
+          [ ! -f STEP_2_UNIT_TEST_COUNTS.txt ] || cp STEP_2_UNIT_TEST_COUNTS.txt step2-deliverables/
+          {
+            echo "GitHub SHA: ${GITHUB_SHA:-unknown}"
+            echo "GitHub run: ${GITHUB_RUN_ID:-unknown}"
+            echo "Workflow: ${GITHUB_WORKFLOW:-unknown}"
+            echo "Build job automated gates must all be green for PASS."
+          } > step2-deliverables/CI_CERTIFICATION.txt
           git archive --format=zip --output=step2-deliverables/VideoFlow_Android_Step2_Source.zip HEAD || true
           cd step2-deliverables
           : > SHA256SUMS.txt
-          [ ! -f VideoFlow_Android_Step2_Source.zip ] || sha256sum VideoFlow_Android_Step2_Source.zip >> SHA256SUMS.txt
-          for apk in *.apk; do [ -f "$apk" ] && sha256sum "$apk" >> SHA256SUMS.txt || true; done
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%P\0' | sort -z | xargs -0 -r sha256sum >> SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload Step 2 build certification artifacts
@@ -197,6 +236,7 @@ jobs:
           set -euo pipefail
           test -f step2-runtime/VideoFlow_Android_Step2_Debug.apk
           test -f step2-runtime/VideoFlow_Android_Step2_Debug-androidTest.apk
+          test -f step2-runtime/VideoFlow_Android_Step2_Release.apk
           (cd step2-runtime && sha256sum -c SHA256SUMS.txt)
 
       - name: Enable KVM acceleration
@@ -238,6 +278,9 @@ jobs:
             cat step2-emulator-reports/instrumentation-output.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step2-emulator-reports/instrumentation-output.txt
             grep -E -q 'OK \([0-9]+ tests?\)' step2-emulator-reports/instrumentation-output.txt
+            COUNT=$(sed -nE 's/.*OK \(([0-9]+) tests?\).*/\1/p' step2-emulator-reports/instrumentation-output.txt | tail -1)
+            test -n "$COUNT"
+            printf 'Instrumentation: %s PASS / 0 FAIL / 0 SKIP\n' "$COUNT" | tee step2-emulator-reports/STEP_2_INSTRUMENTATION_COUNTS.txt
 
       - name: Package emulator reports
         if: always()
