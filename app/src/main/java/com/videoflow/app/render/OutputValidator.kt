@@ -26,6 +26,14 @@ data class OutputTrackInfo(
     val measuredFrameRate: Double? = null
 )
 
+data class OutputColourExpectation(
+    val colorStandard: Int? = null,
+    val colorRange: Int? = null,
+    val colorTransfer: Int? = null
+) {
+    val hasAny: Boolean get() = colorStandard != null || colorRange != null || colorTransfer != null
+}
+
 data class OutputValidationResult(
     val passed: Boolean,
     val fileSizeBytes: Long,
@@ -41,7 +49,8 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         expected: ResolvedExportSettings,
         expectedDurationUs: Long,
         expectAudio: Boolean,
-        expectedHdr: Boolean? = null
+        expectedHdr: Boolean? = null,
+        expectedColour: OutputColourExpectation? = null
     ): OutputValidationResult {
         val problems = mutableListOf<String>()
         val length = querySize(uri)
@@ -76,7 +85,7 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         } finally {
             extractor.release()
         }
-        validateTracks(video, audio, expected, expectedDurationUs, expectAudio, expectedHdr, problems)
+        validateTracks(video, audio, expected, expectedDurationUs, expectAudio, expectedHdr, expectedColour, problems)
         val duration = listOfNotNull(video?.durationUs, audio?.durationUs).maxOrNull()
         return OutputValidationResult(problems.isEmpty(), length, duration, video, audio, problems)
     }
@@ -86,7 +95,8 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         expected: ResolvedExportSettings,
         expectedDurationUs: Long,
         expectAudio: Boolean,
-        expectedHdr: Boolean? = null
+        expectedHdr: Boolean? = null,
+        expectedColour: OutputColourExpectation? = null
     ): OutputValidationResult {
         val problems = mutableListOf<String>()
         val length = file.takeIf { it.isFile }?.length() ?: 0L
@@ -115,7 +125,7 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         } finally {
             extractor.release()
         }
-        validateTracks(video, audio, expected, expectedDurationUs, expectAudio, expectedHdr, problems)
+        validateTracks(video, audio, expected, expectedDurationUs, expectAudio, expectedHdr, expectedColour, problems)
         val duration = listOfNotNull(video?.durationUs, audio?.durationUs).maxOrNull()
         return OutputValidationResult(problems.isEmpty(), length, duration, video, audio, problems)
     }
@@ -127,6 +137,7 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         expectedDurationUs: Long,
         expectAudio: Boolean,
         expectedHdr: Boolean?,
+        expectedColour: OutputColourExpectation?,
         problems: MutableList<String>
     ) {
         if (video == null) problems += "Output has no readable video track."
@@ -147,6 +158,7 @@ class OutputValidator(private val contentResolver: ContentResolver) {
                 problems += FrameCadenceVerifier.mismatchMessage(measured, expected.frameRate)
             }
             validateHdr(info, expected, expectedHdr, problems)
+            validateColour(info, expectedColour, problems)
         }
         if (expectAudio && audio == null) problems += "Output is missing expected audio."
         audio?.let {
@@ -180,6 +192,29 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         }
         if (expectedHdr == false && outputIsHdr) {
             problems += "SDR render unexpectedly produced HDR transfer characteristics."
+        }
+    }
+
+    private fun validateColour(
+        actual: OutputTrackInfo,
+        expected: OutputColourExpectation?,
+        problems: MutableList<String>
+    ) {
+        if (expected == null || !expected.hasAny) return
+        expected.colorStandard?.let { value ->
+            if (actual.colorStandard != value) {
+                problems += "Output colour standard ${actual.colorStandard} does not preserve homogeneous source value $value."
+            }
+        }
+        expected.colorRange?.let { value ->
+            if (actual.colorRange != value) {
+                problems += "Output colour range ${actual.colorRange} does not preserve homogeneous source value $value."
+            }
+        }
+        expected.colorTransfer?.let { value ->
+            if (actual.colorTransfer != value) {
+                problems += "Output colour transfer ${actual.colorTransfer} does not preserve homogeneous source value $value."
+            }
         }
     }
 
