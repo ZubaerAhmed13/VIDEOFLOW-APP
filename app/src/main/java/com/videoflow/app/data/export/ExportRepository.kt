@@ -30,7 +30,7 @@ class ExportRepository @Inject constructor(
         val project = db.projectDao().get(projectId)?.toDomain()
             ?: error("Project $projectId does not exist")
         FinalRenderPlanCompiler.compile(
-            editorPlan = PlanBuilder.render(editor.settings, editor.state),
+            editorPlan = PlanBuilder.render(editor.settings, editor.timeline),
             assets = project.mediaAssets
         )
     }
