@@ -55,7 +55,10 @@ class Step3CertificationContractTest {
             createdAt = 1L,
             updatedAt = 2L
         )
-        val render = PlanBuilder.render(settings, TimelineState(projectId = "project"))
+        val render = PlanBuilder.render(
+            settings,
+            TimelineState(projectId = "project", tracks = emptyList(), clips = emptyList())
+        )
         assertEquals(background, render.backgroundArgb)
     }
 
