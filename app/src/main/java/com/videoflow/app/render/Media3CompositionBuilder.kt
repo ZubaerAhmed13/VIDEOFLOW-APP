@@ -64,7 +64,7 @@ class Media3CompositionBuilder(
         val videoSequences = mutableListOf<EditedMediaItemSequence>()
         val layers = mutableListOf<RenderVisualLayer>()
 
-        val background = rasterAssets.createBackground(plan.editorPlan.let { 0xFF000000 })
+        val background = rasterAssets.createBackground(plan.editorPlan.backgroundArgb)
         videoSequences += singleImageSequence(background, 0L, plan.durationUs, settings)
         layers += RenderVisualLayer(RenderLayerKind.BACKGROUND, "__background__")
 
@@ -177,7 +177,10 @@ class Media3CompositionBuilder(
         val item = EditedMediaItem.Builder(clippedMediaItem(sourceUri, clip.sourceStartUs, clip.sourceEndUs))
             .setRemoveAudio(true)
             .setSpeed(ConstantSpeedProvider(clip.speed.toFloat()))
-            .setFrameRate(settings.frameRate.fps.roundToInt().coerceAtLeast(1))
+            // Media3 exposes an integer max-frame-rate here. Using the ceiling preserves an
+            // intrinsic fractional cadence such as 30000/1001 or 60000/1001 instead of forcing
+            // it down to 29/59. The encoded sample timestamps are certified after rendering.
+            .setFrameRate(kotlin.math.ceil(settings.frameRate.fps).toInt().coerceAtLeast(1))
             .setEffects(Effects(emptyList(), effects))
             .build()
         return EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO)).apply {
@@ -192,10 +195,16 @@ class Media3CompositionBuilder(
         durationUs: Long,
         settings: ResolvedExportSettings
     ): EditedMediaItemSequence {
-        val media = MediaItem.Builder().setUri(Uri.parse(sourceUri)).build()
+        val durationMs = ((durationUs.coerceAtLeast(1L) + 999L) / 1_000L).coerceAtLeast(1L)
+        val media = MediaItem.Builder()
+            .setUri(Uri.parse(sourceUri))
+            .setImageDurationMs(durationMs)
+            .build()
         val item = EditedMediaItem.Builder(media)
             .setDurationUs(durationUs.coerceAtLeast(1L))
-            .setFrameRate(settings.frameRate.fps.roundToInt().coerceAtLeast(1))
+            // Static layers are reused by the compositor. Keep their generated cadence at or
+            // below the requested rational rate so they cannot round a 29.97/59.94 video up.
+            .setFrameRate(settings.frameRate.fps.toInt().coerceAtLeast(1))
             .setRemoveAudio(true)
             .build()
         return EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO)).apply {
