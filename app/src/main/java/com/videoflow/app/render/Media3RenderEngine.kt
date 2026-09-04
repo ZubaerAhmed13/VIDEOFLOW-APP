@@ -22,6 +22,7 @@ import com.videoflow.app.domain.export.ExportProblem
 import com.videoflow.app.domain.export.ExportWarning
 import com.videoflow.app.domain.export.FinalRenderPlan
 import com.videoflow.app.domain.export.HdrPolicy
+import com.videoflow.app.domain.export.OriginalRenderSource
 import com.videoflow.app.domain.export.ResolvedExportSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -80,6 +81,14 @@ class Media3RenderEngine @Inject constructor(
         }.getOrElse {
             problems += ExportProblem(ExportFailureCode.STORAGE_FULL, "Output size estimate overflowed: ${it.message ?: "unknown error"}.")
             null
+        }
+
+        val visibleVideoSources = visibleVideoSources(plan)
+        if (hasMixedColourMetadata(visibleVideoSources)) {
+            warnings += ExportWarning(
+                "MIXED_SOURCE_COLOUR",
+                "Visible video sources use different colour metadata. Export keeps the GPU/HDR policy explicit, but a single output track cannot preserve conflicting source standards/ranges simultaneously."
+            )
         }
 
         val destinationProbe = probeDestination(destination)
@@ -146,8 +155,6 @@ class Media3RenderEngine @Inject constructor(
                 buildTransformer(preparation, completion, fallbackDetected).also {
                     activeTransformer = it
                     transformerForCleanup = it
-                    // The custom SAF muxer factory owns the actual destination. The path is only a
-                    // nonempty API token required by Transformer and is never written.
                     it.start(bundle.composition, File(jobRoot, "direct-saf-output.mp4").absolutePath)
                 }
             }
@@ -179,13 +186,15 @@ class Media3RenderEngine @Inject constructor(
 
             listener.onProgress(0.96f)
             val expectedHdr = expectedHdr(preparation.plan, preparation.settings.hdrPolicy)
+            val expectedColour = colourExpectation(preparation.plan, preparation.settings.hdrPolicy)
             val finalValidation = withContext(Dispatchers.IO) {
                 validator.validateUri(
                     preparation.destination.uri,
                     preparation.settings,
                     preparation.plan.durationUs,
                     expectsAudio(preparation.plan),
-                    expectedHdr
+                    expectedHdr,
+                    expectedColour
                 )
             }
             if (!finalValidation.passed) {
@@ -322,6 +331,40 @@ class Media3RenderEngine @Inject constructor(
         return plan.editorPlan.clips.any { clip ->
             clip.enabled && clip.trackId in audible && plan.originalSources[clip.assetId]?.audioCodecMime != null
         }
+    }
+
+    private fun visibleVideoSources(plan: FinalRenderPlan): List<OriginalRenderSource> {
+        val visibleVideoTrackIds = plan.editorPlan.tracks
+            .filter { it.type == TrackType.VIDEO && it.visible }
+            .map { it.id }
+            .toSet()
+        return plan.editorPlan.clips
+            .asSequence()
+            .filter { it.enabled && it.trackId in visibleVideoTrackIds }
+            .mapNotNull { plan.originalSources[it.assetId] }
+            .distinctBy { it.assetId }
+            .toList()
+    }
+
+    private fun hasMixedColourMetadata(sources: List<OriginalRenderSource>): Boolean {
+        fun <T> mixed(selector: (OriginalRenderSource) -> T?): Boolean =
+            sources.mapNotNull(selector).distinct().size > 1
+        return mixed { it.colorStandard } || mixed { it.colorRange } || mixed { it.colorTransfer }
+    }
+
+    private fun colourExpectation(plan: FinalRenderPlan, policy: HdrPolicy): OutputColourExpectation? {
+        if (policy == HdrPolicy.CONVERT_TO_SDR) return null
+        val sources = visibleVideoSources(plan)
+        if (sources.isEmpty()) return null
+        fun homogeneous(selector: (OriginalRenderSource) -> Int?): Int? {
+            val values = sources.mapNotNull(selector).distinct()
+            return values.singleOrNull()
+        }
+        return OutputColourExpectation(
+            colorStandard = homogeneous { it.colorStandard },
+            colorRange = homogeneous { it.colorRange },
+            colorTransfer = homogeneous { it.colorTransfer }
+        ).takeIf { it.hasAny }
     }
 
     private fun sourceHasHdr(plan: FinalRenderPlan): Boolean = plan.originalSources.values.any { source ->
