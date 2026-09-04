@@ -1,3 +1,5 @@
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.videoflow.app.export
 
 import androidx.media3.common.C
@@ -98,6 +100,14 @@ class ExportCoordinator @Inject constructor(
                 onProgress(status, 0f)
                 return@withLock status
             }
+            if (!execution.validation.passed) {
+                return@withLock fail(
+                    jobId,
+                    ExportFailureCode.VALIDATION_FAILED,
+                    "Native export returned an output that did not pass certification: ${execution.validation.problems.joinToString(" ")}",
+                    onProgress
+                )
+            }
 
             val outputVideo = execution.validation.video
             val hdrPreserved = outputVideo?.colorTransfer == C.COLOR_TRANSFER_HLG || outputVideo?.colorTransfer == C.COLOR_TRANSFER_ST2084
@@ -121,7 +131,7 @@ class ExportCoordinator @Inject constructor(
                     durationUs = execution.validation.durationUs ?: plan.durationUs,
                     fileSizeBytes = execution.outputBytes,
                     renderDurationMs = execution.renderDurationMs,
-                    validationPassed = execution.validation.passed,
+                    validationPassed = true,
                     createdAt = System.currentTimeMillis()
                 )
             )
