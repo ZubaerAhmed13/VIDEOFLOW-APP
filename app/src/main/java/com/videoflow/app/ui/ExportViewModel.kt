@@ -115,6 +115,7 @@ class ExportViewModel @Inject constructor(
     fun setVideoCodec(value: VideoCodec) = updateRequested { it.copy(videoCodec = value) }
     fun setQuality(value: ExportQuality) = updateRequested { it.copy(quality = value) }
     fun setBitrateMode(value: BitrateMode) = updateRequested { it.copy(bitrateMode = value) }
+    fun setAudioBitrate(value: Int) = updateRequested { it.copy(audioBitrate = value.coerceIn(64_000, 512_000)) }
     fun setHdrPolicy(value: HdrPolicy) = updateRequested { it.copy(hdrPolicy = value) }
 
     fun setDestination(uri: Uri?) {
