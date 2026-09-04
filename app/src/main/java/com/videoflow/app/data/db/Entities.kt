@@ -14,6 +14,9 @@ import androidx.room.Relation
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Update
+import com.videoflow.app.data.export.ExportDao
+import com.videoflow.app.data.export.ExportJobEntity
+import com.videoflow.app.data.export.ExportReportEntity
 import com.videoflow.app.domain.model.FingerprintStrength
 import com.videoflow.app.domain.model.MediaAsset
 import com.videoflow.app.domain.model.SourceStatus
@@ -370,9 +373,11 @@ interface SnapshotDao {
         ImageOverlayEntity::class,
         KeyframeEntity::class,
         ProxyEntity::class,
-        SnapshotEntity::class
+        SnapshotEntity::class,
+        ExportJobEntity::class,
+        ExportReportEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class VideoFlowDatabase : RoomDatabase() {
@@ -381,6 +386,7 @@ abstract class VideoFlowDatabase : RoomDatabase() {
     abstract fun editorDao(): EditorDao
     abstract fun proxyDao(): ProxyDao
     abstract fun snapshotDao(): SnapshotDao
+    abstract fun exportDao(): ExportDao
 }
 
 fun MediaAssetEntity.toDomain() = MediaAsset(
