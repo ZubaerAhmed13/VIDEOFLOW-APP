@@ -43,7 +43,7 @@ jobs:
           mkdir -p "$ANDROID_HOME/platforms"
           unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
           test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
-          yes | sdkmanager 'build-tools;36.0.0' >/dev/null
+          sdkmanager 'build-tools;36.0.0'
           test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
