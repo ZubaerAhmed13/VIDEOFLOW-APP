@@ -2,7 +2,7 @@ package com.videoflow.app.render
 
 import android.content.Context
 import android.media.MediaCodecInfo
-import android.os.StatFs
+import android.system.Os
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.AudioEncoderSettings
@@ -25,8 +25,6 @@ import com.videoflow.app.domain.export.HdrPolicy
 import com.videoflow.app.domain.export.ResolvedExportSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,10 +47,9 @@ class RenderPipelineException(
 ) : Exception(message, cause)
 
 /**
- * Native Step 3 renderer. Transformer writes to bounded app-private temporary storage because its
- * stable export API targets filesystem paths; the completed MP4 is then streamed to the user's SAF
- * destination with a fixed buffer. Original media remains reference-based and is never copied into
- * RAM or duplicated on import.
+ * Native Step 3 renderer. Source media remains SAF/reference based. Encoded MP4 samples are muxed
+ * directly into the user-selected SAF file descriptor; app-private storage is used only for small,
+ * bounded raster assets required by text/background composition, never for a second full-size MP4.
  */
 @Singleton
 @UnstableApi
@@ -61,7 +58,7 @@ class Media3RenderEngine @Inject constructor(
 ) : RenderEngine {
     private val renderMutex = Mutex()
     private val validator = OutputValidator(context.contentResolver)
-    private val exportRoot = File(context.filesDir, "exports")
+    private val exportRoot = File(context.cacheDir, "render-raster")
     @Volatile private var activeTransformer: Transformer? = null
     @Volatile private var activeCompletion: CompletableDeferred<ExportResult>? = null
 
@@ -85,31 +82,30 @@ class Media3RenderEngine @Inject constructor(
             null
         }
 
-        exportRoot.mkdirs()
-        val requiredBytes = estimate?.requiredBytes ?: Long.MAX_VALUE
-        if (estimate != null) {
-            val tempHeadroom = maxOf(256L * 1024L * 1024L, estimate.requiredBytes / 4L)
-            val totalTempRequirement = runCatching { Math.addExact(estimate.requiredBytes, tempHeadroom) }.getOrDefault(Long.MAX_VALUE)
-            val available = runCatching { StatFs(exportRoot.absolutePath).availableBytes }.getOrDefault(0L)
-            if (available < totalTempRequirement) {
-                problems += ExportProblem(
-                    ExportFailureCode.STORAGE_FULL,
-                    "Temporary export needs about $totalTempRequirement bytes but only $available bytes are available in app storage."
-                )
-            }
+        val destinationProbe = probeDestination(destination)
+        if (!destinationProbe.writable) {
+            problems += ExportProblem(ExportFailureCode.DESTINATION_IO, "The selected Android document destination cannot be opened for direct MP4 writing.")
         }
-
-        if (!canOpenDestination(destination)) {
-            problems += ExportProblem(ExportFailureCode.DESTINATION_IO, "The selected Android document destination cannot be opened for writing.")
+        if (estimate != null && destinationProbe.availableBytes != null && destinationProbe.availableBytes < estimate.requiredBytes) {
+            problems += ExportProblem(
+                ExportFailureCode.STORAGE_FULL,
+                "Destination needs about ${estimate.requiredBytes} bytes including safety margin, but only ${destinationProbe.availableBytes} bytes are available."
+            )
+        }
+        if (estimate != null && destinationProbe.availableBytes == null && destinationProbe.writable) {
+            warnings += ExportWarning(
+                "DESTINATION_CAPACITY_UNKNOWN",
+                "The SAF provider does not expose reliable free-space information. Estimated required size is ${estimate.requiredBytes} bytes; an out-of-space write will fail explicitly."
+            )
         }
 
         val selected = capability.selectedEncoder
         if (selected == null || problems.isNotEmpty()) {
-            return@withContext RenderPreparationResult(null, warnings, problems.distinct())
+            return@withContext RenderPreparationResult(null, warnings.distinct(), problems.distinct())
         }
         warnings += ExportWarning(
-            "TEMP_SAF_BRIDGE",
-            "Rendering uses bounded app-private temporary storage, then streams the completed MP4 to the selected Android document URI."
+            "DIRECT_SAF_MUX",
+            "Encoded samples are written directly to the selected Android document using a file-descriptor MP4 muxer; no second full-size output copy is created."
         )
         RenderPreparationResult(
             preparation = RenderPreparation(
@@ -117,9 +113,9 @@ class Media3RenderEngine @Inject constructor(
                 destination = destination,
                 settings = settings,
                 encoder = selected,
-                estimatedRequiredBytes = requiredBytes,
+                estimatedRequiredBytes = estimate?.requiredBytes ?: 0L,
                 warnings = warnings.distinct(),
-                usesTemporaryLocalOutput = true
+                usesTemporaryLocalOutput = false
             ),
             warnings = warnings.distinct(),
             problems = emptyList()
@@ -133,10 +129,10 @@ class Media3RenderEngine @Inject constructor(
         val startedAt = System.currentTimeMillis()
         val jobRoot = File(exportRoot, "job-${startedAt}-${Thread.currentThread().id}")
         val rasterRoot = File(jobRoot, "raster")
-        val tempOutput = File(jobRoot, "render.mp4")
         jobRoot.mkdirs()
         val fallbackDetected = AtomicBoolean(false)
         var transformerForCleanup: Transformer? = null
+        var completedSuccessfully = false
         try {
             listener.onProgress(0.01f)
             val bundle = withContext(Dispatchers.IO) {
@@ -150,7 +146,9 @@ class Media3RenderEngine @Inject constructor(
                 buildTransformer(preparation, completion, fallbackDetected).also {
                     activeTransformer = it
                     transformerForCleanup = it
-                    it.start(bundle.composition, tempOutput.absolutePath)
+                    // The custom SAF muxer factory owns the actual destination. The path is only a
+                    // nonempty API token required by Transformer and is never written.
+                    it.start(bundle.composition, File(jobRoot, "direct-saf-output.mp4").absolutePath)
                 }
             }
 
@@ -161,7 +159,7 @@ class Media3RenderEngine @Inject constructor(
                         val percent = withContext(Dispatchers.Main.immediate) {
                             if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) holder.progress else -1
                         }
-                        if (percent >= 0) listener.onProgress(0.04f + (percent.coerceIn(0, 100) / 100f) * 0.82f)
+                        if (percent >= 0) listener.onProgress(0.04f + (percent.coerceIn(0, 100) / 100f) * 0.90f)
                         delay(400)
                     }
                 }
@@ -178,30 +176,9 @@ class Media3RenderEngine @Inject constructor(
                     "Media3 requested a transformation fallback. Professional export refuses silent codec, HDR or resolution changes."
                 )
             }
-            listener.onProgress(0.87f)
 
+            listener.onProgress(0.96f)
             val expectedHdr = expectedHdr(preparation.plan, preparation.settings.hdrPolicy)
-            val localValidation = withContext(Dispatchers.IO) {
-                validator.validateFile(
-                    tempOutput,
-                    preparation.settings,
-                    preparation.plan.durationUs,
-                    expectsAudio(preparation.plan),
-                    expectedHdr
-                )
-            }
-            if (!localValidation.passed) {
-                throw RenderPipelineException(
-                    ExportFailureCode.VALIDATION_FAILED,
-                    "Native render failed validation before SAF copy: ${localValidation.problems.joinToString(" ")}"
-                )
-            }
-
-            listener.onProgress(0.90f)
-            withContext(Dispatchers.IO) {
-                copyToDestination(tempOutput, preparation.destination, listener)
-            }
-            listener.onProgress(0.98f)
             val finalValidation = withContext(Dispatchers.IO) {
                 validator.validateUri(
                     preparation.destination.uri,
@@ -214,10 +191,11 @@ class Media3RenderEngine @Inject constructor(
             if (!finalValidation.passed) {
                 throw RenderPipelineException(
                     ExportFailureCode.VALIDATION_FAILED,
-                    "SAF output failed post-copy validation: ${finalValidation.problems.joinToString(" ")}"
+                    "Direct SAF output failed validation: ${finalValidation.problems.joinToString(" ")}"
                 )
             }
             listener.onProgress(1f)
+            completedSuccessfully = true
             Result.success(
                 RenderExecutionResult(
                     outputUri = preparation.destination.uri,
@@ -237,6 +215,9 @@ class Media3RenderEngine @Inject constructor(
         } finally {
             activeTransformer = null
             activeCompletion = null
+            if (!completedSuccessfully) {
+                withContext(NonCancellable + Dispatchers.IO) { truncateDestination(preparation.destination) }
+            }
             withContext(NonCancellable + Dispatchers.IO) { jobRoot.deleteRecursively() }
         }
     }
@@ -289,6 +270,7 @@ class Media3RenderEngine @Inject constructor(
             .setVideoMimeType(preparation.settings.videoCodec.mimeType)
             .setAudioMimeType(preparation.settings.audioCodec.mimeType)
             .setEncoderFactory(encoderFactory)
+            .setMuxerFactory(SafMediaMuxerFactory(context.contentResolver, preparation.destination.uri))
             .addListener(listener)
             .build()
     }
@@ -314,30 +296,21 @@ class Media3RenderEngine @Inject constructor(
         }
     }
 
-    private fun canOpenDestination(destination: OutputDestination): Boolean = runCatching {
-        context.contentResolver.openFileDescriptor(destination.uri, "rw")?.use { true } ?: false
-    }.getOrDefault(false)
+    private data class DestinationProbe(val writable: Boolean, val availableBytes: Long?)
 
-    private fun copyToDestination(source: File, destination: OutputDestination, listener: RenderProgressListener) {
-        val total = source.length().coerceAtLeast(1L)
-        val pfd = context.contentResolver.openFileDescriptor(destination.uri, "rwt")
-            ?: throw RenderPipelineException(ExportFailureCode.DESTINATION_IO, "Destination file descriptor is unavailable.")
-        pfd.use { descriptor ->
-            FileInputStream(source).use { input ->
-                FileOutputStream(descriptor.fileDescriptor).use { output ->
-                    val buffer = ByteArray(COPY_BUFFER_BYTES)
-                    var copied = 0L
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        copied += read
-                        listener.onProgress(0.90f + (copied.toDouble() / total.toDouble()).coerceIn(0.0, 1.0).toFloat() * 0.07f)
-                    }
-                    output.flush()
-                    descriptor.fileDescriptor.sync()
-                }
-            }
+    private fun probeDestination(destination: OutputDestination): DestinationProbe = runCatching {
+        context.contentResolver.openFileDescriptor(destination.uri, "rw")?.use { pfd ->
+            val available = runCatching {
+                val stat = Os.fstatvfs(pfd.fileDescriptor)
+                Math.multiplyExact(stat.f_bavail, if (stat.f_frsize > 0) stat.f_frsize else stat.f_bsize)
+            }.getOrNull()
+            DestinationProbe(true, available)
+        } ?: DestinationProbe(false, null)
+    }.getOrDefault(DestinationProbe(false, null))
+
+    private fun truncateDestination(destination: OutputDestination) {
+        runCatching {
+            context.contentResolver.openFileDescriptor(destination.uri, "rwt")?.close()
         }
     }
 
@@ -374,9 +347,5 @@ class Media3RenderEngine @Inject constructor(
             else -> ExportFailureCode.UNKNOWN
         }
         return RenderPipelineException(code, t.message ?: t::class.java.simpleName, t)
-    }
-
-    private companion object {
-        const val COPY_BUFFER_BYTES = 1024 * 1024
     }
 }
