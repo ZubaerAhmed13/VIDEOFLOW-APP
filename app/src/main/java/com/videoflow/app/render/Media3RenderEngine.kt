@@ -21,6 +21,7 @@ import com.videoflow.app.domain.export.ExportMath
 import com.videoflow.app.domain.export.ExportProblem
 import com.videoflow.app.domain.export.ExportWarning
 import com.videoflow.app.domain.export.FinalRenderPlan
+import com.videoflow.app.domain.export.HdrPolicy
 import com.videoflow.app.domain.export.ResolvedExportSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -69,9 +70,7 @@ class Media3RenderEngine @Inject constructor(
         destination: OutputDestination,
         settings: ResolvedExportSettings
     ): RenderPreparationResult = withContext(Dispatchers.IO) {
-        val sourceHasHdr = plan.originalSources.values.any { source ->
-            source.hdrStaticInfoPresent || source.colorTransfer == C.COLOR_TRANSFER_HLG || source.colorTransfer == C.COLOR_TRANSFER_ST2084
-        }
+        val sourceHasHdr = sourceHasHdr(plan)
         val capability = ExportCapabilityValidator.validate(settings, sourceHasHdr, AndroidEncoderCapabilitySource())
         val problems = capability.problems.toMutableList()
         val warnings = capability.warnings.toMutableList()
@@ -181,8 +180,15 @@ class Media3RenderEngine @Inject constructor(
             }
             listener.onProgress(0.87f)
 
+            val expectedHdr = expectedHdr(preparation.plan, preparation.settings.hdrPolicy)
             val localValidation = withContext(Dispatchers.IO) {
-                validator.validateFile(tempOutput, preparation.settings, preparation.plan.durationUs, expectsAudio(preparation.plan))
+                validator.validateFile(
+                    tempOutput,
+                    preparation.settings,
+                    preparation.plan.durationUs,
+                    expectsAudio(preparation.plan),
+                    expectedHdr
+                )
             }
             if (!localValidation.passed) {
                 throw RenderPipelineException(
@@ -197,7 +203,13 @@ class Media3RenderEngine @Inject constructor(
             }
             listener.onProgress(0.98f)
             val finalValidation = withContext(Dispatchers.IO) {
-                validator.validateUri(preparation.destination.uri, preparation.settings, preparation.plan.durationUs, expectsAudio(preparation.plan))
+                validator.validateUri(
+                    preparation.destination.uri,
+                    preparation.settings,
+                    preparation.plan.durationUs,
+                    expectsAudio(preparation.plan),
+                    expectedHdr
+                )
             }
             if (!finalValidation.passed) {
                 throw RenderPipelineException(
@@ -338,6 +350,13 @@ class Media3RenderEngine @Inject constructor(
             clip.enabled && clip.trackId in audible && plan.originalSources[clip.assetId]?.audioCodecMime != null
         }
     }
+
+    private fun sourceHasHdr(plan: FinalRenderPlan): Boolean = plan.originalSources.values.any { source ->
+        source.hdrStaticInfoPresent || source.colorTransfer == C.COLOR_TRANSFER_HLG || source.colorTransfer == C.COLOR_TRANSFER_ST2084
+    }
+
+    private fun expectedHdr(plan: FinalRenderPlan, policy: HdrPolicy): Boolean =
+        sourceHasHdr(plan) && policy != HdrPolicy.CONVERT_TO_SDR
 
     private fun mapFailure(t: Throwable): RenderPipelineException {
         if (t is RenderPipelineException) return t
