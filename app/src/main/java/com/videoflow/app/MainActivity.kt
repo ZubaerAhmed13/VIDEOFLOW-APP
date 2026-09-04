@@ -15,6 +15,7 @@ import com.videoflow.app.ui.HomeViewModel
 import com.videoflow.app.ui.screens.DeviceCapabilityScreen
 import com.videoflow.app.ui.screens.DiagnosticsScreen
 import com.videoflow.app.ui.screens.EditorScreen
+import com.videoflow.app.ui.screens.ExportScreen
 import com.videoflow.app.ui.screens.HomeScreen
 import com.videoflow.app.ui.screens.SettingsScreen
 import com.videoflow.app.ui.screens.Step2ProjectScreen
@@ -51,6 +52,7 @@ private fun VideoFlowNavigation() {
                 id = id,
                 onBack = { nav.popBackStack() },
                 onOpenEditor = { nav.navigate("editor/$id") },
+                onExport = { nav.navigate("export/$id") },
                 vm = hiltViewModel()
             )
         }
@@ -59,6 +61,16 @@ private fun VideoFlowNavigation() {
             arguments = listOf(navArgument("id") { type = NavType.StringType })
         ) { entry ->
             EditorScreen(
+                id = requireNotNull(entry.arguments?.getString("id")),
+                onBack = { nav.popBackStack() },
+                vm = hiltViewModel()
+            )
+        }
+        composable(
+            route = "export/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.StringType })
+        ) { entry ->
+            ExportScreen(
                 id = requireNotNull(entry.arguments?.getString("id")),
                 onBack = { nav.popBackStack() },
                 vm = hiltViewModel()
