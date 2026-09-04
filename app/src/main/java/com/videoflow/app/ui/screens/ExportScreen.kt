@@ -73,9 +73,12 @@ private val EXPORT_FRAME_RATES: List<Pair<String, FrameRate?>> = listOf(
     "25" to FrameRate.FPS_25,
     "29.97" to FrameRate.FPS_2997,
     "30" to FrameRate.FPS_30,
+    "50" to FrameRate(50, 1),
     "59.94" to FrameRate.FPS_5994,
     "60" to FrameRate.FPS_60
 )
+
+private val EXPORT_AUDIO_BITRATES = listOf(128_000, 192_000, 256_000, 320_000)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -185,7 +188,29 @@ fun ExportScreen(
                 ChoiceSection("Bitrate mode", BitrateMode.entries, state.requested.bitrateMode, { it.name }, vm::setBitrateMode)
             }
             item {
-                ChoiceSection("HDR policy", HdrPolicy.entries, state.requested.hdrPolicy, ::hdrLabel, vm::setHdrPolicy)
+                ChoiceSection(
+                    "Audio",
+                    EXPORT_AUDIO_BITRATES,
+                    state.requested.audioBitrate,
+                    { "${it / 1000} kbps AAC" },
+                    vm::setAudioBitrate
+                )
+            }
+            item {
+                ChoiceSection("Colour / HDR", HdrPolicy.entries, state.requested.hdrPolicy, ::hdrLabel, vm::setHdrPolicy)
+            }
+
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Preflight", style = MaterialTheme.typography.titleMedium)
+                        state.resolved?.let { resolved ->
+                            Text("${resolved.size.width}×${resolved.size.height} • ${formatFps(resolved.frameRate)} fps • ${resolved.videoCodec.name}", style = MaterialTheme.typography.bodySmall)
+                            Text("${resolved.videoBitrate / 1_000_000.0} Mb/s video • ${resolved.audioBitrate / 1000} kbps AAC", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (state.problems.isEmpty()) Text("Current settings pass software/device capability preflight.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
 
             if (state.warnings.isNotEmpty()) {
