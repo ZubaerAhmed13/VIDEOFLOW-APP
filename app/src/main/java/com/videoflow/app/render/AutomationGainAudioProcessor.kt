@@ -1,10 +1,9 @@
-@file:OptIn(androidx.media3.common.util.UnstableApi::class)
-
 package com.videoflow.app.render
 
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
+import androidx.media3.common.util.UnstableApi
 import com.videoflow.app.domain.editor.Keyframe
 import com.videoflow.app.domain.editor.KeyframeEvaluator
 import com.videoflow.app.domain.editor.KeyframeProperty
@@ -17,6 +16,7 @@ import kotlin.math.pow
  * Values are intentionally allowed above unity here so multi-track mixing keeps floating-point
  * headroom. The final audio mixer clips only after sources have been summed.
  */
+@UnstableApi
 class AutomationGainAudioProcessor(
     private val baseGainDb: Float,
     private val fadeInUs: Long,
