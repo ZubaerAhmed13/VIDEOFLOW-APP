@@ -4,6 +4,8 @@ import android.content.ContentResolver
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import androidx.media3.common.C
+import com.videoflow.app.domain.export.HdrPolicy
 import com.videoflow.app.domain.export.ResolvedExportSettings
 import java.io.File
 import kotlin.math.abs
@@ -18,7 +20,8 @@ data class OutputTrackInfo(
     val rotationDegrees: Int?,
     val colorStandard: Int?,
     val colorRange: Int?,
-    val colorTransfer: Int?
+    val colorTransfer: Int?,
+    val measuredFrameRate: Double? = null
 )
 
 data class OutputValidationResult(
@@ -35,7 +38,8 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         uri: Uri,
         expected: ResolvedExportSettings,
         expectedDurationUs: Long,
-        expectAudio: Boolean
+        expectAudio: Boolean,
+        expectedHdr: Boolean? = null
     ): OutputValidationResult {
         val problems = mutableListOf<String>()
         val length = querySize(uri)
@@ -43,6 +47,7 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         val extractor = MediaExtractor()
         var video: OutputTrackInfo? = null
         var audio: OutputTrackInfo? = null
+        var videoTrackIndex: Int? = null
         try {
             val pfd = contentResolver.openFileDescriptor(uri, "r")
             if (pfd == null) {
@@ -54,23 +59,92 @@ class OutputValidator(private val contentResolver: ContentResolver) {
                 val format = extractor.getTrackFormat(i)
                 val info = format.toInfo()
                 val mime = info.mimeType.orEmpty()
-                if (mime.startsWith("video/") && video == null) video = info
+                if (mime.startsWith("video/") && video == null) {
+                    video = info
+                    videoTrackIndex = i
+                }
                 if (mime.startsWith("audio/") && audio == null) audio = info
+            }
+            videoTrackIndex?.let { index ->
+                val measured = measureVideoCadence(extractor, index)
+                if (measured != null) video = video?.copy(measuredFrameRate = measured.measuredFps)
             }
         } catch (t: Throwable) {
             problems += "Output container could not be read: ${t.message ?: t::class.java.simpleName}."
         } finally {
             extractor.release()
         }
+        validateTracks(video, audio, expected, expectedDurationUs, expectAudio, expectedHdr, problems)
+        val duration = listOfNotNull(video?.durationUs, audio?.durationUs).maxOrNull()
+        return OutputValidationResult(problems.isEmpty(), length, duration, video, audio, problems)
+    }
 
+    fun validateFile(
+        file: File,
+        expected: ResolvedExportSettings,
+        expectedDurationUs: Long,
+        expectAudio: Boolean,
+        expectedHdr: Boolean? = null
+    ): OutputValidationResult {
+        val problems = mutableListOf<String>()
+        val length = file.takeIf { it.isFile }?.length() ?: 0L
+        if (length <= 1_024L) problems += "Output is missing or unreasonably small ($length bytes)."
+        val extractor = MediaExtractor()
+        var video: OutputTrackInfo? = null
+        var audio: OutputTrackInfo? = null
+        var videoTrackIndex: Int? = null
+        try {
+            extractor.setDataSource(file.absolutePath)
+            for (i in 0 until extractor.trackCount) {
+                val info = extractor.getTrackFormat(i).toInfo()
+                val mime = info.mimeType.orEmpty()
+                if (mime.startsWith("video/") && video == null) {
+                    video = info
+                    videoTrackIndex = i
+                }
+                if (mime.startsWith("audio/") && audio == null) audio = info
+            }
+            videoTrackIndex?.let { index ->
+                val measured = measureVideoCadence(extractor, index)
+                if (measured != null) video = video?.copy(measuredFrameRate = measured.measuredFps)
+            }
+        } catch (t: Throwable) {
+            problems += "Output container could not be read: ${t.message ?: t::class.java.simpleName}."
+        } finally {
+            extractor.release()
+        }
+        validateTracks(video, audio, expected, expectedDurationUs, expectAudio, expectedHdr, problems)
+        val duration = listOfNotNull(video?.durationUs, audio?.durationUs).maxOrNull()
+        return OutputValidationResult(problems.isEmpty(), length, duration, video, audio, problems)
+    }
+
+    private fun validateTracks(
+        video: OutputTrackInfo?,
+        audio: OutputTrackInfo?,
+        expected: ResolvedExportSettings,
+        expectedDurationUs: Long,
+        expectAudio: Boolean,
+        expectedHdr: Boolean?,
+        problems: MutableList<String>
+    ) {
         if (video == null) problems += "Output has no readable video track."
-        video?.let {
-            if (it.width != expected.size.width || it.height != expected.size.height) {
-                problems += "Output resolution ${it.width}×${it.height} does not match requested ${expected.size.width}×${expected.size.height}."
+        video?.let { info ->
+            if (info.width != expected.size.width || info.height != expected.size.height) {
+                problems += "Output resolution ${info.width}×${info.height} does not match requested ${expected.size.width}×${expected.size.height}."
             }
-            if (it.mimeType != expected.videoCodec.mimeType) {
-                problems += "Output video MIME ${it.mimeType} does not match ${expected.videoCodec.mimeType}."
+            if (info.mimeType != expected.videoCodec.mimeType) {
+                problems += "Output video MIME ${info.mimeType} does not match ${expected.videoCodec.mimeType}."
             }
+            val measured = info.measuredFrameRate
+            if (measured == null) {
+                val minimumCadenceWindowUs = (2.0 * 1_000_000.0 / expected.frameRate.fps).toLong()
+                if (expectedDurationUs > minimumCadenceWindowUs) {
+                    problems += "Encoded video cadence could not be measured from sample timestamps."
+                }
+            } else if (!FrameCadenceVerifier.matches(measured, expected.frameRate)) {
+                problems += FrameCadenceVerifier.mismatchMessage(measured, expected.frameRate)
+            }
+            validateHdr(info, expected, expectedHdr, problems)
         }
         if (expectAudio && audio == null) problems += "Output is missing expected audio."
         audio?.let {
@@ -87,45 +161,39 @@ class OutputValidator(private val contentResolver: ContentResolver) {
                 problems += "Output duration $duration us differs from RenderPlan $expectedDurationUs us by more than $frameToleranceUs us."
             }
         }
-        return OutputValidationResult(problems.isEmpty(), length, duration, video, audio, problems)
     }
 
-    fun validateFile(
-        file: File,
+    private fun validateHdr(
+        video: OutputTrackInfo,
         expected: ResolvedExportSettings,
-        expectedDurationUs: Long,
-        expectAudio: Boolean
-    ): OutputValidationResult {
-        val problems = mutableListOf<String>()
-        val length = file.takeIf { it.isFile }?.length() ?: 0L
-        if (length <= 1_024L) problems += "Output is missing or unreasonably small ($length bytes)."
-        val extractor = MediaExtractor()
-        var video: OutputTrackInfo? = null
-        var audio: OutputTrackInfo? = null
-        try {
-            extractor.setDataSource(file.absolutePath)
-            for (i in 0 until extractor.trackCount) {
-                val info = extractor.getTrackFormat(i).toInfo()
-                if (info.mimeType.orEmpty().startsWith("video/") && video == null) video = info
-                if (info.mimeType.orEmpty().startsWith("audio/") && audio == null) audio = info
+        expectedHdr: Boolean?,
+        problems: MutableList<String>
+    ) {
+        val outputIsHdr = video.colorTransfer == C.COLOR_TRANSFER_HLG || video.colorTransfer == C.COLOR_TRANSFER_ST2084
+        if (expected.hdrPolicy == HdrPolicy.CONVERT_TO_SDR && outputIsHdr) {
+            problems += "Output remained HDR even though explicit SDR conversion was requested."
+        }
+        if (expectedHdr == true && expected.hdrPolicy != HdrPolicy.CONVERT_TO_SDR && !outputIsHdr) {
+            problems += "HDR source was not preserved in the encoded output. Silent HDR-to-SDR conversion is not allowed."
+        }
+        if (expectedHdr == false && outputIsHdr) {
+            problems += "SDR render unexpectedly produced HDR transfer characteristics."
+        }
+    }
+
+    private fun measureVideoCadence(extractor: MediaExtractor, trackIndex: Int): FrameCadenceVerifier.Measurement? {
+        val samples = ArrayList<Long>(MAX_CADENCE_SAMPLES)
+        return runCatching {
+            extractor.selectTrack(trackIndex)
+            while (samples.size < MAX_CADENCE_SAMPLES) {
+                val timeUs = extractor.sampleTime
+                if (timeUs < 0L) break
+                samples += timeUs
+                if (!extractor.advance()) break
             }
-        } catch (t: Throwable) {
-            problems += "Output container could not be read: ${t.message ?: t::class.java.simpleName}."
-        } finally {
-            extractor.release()
-        }
-        if (video == null) problems += "Output has no readable video track."
-        video?.let {
-            if (it.width != expected.size.width || it.height != expected.size.height) problems += "Output resolution does not match requested export."
-            if (it.mimeType != expected.videoCodec.mimeType) problems += "Output video codec does not match requested export."
-        }
-        if (expectAudio && audio == null) problems += "Output is missing expected audio."
-        val duration = listOfNotNull(video?.durationUs, audio?.durationUs).maxOrNull()
-        if (duration != null) {
-            val tolerance = ((1_000_000.0 / expected.frameRate.fps) * 2).toLong().coerceAtLeast(50_000)
-            if (abs(duration - expectedDurationUs) > tolerance) problems += "Output duration does not match RenderPlan."
-        }
-        return OutputValidationResult(problems.isEmpty(), length, duration, video, audio, problems)
+            extractor.unselectTrack(trackIndex)
+            FrameCadenceVerifier.measure(samples)
+        }.getOrNull()
     }
 
     private fun querySize(uri: Uri): Long = runCatching {
@@ -151,5 +219,9 @@ class OutputValidator(private val contentResolver: ContentResolver) {
     private fun MediaFormat.intOrNull(key: String): Int? = if (containsKey(key)) runCatching { getInteger(key) }.getOrNull() else null
     private fun MediaFormat.floatOrIntOrNull(key: String): Float? = if (!containsKey(key)) null else {
         runCatching { getFloat(key) }.getOrElse { runCatching { getInteger(key).toFloat() }.getOrNull() }
+    }
+
+    private companion object {
+        const val MAX_CADENCE_SAMPLES = 240
     }
 }
