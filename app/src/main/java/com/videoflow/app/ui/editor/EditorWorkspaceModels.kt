@@ -1,5 +1,6 @@
 package com.videoflow.app.ui.editor
 
+import com.videoflow.app.domain.editor.CropRect
 import com.videoflow.app.domain.editor.TimelineClip
 
 /** Passive sheets that do not directly manipulate the preview. */
@@ -83,6 +84,45 @@ sealed interface EditorTool {
     data class Keyframes(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
     data class More(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
 }
+
+/**
+ * UI-only transform values used while a pointer/slider gesture is active.
+ * Nothing in this model is persisted. The owning screen commits it once at gesture end/Done.
+ */
+data class PreviewTransformDraft(
+    val x: Float,
+    val y: Float,
+    val scaleX: Float,
+    val scaleY: Float,
+    val rotationDegrees: Float,
+    val flipHorizontal: Boolean = false,
+    val flipVertical: Boolean = false
+)
+
+data class PreviewTextStyleDraft(
+    val fontSizeSp: Float,
+    val fontWeight: Int,
+    val italic: Boolean,
+    val alignment: String,
+    val colorArgb: Long
+)
+
+/**
+ * Transient contextual edit state shared by the preview and the precision tool panel.
+ * High-frequency gesture updates live here instead of Room; durable state is written once.
+ */
+data class ContextualPreviewDraft(
+    val crop: CropRect? = null,
+    /** Normalized crop width / normalized crop height. Null means unconstrained Free crop. */
+    val cropNormalizedAspect: Float? = null,
+    val transform: PreviewTransformDraft? = null,
+    val opacity: Float? = null,
+    val gainDb: Float? = null,
+    val fadeInUs: Long? = null,
+    val fadeOutUs: Long? = null,
+    val textContent: String? = null,
+    val textStyle: PreviewTextStyleDraft? = null
+)
 
 data class EditorWorkspaceUiState(
     val projectId: String,
