@@ -3,7 +3,6 @@ package com.videoflow.app.ui.editor
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -68,10 +67,9 @@ import com.videoflow.app.domain.editor.TrackType
 import com.videoflow.app.ui.CachedThumbnailPreview
 import com.videoflow.app.ui.WaveformPreview
 import com.videoflow.app.util.formatDurationUs
-import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-private val TrackHeaderWidth = 72.dp
+private val TrackHeaderWidth = 84.dp
 
 @Composable
 fun TimelineWorkspace(
@@ -102,6 +100,7 @@ fun TimelineWorkspace(
     val vertical = rememberScrollState()
     val safeDuration = maxOf(durationUs, 5_000_000L)
     val totalWidth = timelineWidth(safeDuration, pixelsPerSecond)
+    val hasTimelineItems = clips.isNotEmpty() || textOverlays.isNotEmpty() || imageOverlays.isNotEmpty()
 
     Surface(modifier = modifier, color = VideoFlowEditorColors.TimelineBackground) {
         Column(Modifier.fillMaxSize()) {
@@ -114,10 +113,16 @@ fun TimelineWorkspace(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    IconButton(onClick = { onZoom((pixelsPerSecond / 1.3f).coerceAtLeast(12f)) }, modifier = Modifier.width(34.dp)) {
+                    IconButton(
+                        onClick = { onZoom((pixelsPerSecond / 1.3f).coerceAtLeast(12f)) },
+                        modifier = Modifier.width(34.dp)
+                    ) {
                         Icon(Icons.Default.ZoomOut, contentDescription = "Zoom out timeline", tint = VideoFlowEditorColors.SecondaryText)
                     }
-                    IconButton(onClick = { onZoom((pixelsPerSecond * 1.3f).coerceAtMost(240f)) }, modifier = Modifier.width(34.dp)) {
+                    IconButton(
+                        onClick = { onZoom((pixelsPerSecond * 1.3f).coerceAtMost(240f)) },
+                        modifier = Modifier.width(34.dp)
+                    ) {
                         Icon(Icons.Default.ZoomIn, contentDescription = "Zoom in timeline", tint = VideoFlowEditorColors.SecondaryText)
                     }
                 }
@@ -138,41 +143,45 @@ fun TimelineWorkspace(
                 }
             }
 
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(vertical)
-            ) {
-                if (tracks.isEmpty()) {
-                    Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        Text("Add media to begin", color = VideoFlowEditorColors.SecondaryText)
+            if (!hasTimelineItems) {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Start your video", color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.titleMedium)
+                        Text("Add media from the toolbar below.", color = VideoFlowEditorColors.SecondaryText, style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                tracks.sortedBy { it.orderIndex }.forEach { track ->
-                    TrackRow(
-                        track = track,
-                        clips = clips.filter { it.trackId == track.id },
-                        textOverlays = textOverlays.filter { it.trackId == track.id },
-                        imageOverlays = imageOverlays.filter { it.trackId == track.id },
-                        keyframes = keyframes,
-                        playheadUs = playheadUs,
-                        totalWidth = totalWidth,
-                        pixelsPerSecond = pixelsPerSecond,
-                        horizontal = horizontal,
-                        selection = selection,
-                        mediaNames = mediaNames,
-                        thumbnails = thumbnails,
-                        waveforms = waveforms,
-                        onSeek = onSeek,
-                        onSelect = onSelect,
-                        onClearSelection = onClearSelection,
-                        onMoveClip = onMoveClip,
-                        onToggleMute = { onToggleMute(track) },
-                        onToggleVisible = { onToggleVisible(track) },
-                        onToggleLock = { onToggleLock(track) },
-                        onTrackSettings = { onTrackSettings(track) }
-                    )
+            } else {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(vertical)
+                ) {
+                    tracks.sortedBy { it.orderIndex }.forEach { track ->
+                        TrackRow(
+                            track = track,
+                            clips = clips.filter { it.trackId == track.id },
+                            textOverlays = textOverlays.filter { it.trackId == track.id },
+                            imageOverlays = imageOverlays.filter { it.trackId == track.id },
+                            keyframes = keyframes,
+                            playheadUs = playheadUs,
+                            totalWidth = totalWidth,
+                            pixelsPerSecond = pixelsPerSecond,
+                            horizontal = horizontal,
+                            selection = selection,
+                            mediaNames = mediaNames,
+                            thumbnails = thumbnails,
+                            waveforms = waveforms,
+                            onSeek = onSeek,
+                            onSelect = onSelect,
+                            onClearSelection = onClearSelection,
+                            onMoveClip = onMoveClip,
+                            onToggleMute = { onToggleMute(track) },
+                            onToggleVisible = { onToggleVisible(track) },
+                            onToggleLock = { onToggleLock(track) },
+                            onTrackSettings = { onTrackSettings(track) }
+                        )
+                    }
                 }
             }
         }
@@ -208,10 +217,21 @@ private fun TrackRow(
     Row(Modifier.fillMaxWidth().height(laneHeight)) {
         Surface(color = VideoFlowEditorColors.TimelineTrackHeader, modifier = Modifier.width(TrackHeaderWidth).fillMaxHeight()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text(track.name.take(6), color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        track.name.take(7),
+                        color = VideoFlowEditorColors.PrimaryText,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f).padding(start = 7.dp)
+                    )
+                    IconButton(onClick = onTrackSettings, modifier = Modifier.width(28.dp).height(28.dp)) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings", tint = VideoFlowEditorColors.SecondaryText)
+                    }
+                }
                 Row {
                     if (track.type == TrackType.AUDIO) {
-                        IconButton(onClick = onToggleMute, modifier = Modifier.width(28.dp).height(28.dp)) {
+                        IconButton(onClick = onToggleMute, modifier = Modifier.width(30.dp).height(30.dp)) {
                             Icon(
                                 if (track.muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
                                 contentDescription = if (track.muted) "Unmute ${track.name}" else "Mute ${track.name}",
@@ -219,7 +239,7 @@ private fun TrackRow(
                             )
                         }
                     } else {
-                        IconButton(onClick = onToggleVisible, modifier = Modifier.width(28.dp).height(28.dp)) {
+                        IconButton(onClick = onToggleVisible, modifier = Modifier.width(30.dp).height(30.dp)) {
                             Icon(
                                 if (track.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = if (track.visible) "Hide ${track.name}" else "Show ${track.name}",
@@ -227,7 +247,7 @@ private fun TrackRow(
                             )
                         }
                     }
-                    IconButton(onClick = onToggleLock, modifier = Modifier.width(28.dp).height(28.dp)) {
+                    IconButton(onClick = onToggleLock, modifier = Modifier.width(30.dp).height(30.dp)) {
                         Icon(
                             if (track.locked) Icons.Default.Lock else Icons.Default.LockOpen,
                             contentDescription = if (track.locked) "Unlock ${track.name}" else "Lock ${track.name}",
@@ -302,11 +322,6 @@ private fun TrackRow(
                 )
             }
         }
-        Box(Modifier.width(0.dp)) {
-            IconButton(onClick = onTrackSettings) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings")
-            }
-        }
     }
 }
 
@@ -326,7 +341,8 @@ private fun TimelineClipCard(
     val density = LocalDensity.current
     var dragPx by remember(clip.id) { mutableFloatStateOf(0f) }
     val width = timeWidth(clip.timelineDurationUs, pixelsPerSecond).coerceAtLeast(72.dp)
-    val categoryColor = if (waveform != null) VideoFlowEditorColors.TimelineAudioClip else VideoFlowEditorColors.TimelineVideoClip
+    val isAudio = waveform != null
+    val categoryColor = if (isAudio) VideoFlowEditorColors.TimelineAudioClip else VideoFlowEditorColors.TimelineVideoClip
     val dragModifier = if (locked) Modifier else Modifier.pointerInput(clip.id, pixelsPerSecond) {
         detectHorizontalDragGestures(
             onDragCancel = { dragPx = 0f },
@@ -352,7 +368,7 @@ private fun TimelineClipCard(
             .graphicsLayer { translationX = dragPx }
             .then(dragModifier)
             .semantics {
-                contentDescription = "Video clip $name, ${formatDurationUs(clip.timelineDurationUs)}${if (selected) ", selected" else ""}"
+                contentDescription = "${if (isAudio) "Audio" else "Video"} clip $name, ${formatDurationUs(clip.timelineDurationUs)}${if (selected) ", selected" else ""}"
                 this.selected = selected
             }
     ) {
