@@ -233,11 +233,18 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         }.getOrNull()
     }
 
-    private fun querySize(uri: Uri): Long = runCatching {
-        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
-            if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1L
-        } ?: -1L
-    }.getOrDefault(-1L)
+    private fun querySize(uri: Uri): Long {
+        val descriptorSize = runCatching {
+            contentResolver.openFileDescriptor(uri, "r")?.use { pfd -> pfd.statSize }
+        }.getOrNull()
+        if (descriptorSize != null && descriptorSize >= 0L) return descriptorSize
+
+        return runCatching {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1L
+            } ?: -1L
+        }.getOrDefault(-1L)
+    }
 
     private fun MediaFormat.toInfo() = OutputTrackInfo(
         mimeType = stringOrNull(MediaFormat.KEY_MIME),
