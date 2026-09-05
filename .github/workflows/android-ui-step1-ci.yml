@@ -229,10 +229,7 @@ jobs:
             mkdir -p ui-step1-emulator-reports/screenshots
             adb install -r ui-step1-runtime/VideoFlow_Android_UI_Step1_Debug.apk
             adb install -r ui-step1-runtime/VideoFlow_Android_UI_Step1_Debug-androidTest.apk
-            adb shell am instrument -w -r \
-              -e class com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest \
-              com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner \
-              > ui-step1-emulator-reports/instrumentation-output.txt 2>&1
+            adb shell am instrument -w -r -e class com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ui-step1-emulator-reports/instrumentation-output.txt 2>&1
             cat ui-step1-emulator-reports/instrumentation-output.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' ui-step1-emulator-reports/instrumentation-output.txt
             grep -E -q 'OK \([0-9]+ tests?\)' ui-step1-emulator-reports/instrumentation-output.txt
