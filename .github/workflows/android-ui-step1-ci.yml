@@ -1,0 +1,114 @@
+name: VideoFlow Android UI Step 1 Certification
+
+on:
+  push:
+    branches:
+      - ui-step1-professional-editor
+  pull_request:
+    branches:
+      - step3-native-rendering
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-step1-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '17'
+
+jobs:
+  ui-step1-certification:
+    name: UI Step 1 build, regression and packaging
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: UI architecture contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          EDITOR="app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt"
+          SHEETS="app/src/main/java/com/videoflow/app/ui/editor/EditorSheets.kt"
+          TIMELINE="app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt"
+          CHROME="app/src/main/java/com/videoflow/app/ui/editor/EditorChrome.kt"
+
+          test -s "$EDITOR"
+          test -s "$SHEETS"
+          test -s "$TIMELINE"
+          test -s "$CHROME"
+          test -s EDITOR_UX_ARCHITECTURE.md
+          test -s UI_STEP_1_TEST_REPORT.md
+          test -s UI_STEP_1_COMPLETION_REPORT.md
+
+          if grep -q "LazyColumn" "$EDITOR"; then
+            echo "EditorScreen still contains a parent LazyColumn"
+            exit 1
+          fi
+
+          grep -q "PreviewWorkspace" "$EDITOR"
+          grep -q "TransportBar" "$EDITOR"
+          grep -q "TimelineWorkspace" "$EDITOR"
+          grep -q "EditorBottomToolbar" "$EDITOR"
+          grep -q "ModalBottomSheet" "$SHEETS"
+          grep -q "OpenDocument" "$EDITOR"
+          grep -q "onExport" "$EDITOR"
+          grep -q "Start your video" "$TIMELINE"
+          grep -q "Open .* settings" "$TIMELINE"
+
+          if grep -E -q "Proxy 540p|Proxy 720p|Proxy 1080p" "$EDITOR"; then
+            echo "Engineering proxy resolution controls remain in the primary editor"
+            exit 1
+          fi
+
+      - name: JVM regression tests
+        run: ./gradlew test --stacktrace
+
+      - name: Android lint
+        run: ./gradlew lint --stacktrace
+
+      - name: Compile instrumentation and Compose tests
+        run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
+
+      - name: Assemble debug and release
+        run: ./gradlew assembleDebug assembleRelease --stacktrace
+
+      - name: Package UI Step 1 debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ui-step1-artifact
+          cp app/build/outputs/apk/debug/app-debug.apk ui-step1-artifact/VideoFlow_Android_UI_Step1_Debug.apk
+          sha256sum ui-step1-artifact/VideoFlow_Android_UI_Step1_Debug.apk > ui-step1-artifact/SHA256SUMS.txt
+          cp EDITOR_UX_ARCHITECTURE.md UI_STEP_1_TEST_REPORT.md UI_STEP_1_COMPLETION_REPORT.md ui-step1-artifact/
+
+      - name: Upload UI Step 1 APK and reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step1-Debug
+          path: ui-step1-artifact/
+          if-no-files-found: error
+          retention-days: 14
