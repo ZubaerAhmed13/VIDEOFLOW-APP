@@ -29,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.videoflow.app.domain.editor.ImageOverlay
+import com.videoflow.app.domain.editor.KeyframeEvaluator
+import com.videoflow.app.domain.editor.KeyframeProperty
 import com.videoflow.app.domain.editor.ProxyStatus
 import com.videoflow.app.domain.editor.TextOverlay
 import com.videoflow.app.domain.editor.TimelineClip
@@ -40,6 +42,7 @@ import com.videoflow.app.ui.OverlayAdvancedViewModel
 import com.videoflow.app.ui.ProjectViewModel
 import com.videoflow.app.ui.TrackLifecycleViewModel
 import com.videoflow.app.ui.editor.ContextualToolHost
+import com.videoflow.app.ui.editor.ContextualPreviewDraft
 import com.videoflow.app.ui.editor.EditorBottomToolbar
 import com.videoflow.app.ui.editor.EditorPanel
 import com.videoflow.app.ui.editor.EditorPanelHost
@@ -49,11 +52,14 @@ import com.videoflow.app.ui.editor.EditorTopBar
 import com.videoflow.app.ui.editor.EditorWarningBanner
 import com.videoflow.app.ui.editor.LandscapeInfoPane
 import com.videoflow.app.ui.editor.PreviewWorkspace
+import com.videoflow.app.ui.editor.PreviewTextStyleDraft
+import com.videoflow.app.ui.editor.PreviewTransformDraft
 import com.videoflow.app.ui.editor.TimelineWorkspace
 import com.videoflow.app.ui.editor.TransportBar
 import com.videoflow.app.ui.editor.VideoFlowEditorColors
 import com.videoflow.app.ui.editor.VisualOwnerType
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,6 +97,7 @@ fun EditorScreen(
     var selection by remember { mutableStateOf<EditorSelection>(EditorSelection.None) }
     var activePanel by remember { mutableStateOf<EditorPanel?>(null) }
     var activeTool by remember { mutableStateOf<EditorTool?>(null) }
+    var previewDraft by remember { mutableStateOf(ContextualPreviewDraft()) }
     var initialToolClip by remember { mutableStateOf<TimelineClip?>(null) }
     var initialToolText by remember { mutableStateOf<TextOverlay?>(null) }
     var initialToolImage by remember { mutableStateOf<ImageOverlay?>(null) }
@@ -172,6 +179,7 @@ fun EditorScreen(
 
     fun clearToolSession() {
         activeTool = null
+        previewDraft = ContextualPreviewDraft()
         initialToolClip = null
         initialToolText = null
         initialToolImage = null
@@ -194,6 +202,7 @@ fun EditorScreen(
     fun openTool(tool: EditorTool) {
         activePanel = null
         activeTool = tool
+        previewDraft = ContextualPreviewDraft()
         initialToolClip = null
         initialToolText = null
         initialToolImage = null
@@ -235,9 +244,58 @@ fun EditorScreen(
             is EditorTool.Keyframes -> Unit
             is EditorTool.More -> Unit
         }
+        fun evaluated(ownerId: String, property: KeyframeProperty, base: Float, startUs: Long, durationUs: Long): Float {
+            val localUs = (playheadUs - startUs).coerceIn(0L, durationUs.coerceAtLeast(1L))
+            return KeyframeEvaluator.evaluate(base, localUs, timeline?.keyframes.orEmpty().filter { it.ownerId == ownerId && it.property == property })
+        }
+        previewDraft = when (tool) {
+            is EditorTool.Crop -> clips.firstOrNull { it.id == tool.clipId }?.let { ContextualPreviewDraft(crop = it.transform.crop) } ?: ContextualPreviewDraft()
+            is EditorTool.Volume -> clips.firstOrNull { it.id == tool.clipId }?.let { clip -> ContextualPreviewDraft(gainDb = evaluated(clip.id, KeyframeProperty.AUDIO_GAIN, clip.gainDb, clip.timelineStartUs, clip.timelineDurationUs)) } ?: ContextualPreviewDraft()
+            is EditorTool.Fade -> clips.firstOrNull { it.id == tool.clipId }?.let { ContextualPreviewDraft(fadeInUs = it.fadeInUs, fadeOutUs = it.fadeOutUs) } ?: ContextualPreviewDraft()
+            is EditorTool.Transform -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> clips.firstOrNull { it.id == tool.ownerId }?.let { clip ->
+                    val d = clip.timelineDurationUs
+                    ContextualPreviewDraft(transform = PreviewTransformDraft(
+                        evaluated(clip.id, KeyframeProperty.POSITION_X, clip.transform.x, clip.timelineStartUs, d),
+                        evaluated(clip.id, KeyframeProperty.POSITION_Y, clip.transform.y, clip.timelineStartUs, d),
+                        evaluated(clip.id, KeyframeProperty.SCALE_X, clip.transform.scaleX, clip.timelineStartUs, d),
+                        evaluated(clip.id, KeyframeProperty.SCALE_Y, clip.transform.scaleY, clip.timelineStartUs, d),
+                        evaluated(clip.id, KeyframeProperty.ROTATION, clip.transform.rotationDegrees, clip.timelineStartUs, d),
+                        clip.transform.flipHorizontal, clip.transform.flipVertical
+                    ))
+                } ?: ContextualPreviewDraft()
+                VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.let { overlay ->
+                    val d = overlay.timelineEndUs - overlay.timelineStartUs
+                    ContextualPreviewDraft(transform = PreviewTransformDraft(
+                        evaluated(overlay.id, KeyframeProperty.POSITION_X, overlay.transform.x, overlay.timelineStartUs, d),
+                        evaluated(overlay.id, KeyframeProperty.POSITION_Y, overlay.transform.y, overlay.timelineStartUs, d),
+                        evaluated(overlay.id, KeyframeProperty.SCALE_X, overlay.transform.scaleX, overlay.timelineStartUs, d),
+                        evaluated(overlay.id, KeyframeProperty.SCALE_Y, overlay.transform.scaleY, overlay.timelineStartUs, d),
+                        evaluated(overlay.id, KeyframeProperty.ROTATION, overlay.transform.rotationDegrees, overlay.timelineStartUs, d)
+                    ))
+                } ?: ContextualPreviewDraft()
+                VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.let { overlay ->
+                    val d = overlay.timelineEndUs - overlay.timelineStartUs
+                    ContextualPreviewDraft(transform = PreviewTransformDraft(
+                        evaluated(overlay.id, KeyframeProperty.POSITION_X, overlay.transform.x, overlay.timelineStartUs, d),
+                        evaluated(overlay.id, KeyframeProperty.POSITION_Y, overlay.transform.y, overlay.timelineStartUs, d),
+                        evaluated(overlay.id, KeyframeProperty.SCALE_X, overlay.transform.scaleX, overlay.timelineStartUs, d),
+                        evaluated(overlay.id, KeyframeProperty.SCALE_Y, overlay.transform.scaleY, overlay.timelineStartUs, d),
+                        evaluated(overlay.id, KeyframeProperty.ROTATION, overlay.transform.rotationDegrees, overlay.timelineStartUs, d)
+                    ))
+                } ?: ContextualPreviewDraft()
+            }
+            is EditorTool.Opacity -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> clips.firstOrNull { it.id == tool.ownerId }?.let { c -> ContextualPreviewDraft(opacity = evaluated(c.id, KeyframeProperty.OPACITY, c.opacity, c.timelineStartUs, c.timelineDurationUs)) } ?: ContextualPreviewDraft()
+                VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.let { o -> ContextualPreviewDraft(opacity = evaluated(o.id, KeyframeProperty.OPACITY, o.opacity, o.timelineStartUs, o.timelineEndUs - o.timelineStartUs)) } ?: ContextualPreviewDraft()
+                VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.let { o -> ContextualPreviewDraft(opacity = evaluated(o.id, KeyframeProperty.OPACITY, o.transform.opacity, o.timelineStartUs, o.timelineEndUs - o.timelineStartUs)) } ?: ContextualPreviewDraft()
+            }
+            is EditorTool.TextEditor -> ContextualPreviewDraft(textContent = tool.overlayId?.let { oid -> timeline?.textOverlays?.firstOrNull { it.id == oid }?.content }.orEmpty())
+            is EditorTool.TextStyle -> timeline?.textOverlays?.firstOrNull { it.id == tool.overlayId }?.let { o -> ContextualPreviewDraft(textStyle = PreviewTextStyleDraft(o.fontSizeSp, o.fontWeight, o.italic, o.alignment, o.colorArgb)) } ?: ContextualPreviewDraft()
+            else -> ContextualPreviewDraft()
+        }
         when (tool) {
-            is EditorTool.Trim, is EditorTool.Crop, is EditorTool.TextEditor, is EditorTool.TextStyle -> isPlaying = false
-            is EditorTool.Transform -> isPlaying = false
+            is EditorTool.Trim, is EditorTool.Crop, is EditorTool.TextEditor, is EditorTool.TextStyle, is EditorTool.Transform -> isPlaying = false
             else -> Unit
         }
         val ownerWindow = when (tool) {
@@ -268,34 +326,6 @@ fun EditorScreen(
     }
 
     fun cancelActiveTool() {
-        when (val tool = activeTool) {
-            is EditorTool.Crop -> initialToolClip?.let { before ->
-                contextualVm.setClipCrop(id, before.id, before.transform.crop) { vm.load(id) }
-            }
-            is EditorTool.Transform -> when (tool.ownerType) {
-                VisualOwnerType.CLIP -> initialToolClip?.let { before ->
-                    val current = clips.firstOrNull { it.id == before.id }
-                    contextualVm.setClipTransform(id, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { vm.load(id) }
-                    vm.selectClip(before.id)
-                    if (current != null && current.transform.flipHorizontal != before.transform.flipHorizontal) vm.toggleFlipHorizontal()
-                    if (current != null && current.transform.flipVertical != before.transform.flipVertical) vm.toggleFlipVertical()
-                }
-                VisualOwnerType.TEXT -> initialToolText?.let { before ->
-                    contextualVm.setTextTransform(id, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { vm.load(id) }
-                }
-                VisualOwnerType.IMAGE -> initialToolImage?.let { before ->
-                    contextualVm.setImageTransform(id, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { vm.load(id) }
-                }
-            }
-            is EditorTool.Opacity -> when (tool.ownerType) {
-                VisualOwnerType.CLIP -> initialToolClip?.let { vm.selectClip(it.id); vm.setOpacity(it.opacity) }
-                VisualOwnerType.TEXT -> initialToolText?.let { vm.setTextOpacity(it.id, it.opacity) }
-                VisualOwnerType.IMAGE -> initialToolImage?.let { vm.setImageOpacity(it.id, it.transform.opacity) }
-            }
-            is EditorTool.Volume -> initialToolClip?.let { vm.selectClip(it.id); vm.setClipGain(it.gainDb) }
-            is EditorTool.Fade -> initialToolClip?.let { vm.selectClip(it.id); vm.setFades(it.fadeInUs, it.fadeOutUs) }
-            else -> Unit
-        }
         clearToolSession()
     }
 
@@ -309,39 +339,17 @@ fun EditorScreen(
     }
 
     fun transformGesture(dx: Float, dy: Float, zoom: Float, rotation: Float) {
-        val tool = activeTool as? EditorTool.Transform ?: return
-        when (tool.ownerType) {
-            VisualOwnerType.CLIP -> clips.firstOrNull { it.id == tool.ownerId }?.let { target ->
-                contextualVm.setClipTransform(
-                    id,
-                    target.id,
-                    (target.transform.x + dx).coerceIn(0f, 1f),
-                    (target.transform.y + dy).coerceIn(0f, 1f),
-                    (target.transform.scaleX * zoom).coerceIn(0.05f, 10f),
-                    target.transform.rotationDegrees + rotation
-                ) { vm.load(id) }
-            }
-            VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.let { target ->
-                contextualVm.setTextTransform(
-                    id,
-                    target.id,
-                    (target.transform.x + dx).coerceIn(0f, 1f),
-                    (target.transform.y + dy).coerceIn(0f, 1f),
-                    (target.transform.scaleX * zoom).coerceIn(0.05f, 10f),
-                    target.transform.rotationDegrees + rotation
-                ) { vm.load(id) }
-            }
-            VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.let { target ->
-                contextualVm.setImageTransform(
-                    id,
-                    target.id,
-                    (target.transform.x + dx).coerceIn(0f, 1f),
-                    (target.transform.y + dy).coerceIn(0f, 1f),
-                    (target.transform.scaleX * zoom).coerceIn(0.05f, 10f),
-                    target.transform.rotationDegrees + rotation
-                ) { vm.load(id) }
-            }
-        }
+        if (activeTool !is EditorTool.Transform) return
+        val current = previewDraft.transform ?: return
+        val rawX = (current.x + dx).coerceIn(0f, 1f)
+        val rawY = (current.y + dy).coerceIn(0f, 1f)
+        previewDraft = previewDraft.copy(transform = current.copy(
+            x = if (abs(rawX - 0.5f) < 0.018f) 0.5f else rawX,
+            y = if (abs(rawY - 0.5f) < 0.018f) 0.5f else rawY,
+            scaleX = (current.scaleX * zoom).coerceIn(0.05f, 10f),
+            scaleY = (current.scaleY * zoom).coerceIn(0.05f, 10f),
+            rotationDegrees = current.rotationDegrees + rotation
+        ))
     }
 
     BackHandler(enabled = activeTool != null || activePanel != null || selection != EditorSelection.None, onBack = ::closeOrBack)
@@ -384,11 +392,11 @@ fun EditorScreen(
                 Row(Modifier.fillMaxSize()) {
                     Column(Modifier.weight(0.46f)) {
                         PreviewWorkspace(
-                            project, editor, playheadUs, isPlaying, Modifier.weight(1f), activeTool,
-                            onCropChange = { crop ->
-                                (activeTool as? EditorTool.Crop)?.let { tool -> contextualVm.setClipCrop(id, tool.clipId, crop) { vm.load(id) } }
-                            },
-                            onTransformGesture = ::transformGesture
+                            project, editor, playheadUs, isPlaying, Modifier.weight(1f), activeTool, previewDraft,
+                            onCropChange = { crop -> previewDraft = previewDraft.copy(crop = crop) },
+                            onCropCommit = { },
+                            onTransformGesture = ::transformGesture,
+                            onTransformGestureEnd = { }
                         )
                         EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
                         TransportBar(
@@ -428,11 +436,11 @@ fun EditorScreen(
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.weight(0.56f)) {
                         PreviewWorkspace(
-                            project, editor, playheadUs, isPlaying, Modifier.weight(0.70f), activeTool,
-                            onCropChange = { crop ->
-                                (activeTool as? EditorTool.Crop)?.let { tool -> contextualVm.setClipCrop(id, tool.clipId, crop) { vm.load(id) } }
-                            },
-                            onTransformGesture = ::transformGesture
+                            project, editor, playheadUs, isPlaying, Modifier.weight(0.70f), activeTool, previewDraft,
+                            onCropChange = { crop -> previewDraft = previewDraft.copy(crop = crop) },
+                            onCropCommit = { },
+                            onTransformGesture = ::transformGesture,
+                            onTransformGestureEnd = { }
                         )
                         LandscapeInfoPane(
                             selection = selection,
@@ -477,11 +485,11 @@ fun EditorScreen(
             } else {
                 Column(Modifier.fillMaxSize()) {
                     PreviewWorkspace(
-                        project, editor, playheadUs, isPlaying, Modifier.weight(0.42f), activeTool,
-                        onCropChange = { crop ->
-                            (activeTool as? EditorTool.Crop)?.let { tool -> contextualVm.setClipCrop(id, tool.clipId, crop) { vm.load(id) } }
-                        },
-                        onTransformGesture = ::transformGesture
+                        project, editor, playheadUs, isPlaying, Modifier.weight(0.42f), activeTool, previewDraft,
+                            onCropChange = { crop -> previewDraft = previewDraft.copy(crop = crop) },
+                            onCropCommit = { },
+                            onTransformGesture = ::transformGesture,
+                            onTransformGestureEnd = { }
                     )
                     EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
                     TransportBar(
@@ -552,6 +560,8 @@ fun EditorScreen(
         editorVm = vm,
         contextualVm = contextualVm,
         overlayVm = overlayVm,
+        previewDraft = previewDraft,
+        onPreviewDraftChange = { previewDraft = it },
         onDismiss = ::clearToolSession,
         onSelect = ::select,
         onOpenTool = ::openTool,
