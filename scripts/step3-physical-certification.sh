@@ -19,8 +19,18 @@ require_cmd() {
   fi
 }
 
+hash_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1"
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1"
+  else
+    echo "A SHA-256 tool is required (sha256sum or shasum)." >&2
+    exit 2
+  fi
+}
+
 require_cmd adb
-require_cmd sha256sum
 
 if [ -n "$APK_PATH" ] && [ ! -f "$APK_PATH" ]; then
   echo "APK not found: $APK_PATH" >&2
@@ -46,7 +56,7 @@ if [ "$QEMU" = "1" ] || printf '%s' "$HARDWARE" | grep -Eqi 'ranchu|goldfish'; t
 fi
 
 if [ -n "$APK_PATH" ]; then
-  sha256sum "$APK_PATH" | tee "$REPORT_DIR/apk-sha256.txt"
+  hash_file "$APK_PATH" | tee "$REPORT_DIR/apk-sha256.txt"
   adb install -r "$APK_PATH" | tee "$REPORT_DIR/install.txt"
 fi
 
