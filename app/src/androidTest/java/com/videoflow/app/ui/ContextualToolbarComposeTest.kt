@@ -69,7 +69,7 @@ class ContextualToolbarComposeTest {
     }
 
     @Test
-    fun textAndImageSelections_routeToSharedTransformArchitecture() {
+    fun textSelection_routesToSharedTransformArchitecture() {
         var openedTool: EditorTool? = null
         rule.setContent {
             MaterialTheme {
@@ -84,7 +84,11 @@ class ContextualToolbarComposeTest {
         }
         rule.onNodeWithContentDescription("Transform").performClick()
         assertEquals(EditorTool.Transform("text-1", VisualOwnerType.TEXT), openedTool)
+    }
 
+    @Test
+    fun imageSelection_routesToSharedTransformArchitecture() {
+        var openedTool: EditorTool? = null
         rule.setContent {
             MaterialTheme {
                 EditorBottomToolbar(
