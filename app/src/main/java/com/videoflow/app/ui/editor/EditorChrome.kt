@@ -1,10 +1,8 @@
 package com.videoflow.app.ui.editor
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,31 +11,31 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.ContentCut
-import androidx.compose.material.icons.filled.Transform
-import androidx.compose.material.icons.filled.Opacity
-import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.Animation
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -93,10 +91,7 @@ fun EditorTopBar(
                     modifier = Modifier.weight(1f)
                 )
                 if (saving) {
-                    CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.width(16.dp).height(16.dp)
-                    )
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.width(16.dp).height(16.dp))
                 } else {
                     Icon(
                         Icons.Default.Check,
@@ -160,7 +155,7 @@ fun EditorWarningBanner(offlineCount: Int, changedCount: Int, onReview: () -> Un
         if (offlineCount > 0) append("$offlineCount original ${if (offlineCount == 1) "file" else "files"} unavailable")
         if (changedCount > 0) {
             if (isNotEmpty()) append(" • ")
-            append("$changedCount source ${if (changedCount == 1) "changed" else "changed"}")
+            append("$changedCount source changed")
         }
     }
     Surface(color = VideoFlowEditorColors.WarningColor.copy(alpha = 0.16f)) {
@@ -189,11 +184,8 @@ fun EditorBottomToolbar(
         when (selection) {
             EditorSelection.None, is EditorSelection.Track -> PrimaryToolbar(onPanel)
             is EditorSelection.Clip -> {
-                if (selectedClipMime?.startsWith("audio/") == true) {
-                    AudioClipToolbar(selection.clipId, onPanel, onSplit)
-                } else {
-                    VideoClipToolbar(selection.clipId, onPanel, onSplit)
-                }
+                if (selectedClipMime?.startsWith("audio/") == true) AudioClipToolbar(selection.clipId, onPanel, onSplit)
+                else VideoClipToolbar(selection.clipId, onPanel, onSplit)
             }
             is EditorSelection.TextOverlay -> TextOverlayToolbar(selection.overlayId, onPanel)
             is EditorSelection.ImageOverlay -> ImageOverlayToolbar(selection.overlayId, onPanel)
@@ -287,8 +279,13 @@ private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun LandscapeInfoPane(selection: EditorSelection, projectName: String, resolution: String) {
-    Surface(color = VideoFlowEditorColors.EditorSurface) {
+fun LandscapeInfoPane(
+    selection: EditorSelection,
+    projectName: String,
+    resolution: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(color = VideoFlowEditorColors.EditorSurface, modifier = modifier) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(projectName, color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.titleMedium)
             Text(resolution, color = VideoFlowEditorColors.SecondaryText, style = MaterialTheme.typography.bodySmall)
