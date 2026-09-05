@@ -69,20 +69,24 @@ class SafMediaMuxerFactoryInstrumentedTest {
                 source.delete()
             }
 
+            // A freshly finalized MediaStore row can expose stale SIZE metadata briefly on some
+            // providers/emulators. Read the file descriptor itself: this measures the bytes the
+            // direct-SAF muxer actually committed, independent of MediaStore indexing latency.
+            val directSize = resolver.openFileDescriptor(outputUri, "r")!!.use { pfd -> pfd.statSize }
+            assertTrue("Direct SAF MP4 should contain encoded media", directSize > 1_024L)
+
             val verify = MediaExtractor()
             try {
                 resolver.openFileDescriptor(outputUri, "r")!!.use { verify.setDataSource(it.fileDescriptor) }
                 assertEquals(2, verify.trackCount)
-                val mimes = (0 until verify.trackCount).map { verify.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME).orEmpty() }
+                val mimes = (0 until verify.trackCount).map {
+                    verify.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME).orEmpty()
+                }
                 assertTrue(mimes.any { it.startsWith("video/") })
                 assertTrue(mimes.any { it.startsWith("audio/") })
             } finally {
                 verify.release()
             }
-            val size = resolver.query(outputUri, arrayOf(MediaStore.Video.Media.SIZE), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
-            } ?: 0L
-            assertTrue("Direct SAF MP4 should contain encoded media", size > 1_024L)
         } finally {
             resolver.delete(outputUri, null, null)
             source.delete()
