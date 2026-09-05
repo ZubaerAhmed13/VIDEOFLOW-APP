@@ -84,9 +84,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'version = 2' app/src/main/java/com/videoflow/app/data/db/Entities.kt
+          # Step 2's schema contract must remain present even when a later step advances Room.
+          grep -q 'ProjectSettingsEntity::class' app/src/main/java/com/videoflow/app/data/db/Entities.kt
+          grep -q 'TrackEntity::class' app/src/main/java/com/videoflow/app/data/db/Entities.kt
+          grep -q 'ClipEntity::class' app/src/main/java/com/videoflow/app/data/db/Entities.kt
+          grep -q 'ProxyEntity::class' app/src/main/java/com/videoflow/app/data/db/Entities.kt
+          grep -q 'SnapshotEntity::class' app/src/main/java/com/videoflow/app/data/db/Entities.kt
           grep -q 'MIGRATION_1_2' app/src/main/java/com/videoflow/app/data/db/Migrations.kt
-          grep -q 'addMigrations(MIGRATION_1_2)' app/src/main/java/com/videoflow/app/di/AppModule.kt
+          grep -Eq 'addMigrations\([^)]*MIGRATION_1_2' app/src/main/java/com/videoflow/app/di/AppModule.kt
           for doc in README_ANDROID.md ANDROID_ARCHITECTURE.md TIMELINE_ARCHITECTURE.md PROXY_ARCHITECTURE.md PREVIEW_ENGINE.md KEYFRAME_ARCHITECTURE.md EDIT_HISTORY.md AUDIO_EDITING_STEP2.md LARGE_MEDIA_STEP2.md STEP_2_TEST_REPORT.md STEP_2_COMPLETION_REPORT.md STEP_2_PHYSICAL_DEVICE_CERTIFICATION.md; do
             test -s "$doc"
           done

@@ -52,6 +52,7 @@ fun Step2ProjectScreen(
     id: String,
     onBack: () -> Unit,
     onOpenEditor: () -> Unit,
+    onExport: () -> Unit,
     vm: ProjectViewModel
 ) {
     val project by vm.project.collectAsState()
@@ -97,24 +98,33 @@ fun Step2ProjectScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { vm.pickerOpened(); add.launch(STEP2_MEDIA_MIME_TYPES) },
-                        enabled = !busy,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (busy) "Working…" else "Import Media")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { vm.pickerOpened(); add.launch(STEP2_MEDIA_MIME_TYPES) },
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (busy) "Working…" else "Import Media")
+                        }
+                        Button(
+                            onClick = onOpenEditor,
+                            enabled = project != null,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Open Editor")
+                        }
                     }
-                    Button(
-                        onClick = onOpenEditor,
+                    OutlinedButton(
+                        onClick = onExport,
                         enabled = project != null,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Default.Edit, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Open Editor")
+                        Text("Professional Export")
                     }
                 }
             }
@@ -190,7 +200,7 @@ private fun Step2MediaCard(media: MediaAsset, onRelink: () -> Unit) {
             }.joinToString(" • ")
             if (technical.isNotBlank()) Text(technical, style = MaterialTheme.typography.bodySmall)
             Text("Source: ${media.sourceStatus.name.replace('_', ' ')}", style = MaterialTheme.typography.bodySmall)
-            Text("Proxy: No Proxy / not generated yet", style = MaterialTheme.typography.bodySmall)
+            Text("Proxy generation and status are managed in the Editor; final export always resolves the original source.", style = MaterialTheme.typography.bodySmall)
             if (media.sourceStatus.name != "AVAILABLE") {
                 OutlinedButton(onClick = onRelink) { Text("Locate Source") }
             }

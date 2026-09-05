@@ -172,7 +172,8 @@ data class RenderPlan(
     val clips: List<TimelineClip>,
     val textOverlays: List<TextOverlay>,
     val imageOverlays: List<ImageOverlay>,
-    val keyframes: List<Keyframe>
+    val keyframes: List<Keyframe>,
+    val backgroundArgb: Long = 0xFF000000
 )
 
 object PlanBuilder {
@@ -214,7 +215,8 @@ object PlanBuilder {
         clips = state.clips.sortedWith(compareBy<TimelineClip> { it.timelineStartUs }.thenBy { it.id }),
         textOverlays = state.textOverlays.sortedBy { it.timelineStartUs },
         imageOverlays = state.imageOverlays.sortedBy { it.timelineStartUs },
-        keyframes = state.keyframes.sortedWith(compareBy<Keyframe> { it.ownerId }.thenBy { it.property.name }.thenBy { it.timeUs })
+        keyframes = state.keyframes.sortedWith(compareBy<Keyframe> { it.ownerId }.thenBy { it.property.name }.thenBy { it.timeUs }),
+        backgroundArgb = settings.backgroundArgb
     )
 }
 

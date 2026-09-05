@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.videoflow.app.data.db.MIGRATION_1_2
+import com.videoflow.app.data.db.MIGRATION_2_3
 import com.videoflow.app.data.db.Step2DatabaseCallback
 import com.videoflow.app.data.db.VideoFlowDatabase
 import org.junit.After
@@ -29,26 +30,26 @@ class Step2MigrationTest {
     }
 
     @Test
-    fun migration1To2PreservesStep1FieldsAndRoomValidatesEditorSchema() {
+    fun migration1To3PreservesStep1AndStep2DataAndRoomValidatesCurrentSchema() {
         createAuthenticVersion1Database()
 
         val room = Room.databaseBuilder(context, VideoFlowDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .addCallback(Step2DatabaseCallback)
             .allowMainThreadQueries()
             .build()
 
         try {
-            // Opening the real Room database executes MIGRATION_1_2 and then Room's generated
-            // v2 schema validator. Any missing column, FK, index, affinity or nullability mismatch
-            // fails the open, so this exercises the production migration path without depending on
-            // MigrationTestHelper's unrelated schema-JSON serialization runtime.
+            // Opening the real production database executes the complete 1 -> 2 -> 3 chain and
+            // then Room's generated v3 schema validator. Any missing column, FK, index, affinity
+            // or nullability mismatch fails this open.
             val db = room.openHelper.writableDatabase
-            assertEquals(2, db.version)
+            assertEquals(3, db.version)
 
             db.query("SELECT name, projectFormatVersion, createdAt, updatedAt FROM projects WHERE id='p'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("Legacy", cursor.getString(0))
+                // Step 3 adds export persistence only; the editor project semantic format remains v2.
                 assertEquals(2, cursor.getInt(1))
                 assertEquals(10L, cursor.getLong(2))
                 assertEquals(20L, cursor.getLong(3))
@@ -70,7 +71,7 @@ class Step2MigrationTest {
                 assertEquals(-16_777_216, cursor.getInt(4))
             }
 
-            EXPECTED_STEP2_TABLES.forEach { table ->
+            EXPECTED_CURRENT_TABLES.forEach { table ->
                 db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='$table'").use { cursor ->
                     assertTrue("Missing migrated table: $table", cursor.moveToFirst())
                     assertEquals(table, cursor.getString(0))
@@ -92,11 +93,7 @@ class Step2MigrationTest {
         }
     }
 
-    /**
-     * Builds the checked-in Step 1 Room v1 schema directly from its exported schema contract:
-     * two tables, the exact foreign key and indices, and the original Room identity hash.
-     * This is intentionally a real on-disk v1 database, not an in-memory or mocked migration.
-     */
+    /** Builds the checked-in Step 1 Room v1 schema and representative persisted data. */
     private fun createAuthenticVersion1Database() {
         val dbFile = context.getDatabasePath(DB_NAME)
         dbFile.parentFile?.mkdirs()
@@ -192,7 +189,7 @@ class Step2MigrationTest {
     companion object {
         private const val DB_NAME = "step2-migration-test"
         private const val V1_IDENTITY_HASH = "2f10f3828cd9e06d6e20d77a6df6bd65"
-        private val EXPECTED_STEP2_TABLES = listOf(
+        private val EXPECTED_CURRENT_TABLES = listOf(
             "project_settings",
             "tracks",
             "clips",
@@ -200,7 +197,9 @@ class Step2MigrationTest {
             "image_overlays",
             "keyframes",
             "proxies",
-            "snapshots"
+            "snapshots",
+            "export_jobs",
+            "export_reports"
         )
     }
 }
