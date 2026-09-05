@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import shutil
 import subprocess
 import sys
@@ -31,7 +30,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--expect-audio", choices=["yes", "no"])
     p.add_argument("--expected-duration-seconds", type=float)
     p.add_argument("--duration-tolerance-seconds", type=float, default=0.12)
-    p.add_argument("--fps-tolerance", type=float, default=0.03)
+    p.add_argument(
+        "--fps-tolerance",
+        type=float,
+        default=None,
+        help="Optional absolute FPS tolerance. Default is max(0.01, expected_fps*0.0005), matching VideoFlow cadence validation.",
+    )
     p.add_argument("--report-prefix", type=Path)
     return p.parse_args()
 
@@ -59,6 +63,19 @@ def ffprobe(path: Path) -> dict:
 
 def main() -> int:
     args = parse_args()
+    if args.expected_fps_num is not None and args.expected_fps_num <= 0:
+        print("ERROR: --expected-fps-num must be > 0", file=sys.stderr)
+        return 2
+    if args.expected_fps_den <= 0:
+        print("ERROR: --expected-fps-den must be > 0", file=sys.stderr)
+        return 2
+    if args.fps_tolerance is not None and args.fps_tolerance <= 0:
+        print("ERROR: --fps-tolerance must be > 0", file=sys.stderr)
+        return 2
+    if args.duration_tolerance_seconds < 0:
+        print("ERROR: --duration-tolerance-seconds must be >= 0", file=sys.stderr)
+        return 2
+
     path = args.file.expanduser().resolve()
     if not path.is_file():
         print(f"ERROR: file not found: {path}", file=sys.stderr)
@@ -131,8 +148,9 @@ def main() -> int:
         checks.append(("audio presence", (audio is not None) == expected, f"expected audio={expected}, got audio={audio is not None}"))
     if args.expected_fps_num is not None:
         expected_fps = args.expected_fps_num / args.expected_fps_den
-        ok = fps is not None and math.isfinite(fps) and abs(fps - expected_fps) <= args.fps_tolerance
-        checks.append(("frame rate", ok, f"expected {expected_fps:.6f} ± {args.fps_tolerance:.6f}, got {fps}"))
+        tolerance = args.fps_tolerance if args.fps_tolerance is not None else max(0.01, expected_fps * 0.0005)
+        ok = fps is not None and math.isfinite(fps) and abs(fps - expected_fps) <= tolerance
+        checks.append(("frame rate", ok, f"expected {expected_fps:.6f} ± {tolerance:.6f}, got {fps}"))
     if args.expected_duration_seconds is not None:
         ok = duration is not None and abs(duration - args.expected_duration_seconds) <= args.duration_tolerance_seconds
         checks.append(("duration", ok, f"expected {args.expected_duration_seconds:.3f}s ± {args.duration_tolerance_seconds:.3f}s, got {duration}"))
