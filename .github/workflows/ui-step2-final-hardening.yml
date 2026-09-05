@@ -1,0 +1,34 @@
+name: UI Step 2 final hardening patch
+
+on:
+  push:
+    branches: [ui-step2-contextual-tools]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Run Step2 final hardening patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui-step2-contextual-tools
+          fetch-depth: 0
+      - name: Apply final hardening
+        shell: bash
+        run: |
+          python3 .github/scripts/step2_final_hardening.py
+          git diff --check
+          git config user.name "Zubaer Ahmed"
+          git config user.email "zubaerknight@gmail.com"
+          git add app/src/main/java/com/videoflow/app/ui/editor/ContextualEditingMath.kt \
+                  app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt \
+                  app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt \
+                  app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt \
+                  app/src/test/java/com/videoflow/app/ui/editor/ContextualEditingMathTest.kt \
+                  app/src/test/java/com/videoflow/app/ui/editor/Step2LateInteractionContractTest.kt \
+                  UI_STEP_2_TEST_REPORT.md
+          git commit -m "Harden rotated crop and late Step 2 interaction regressions"
+          git push origin ui-step2-contextual-tools
