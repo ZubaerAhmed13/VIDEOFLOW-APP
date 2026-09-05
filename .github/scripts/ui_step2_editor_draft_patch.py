@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Temporary one-shot audit patch. Removed before the final certified SHA.
 p = Path('.github/workflows/android-ui-step2-ci.yml')
 s = p.read_text()
 
