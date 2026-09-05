@@ -1,7 +1,6 @@
 package com.videoflow.app.ui
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -35,7 +34,7 @@ class EditorWorkspaceComposeTest {
         }
 
         listOf("Media", "Audio", "Text", "Overlay", "Canvas", "More").forEach { label ->
-            rule.onNodeWithContentDescription(label).assertExists()
+            rule.onNodeWithContentDescription(label).fetchSemanticsNode()
         }
     }
 
@@ -53,7 +52,7 @@ class EditorWorkspaceComposeTest {
         }
 
         listOf("Split", "Trim", "Speed", "Crop", "Volume", "More").forEach { label ->
-            rule.onNodeWithContentDescription(label).assertExists()
+            rule.onNodeWithContentDescription(label).fetchSemanticsNode()
         }
     }
 
@@ -71,7 +70,7 @@ class EditorWorkspaceComposeTest {
         }
 
         listOf("Split", "Volume", "Fade", "Speed", "More").forEach { label ->
-            rule.onNodeWithContentDescription(label).assertExists()
+            rule.onNodeWithContentDescription(label).fetchSemanticsNode()
         }
     }
 
