@@ -60,6 +60,7 @@ import com.videoflow.app.ui.editor.VideoFlowEditorColors
 import com.videoflow.app.ui.editor.VisualOwnerType
 import kotlinx.coroutines.delay
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -425,6 +426,20 @@ fun EditorScreen(
                         onSelect = ::select,
                         onClearSelection = ::clearSelection,
                         onMoveClip = { clipId, deltaUs -> vm.selectClip(clipId); selection = EditorSelection.Clip(clipId); vm.moveSelectedSnapped(deltaUs, pixelsPerSecond.toDouble()) },
+                        onTrimClipStart = { clipId, deltaTimelineUs ->
+                            clips.firstOrNull { it.id == clipId }?.let { clip ->
+                                vm.selectClip(clipId)
+                                selection = EditorSelection.Clip(clipId)
+                                vm.trimSelectedStart((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                            }
+                        },
+                        onTrimClipEnd = { clipId, deltaTimelineUs ->
+                            clips.firstOrNull { it.id == clipId }?.let { clip ->
+                                vm.selectClip(clipId)
+                                selection = EditorSelection.Clip(clipId)
+                                vm.trimSelectedEnd((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                            }
+                        },
                         onToggleMute = { vm.toggleTrackMute(it.id, !it.muted) },
                         onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
                         onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
@@ -475,6 +490,20 @@ fun EditorScreen(
                         onSelect = ::select,
                         onClearSelection = ::clearSelection,
                         onMoveClip = { clipId, deltaUs -> vm.selectClip(clipId); selection = EditorSelection.Clip(clipId); vm.moveSelectedSnapped(deltaUs, pixelsPerSecond.toDouble()) },
+                        onTrimClipStart = { clipId, deltaTimelineUs ->
+                            clips.firstOrNull { it.id == clipId }?.let { clip ->
+                                vm.selectClip(clipId)
+                                selection = EditorSelection.Clip(clipId)
+                                vm.trimSelectedStart((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                            }
+                        },
+                        onTrimClipEnd = { clipId, deltaTimelineUs ->
+                            clips.firstOrNull { it.id == clipId }?.let { clip ->
+                                vm.selectClip(clipId)
+                                selection = EditorSelection.Clip(clipId)
+                                vm.trimSelectedEnd((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                            }
+                        },
                         onToggleMute = { vm.toggleTrackMute(it.id, !it.muted) },
                         onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
                         onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
@@ -517,6 +546,20 @@ fun EditorScreen(
                         onSelect = ::select,
                         onClearSelection = ::clearSelection,
                         onMoveClip = { clipId, deltaUs -> vm.selectClip(clipId); selection = EditorSelection.Clip(clipId); vm.moveSelectedSnapped(deltaUs, pixelsPerSecond.toDouble()) },
+                        onTrimClipStart = { clipId, deltaTimelineUs ->
+                            clips.firstOrNull { it.id == clipId }?.let { clip ->
+                                vm.selectClip(clipId)
+                                selection = EditorSelection.Clip(clipId)
+                                vm.trimSelectedStart((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                            }
+                        },
+                        onTrimClipEnd = { clipId, deltaTimelineUs ->
+                            clips.firstOrNull { it.id == clipId }?.let { clip ->
+                                vm.selectClip(clipId)
+                                selection = EditorSelection.Clip(clipId)
+                                vm.trimSelectedEnd((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                            }
+                        },
                         onToggleMute = { vm.toggleTrackMute(it.id, !it.muted) },
                         onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
                         onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
