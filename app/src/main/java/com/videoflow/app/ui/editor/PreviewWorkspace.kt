@@ -1,7 +1,6 @@
 package com.videoflow.app.ui.editor
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -25,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.videoflow.app.data.editor.EditorProject
 import com.videoflow.app.domain.editor.AudioMath
+import com.videoflow.app.domain.editor.CropRect
 import com.videoflow.app.domain.editor.KeyframeEvaluator
 import com.videoflow.app.domain.editor.KeyframeProperty
 import com.videoflow.app.domain.editor.ProxyStatus
@@ -42,7 +42,10 @@ fun PreviewWorkspace(
     editor: EditorProject?,
     playheadUs: Long,
     isPlaying: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    activeTool: EditorTool? = null,
+    onCropChange: (CropRect) -> Unit = {},
+    onTransformGesture: (dxNormalized: Float, dyNormalized: Float, zoom: Float, rotationDelta: Float) -> Unit = { _, _, _, _ -> }
 ) {
     val timeline = editor?.timeline
     val tracks = timeline?.tracks.orEmpty()
@@ -118,7 +121,7 @@ fun PreviewWorkspace(
         } else {
             Modifier.width(maxWidth).height(maxWidth / aspect)
         }
-        Box(
+        BoxWithConstraints(
             frameModifier
                 .background(settings?.let { Color(it.backgroundArgb.toInt()) } ?: Color.Black)
                 .clipToBounds(),
@@ -140,7 +143,10 @@ fun PreviewWorkspace(
                         volume = videoVolume,
                         modifier = Modifier
                             .fillMaxSize()
-                            .offset(x = ((t.x - 0.5f) * 160f).dp, y = ((t.y - 0.5f) * 100f).dp)
+                            .offset(
+                                x = maxWidth * (t.x - 0.5f),
+                                y = maxHeight * (t.y - 0.5f)
+                            )
                             .graphicsLayer {
                                 scaleX = (t.scaleX / cropWidth) * if (t.flipHorizontal) -1f else 1f
                                 scaleY = (t.scaleY / cropHeight) * if (t.flipVertical) -1f else 1f
@@ -171,8 +177,8 @@ fun PreviewWorkspace(
                     modifier = Modifier
                         .widthIn(max = 220.dp)
                         .offset(
-                            x = ((value(KeyframeProperty.POSITION_X, overlay.transform.x) - 0.5f) * 160f).dp,
-                            y = ((value(KeyframeProperty.POSITION_Y, overlay.transform.y) - 0.5f) * 100f).dp
+                            x = maxWidth * (value(KeyframeProperty.POSITION_X, overlay.transform.x) - 0.5f),
+                            y = maxHeight * (value(KeyframeProperty.POSITION_Y, overlay.transform.y) - 0.5f)
                         )
                         .graphicsLayer(
                             scaleX = value(KeyframeProperty.SCALE_X, overlay.transform.scaleX),
@@ -201,8 +207,8 @@ fun PreviewWorkspace(
                     modifier = Modifier
                         .widthIn(max = 280.dp)
                         .offset(
-                            x = ((value(KeyframeProperty.POSITION_X, overlay.transform.x) - 0.5f) * 160f).dp,
-                            y = ((value(KeyframeProperty.POSITION_Y, overlay.transform.y) - 0.5f) * 100f).dp
+                            x = maxWidth * (value(KeyframeProperty.POSITION_X, overlay.transform.x) - 0.5f),
+                            y = maxHeight * (value(KeyframeProperty.POSITION_Y, overlay.transform.y) - 0.5f)
                         )
                         .graphicsLayer(
                             scaleX = value(KeyframeProperty.SCALE_X, overlay.transform.scaleX),
@@ -210,6 +216,36 @@ fun PreviewWorkspace(
                             rotationZ = value(KeyframeProperty.ROTATION, overlay.transform.rotationDegrees)
                         )
                 )
+            }
+
+            when (val tool = activeTool) {
+                is EditorTool.Crop -> {
+                    val target = timeline?.clips?.firstOrNull { it.id == tool.clipId }
+                    if (target != null) {
+                        CropInteractionOverlay(
+                            crop = target.transform.crop,
+                            onCropChange = onCropChange,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+                is EditorTool.Transform -> {
+                    val t = when (tool.ownerType) {
+                        VisualOwnerType.CLIP -> timeline?.clips?.firstOrNull { it.id == tool.ownerId }?.transform
+                        VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.transform
+                        VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.transform
+                    }
+                    if (t != null) {
+                        TransformInteractionOverlay(
+                            centerX = t.x,
+                            centerY = t.y,
+                            scale = t.scaleX,
+                            onGesture = onTransformGesture,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+                else -> Unit
             }
         }
 
