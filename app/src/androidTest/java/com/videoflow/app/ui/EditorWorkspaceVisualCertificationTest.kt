@@ -105,7 +105,7 @@ class EditorWorkspaceVisualCertificationTest {
 
     private fun capture(name: String) {
         val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = File(targetContext.getExternalFilesDir(null), "ui-step1-visual")
+        val directory = File(targetContext.filesDir, "ui-step1-visual")
         assertTrue(directory.exists() || directory.mkdirs())
         assertTrue("Screenshot $name should be captured", device.takeScreenshot(File(directory, name)))
     }
