@@ -60,10 +60,12 @@ fun CropInteractionOverlay(
             .pointerInput(crop) {
                 detectDragGestures(
                     onDragStart = { p ->
-                        val left = crop.left * size.width
-                        val right = crop.right * size.width
-                        val top = crop.top * size.height
-                        val bottom = crop.bottom * size.height
+                        val width = size.width.toFloat().coerceAtLeast(1f)
+                        val height = size.height.toFloat().coerceAtLeast(1f)
+                        val left = crop.left * width
+                        val right = crop.right * width
+                        val top = crop.top * height
+                        val bottom = crop.bottom * height
                         val nearL = abs(p.x - left) <= hitPx
                         val nearR = abs(p.x - right) <= hitPx
                         val nearT = abs(p.y - top) <= hitPx
@@ -82,8 +84,10 @@ fun CropInteractionOverlay(
                     },
                     onDrag = { change, drag ->
                         change.consume()
-                        val dx = drag.x / size.width.coerceAtLeast(1f)
-                        val dy = drag.y / size.height.coerceAtLeast(1f)
+                        val widthPx = size.width.toFloat().coerceAtLeast(1f)
+                        val heightPx = size.height.toFloat().coerceAtLeast(1f)
+                        val dx = drag.x / widthPx
+                        val dy = drag.y / heightPx
                         val minSize = 0.02f
                         var l = crop.left
                         var r = crop.right
@@ -144,9 +148,11 @@ fun TransformInteractionOverlay(
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, rotation ->
+                    val widthPx = size.width.toFloat().coerceAtLeast(1f)
+                    val heightPx = size.height.toFloat().coerceAtLeast(1f)
                     onGesture(
-                        pan.x / size.width.coerceAtLeast(1f),
-                        pan.y / size.height.coerceAtLeast(1f),
+                        pan.x / widthPx,
+                        pan.y / heightPx,
                         zoom.coerceIn(0.5f, 2f),
                         rotation
                     )
