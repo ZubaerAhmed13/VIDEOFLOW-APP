@@ -194,6 +194,7 @@ fun EditorBottomToolbar(
     selection: EditorSelection,
     selectedClipMime: String?,
     onPanel: (EditorPanel) -> Unit,
+    onTool: (EditorTool) -> Unit,
     onSplit: () -> Unit
 ) {
     Surface(
@@ -202,23 +203,23 @@ fun EditorBottomToolbar(
         modifier = Modifier.navigationBarsPadding()
     ) {
         when (selection) {
-            EditorSelection.None, is EditorSelection.Track -> PrimaryToolbar(onPanel)
+            EditorSelection.None, is EditorSelection.Track -> PrimaryToolbar(onPanel, onTool)
             is EditorSelection.Clip -> {
-                if (selectedClipMime?.startsWith("audio/") == true) AudioClipToolbar(selection.clipId, onPanel, onSplit)
-                else VideoClipToolbar(selection.clipId, onPanel, onSplit)
+                if (selectedClipMime?.startsWith("audio/") == true) AudioClipToolbar(selection.clipId, onTool, onSplit)
+                else VideoClipToolbar(selection.clipId, onTool, onSplit)
             }
-            is EditorSelection.TextOverlay -> TextOverlayToolbar(selection.overlayId, onPanel)
-            is EditorSelection.ImageOverlay -> ImageOverlayToolbar(selection.overlayId, onPanel)
+            is EditorSelection.TextOverlay -> TextOverlayToolbar(selection.overlayId, onTool)
+            is EditorSelection.ImageOverlay -> ImageOverlayToolbar(selection.overlayId, onTool)
         }
     }
 }
 
 @Composable
-private fun PrimaryToolbar(onPanel: (EditorPanel) -> Unit) {
+private fun PrimaryToolbar(onPanel: (EditorPanel) -> Unit, onTool: (EditorTool) -> Unit) {
     ToolRow {
         ToolButton(Icons.Default.VideoLibrary, "Media") { onPanel(EditorPanel.Media) }
         ToolButton(Icons.Default.Audiotrack, "Audio") { onPanel(EditorPanel.Audio) }
-        ToolButton(Icons.Default.TextFields, "Text") { onPanel(EditorPanel.TextTool(EditorPanelKind.TEXT_EDIT, "new")) }
+        ToolButton(Icons.Default.TextFields, "Text") { onTool(EditorTool.TextEditor(null)) }
         ToolButton(Icons.Default.Image, "Overlay") { onPanel(EditorPanel.Overlay) }
         ToolButton(Icons.Default.Layers, "Canvas") { onPanel(EditorPanel.Canvas) }
         ToolButton(Icons.Default.MoreHoriz, "More") { onPanel(EditorPanel.More) }
@@ -226,48 +227,49 @@ private fun PrimaryToolbar(onPanel: (EditorPanel) -> Unit) {
 }
 
 @Composable
-private fun VideoClipToolbar(clipId: String, onPanel: (EditorPanel) -> Unit, onSplit: () -> Unit) {
+private fun VideoClipToolbar(clipId: String, onTool: (EditorTool) -> Unit, onSplit: () -> Unit) {
     ToolRow {
         ToolButton(Icons.Default.ContentCut, "Split", onSplit)
-        ToolButton(Icons.Default.Tune, "Trim") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_TRIM, clipId)) }
-        ToolButton(Icons.Default.Speed, "Speed") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_SPEED, clipId)) }
-        ToolButton(Icons.Default.Crop, "Crop") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_CROP, clipId)) }
-        ToolButton(Icons.Default.VolumeUp, "Volume") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_VOLUME, clipId)) }
-        ToolButton(Icons.Default.MoreHoriz, "More") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_MORE, clipId)) }
+        ToolButton(Icons.Default.Tune, "Trim") { onTool(EditorTool.Trim(clipId)) }
+        ToolButton(Icons.Default.Speed, "Speed") { onTool(EditorTool.Speed(clipId)) }
+        ToolButton(Icons.Default.Crop, "Crop") { onTool(EditorTool.Crop(clipId)) }
+        ToolButton(Icons.Default.VolumeUp, "Volume") { onTool(EditorTool.Volume(clipId)) }
+        ToolButton(Icons.Default.MoreHoriz, "More") { onTool(EditorTool.More(clipId, VisualOwnerType.CLIP)) }
     }
 }
 
 @Composable
-private fun AudioClipToolbar(clipId: String, onPanel: (EditorPanel) -> Unit, onSplit: () -> Unit) {
+private fun AudioClipToolbar(clipId: String, onTool: (EditorTool) -> Unit, onSplit: () -> Unit) {
     ToolRow {
         ToolButton(Icons.Default.ContentCut, "Split", onSplit)
-        ToolButton(Icons.Default.VolumeUp, "Volume") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_VOLUME, clipId)) }
-        ToolButton(Icons.Default.AccessTime, "Fade") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_FADE, clipId)) }
-        ToolButton(Icons.Default.Speed, "Speed") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_SPEED, clipId)) }
-        ToolButton(Icons.Default.MoreHoriz, "More") { onPanel(EditorPanel.ClipTool(EditorPanelKind.CLIP_MORE, clipId)) }
+        ToolButton(Icons.Default.Tune, "Trim") { onTool(EditorTool.Trim(clipId)) }
+        ToolButton(Icons.Default.VolumeUp, "Volume") { onTool(EditorTool.Volume(clipId)) }
+        ToolButton(Icons.Default.AccessTime, "Fade") { onTool(EditorTool.Fade(clipId)) }
+        ToolButton(Icons.Default.Speed, "Speed") { onTool(EditorTool.Speed(clipId)) }
+        ToolButton(Icons.Default.MoreHoriz, "More") { onTool(EditorTool.More(clipId, VisualOwnerType.CLIP)) }
     }
 }
 
 @Composable
-private fun TextOverlayToolbar(overlayId: String, onPanel: (EditorPanel) -> Unit) {
+private fun TextOverlayToolbar(overlayId: String, onTool: (EditorTool) -> Unit) {
     ToolRow {
-        ToolButton(Icons.Default.TextFields, "Edit") { onPanel(EditorPanel.TextTool(EditorPanelKind.TEXT_EDIT, overlayId)) }
-        ToolButton(Icons.Default.Tune, "Style") { onPanel(EditorPanel.TextTool(EditorPanelKind.TEXT_STYLE, overlayId)) }
-        ToolButton(Icons.Default.Transform, "Transform") { onPanel(EditorPanel.TextTool(EditorPanelKind.TEXT_TRANSFORM, overlayId)) }
-        ToolButton(Icons.Default.Opacity, "Opacity") { onPanel(EditorPanel.TextTool(EditorPanelKind.TEXT_OPACITY, overlayId)) }
-        ToolButton(Icons.Default.Animation, "Keyframe") { onPanel(EditorPanel.TextTool(EditorPanelKind.TEXT_KEYFRAME, overlayId)) }
-        ToolButton(Icons.Default.MoreHoriz, "More") { onPanel(EditorPanel.TextTool(EditorPanelKind.TEXT_MORE, overlayId)) }
+        ToolButton(Icons.Default.TextFields, "Edit") { onTool(EditorTool.TextEditor(overlayId)) }
+        ToolButton(Icons.Default.Tune, "Style") { onTool(EditorTool.TextStyle(overlayId)) }
+        ToolButton(Icons.Default.Transform, "Transform") { onTool(EditorTool.Transform(overlayId, VisualOwnerType.TEXT)) }
+        ToolButton(Icons.Default.Opacity, "Opacity") { onTool(EditorTool.Opacity(overlayId, VisualOwnerType.TEXT)) }
+        ToolButton(Icons.Default.Animation, "Keyframe") { onTool(EditorTool.Keyframes(overlayId, VisualOwnerType.TEXT)) }
+        ToolButton(Icons.Default.MoreHoriz, "More") { onTool(EditorTool.More(overlayId, VisualOwnerType.TEXT)) }
     }
 }
 
 @Composable
-private fun ImageOverlayToolbar(overlayId: String, onPanel: (EditorPanel) -> Unit) {
+private fun ImageOverlayToolbar(overlayId: String, onTool: (EditorTool) -> Unit) {
     ToolRow {
-        ToolButton(Icons.Default.Transform, "Transform") { onPanel(EditorPanel.ImageTool(EditorPanelKind.IMAGE_TRANSFORM, overlayId)) }
-        ToolButton(Icons.Default.Opacity, "Opacity") { onPanel(EditorPanel.ImageTool(EditorPanelKind.IMAGE_OPACITY, overlayId)) }
-        ToolButton(Icons.Default.AccessTime, "Duration") { onPanel(EditorPanel.ImageTool(EditorPanelKind.IMAGE_DURATION, overlayId)) }
-        ToolButton(Icons.Default.Animation, "Keyframe") { onPanel(EditorPanel.ImageTool(EditorPanelKind.IMAGE_KEYFRAME, overlayId)) }
-        ToolButton(Icons.Default.MoreHoriz, "More") { onPanel(EditorPanel.ImageTool(EditorPanelKind.IMAGE_MORE, overlayId)) }
+        ToolButton(Icons.Default.Transform, "Transform") { onTool(EditorTool.Transform(overlayId, VisualOwnerType.IMAGE)) }
+        ToolButton(Icons.Default.Opacity, "Opacity") { onTool(EditorTool.Opacity(overlayId, VisualOwnerType.IMAGE)) }
+        ToolButton(Icons.Default.AccessTime, "Timing") { onTool(EditorTool.Timing(overlayId, TimedOwnerType.IMAGE)) }
+        ToolButton(Icons.Default.Animation, "Keyframe") { onTool(EditorTool.Keyframes(overlayId, VisualOwnerType.IMAGE)) }
+        ToolButton(Icons.Default.MoreHoriz, "More") { onTool(EditorTool.More(overlayId, VisualOwnerType.IMAGE)) }
     }
 }
 
