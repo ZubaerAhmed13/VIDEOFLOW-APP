@@ -1,0 +1,186 @@
+name: VideoFlow Android UI Step 1 Review APK
+
+on:
+  push:
+    branches:
+      - ui-step1-professional-editor
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-step1-review-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-review-apk:
+    name: Build and verify stable-signed Review APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install Android API 37.0 platform and build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM_URL='https://dl.google.com/android/repository/platform-37.0_r02.zip'
+          PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
+          curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
+          echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          mkdir -p "$ANDROID_HOME/platforms"
+          unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
+          sdkmanager 'build-tools;36.0.0'
+          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
+          rm -f /tmp/platform-37.0_r02.zip
+
+      - name: Restore stable non-production Review signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ci/review-test.keystore.b64
+          base64 --decode ci/review-test.keystore.b64 > ci/review-test.keystore
+          chmod 600 ci/review-test.keystore
+          FINGERPRINT=$(keytool -list -v -keystore ci/review-test.keystore -storepass videoflow-review -alias videoflow-review | awk -F'SHA256: ' '/SHA256:/{print $2; exit}')
+          test "$FINGERPRINT" = 'F3:D4:E6:6B:35:08:00:BC:A7:39:B2:C5:F6:F4:D2:C7:F1:5C:7D:C8:9B:1B:87:63:BD:51:46:8A:B7:15:0C:C7'
+          printf 'Review certificate SHA-256: %s\n' "$FINGERPRINT"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Assemble Review APK
+        run: ./gradlew assembleReview --stacktrace
+
+      - name: Verify Review package and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/review/app-review.apk'
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee review-badging.txt
+          grep -q "package: name='com.videoflow.app.review'" review-badging.txt
+          grep -q "application-label:'VideoFlow Review'" review-badging.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee review-signature.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: f3d4e66b350800bca739b2c5f6f4d2c7f15c7dc89b1b8763bd51468ab7150cc7' review-signature.txt
+
+      - name: Package Review APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p review-artifact
+          cp app/build/outputs/apk/review/app-review.apk review-artifact/VideoFlow_Android_UI_Step1_Review.apk
+          cp review-badging.txt review-signature.txt ci/REVIEW_SIGNING.md review-artifact/
+          (cd review-artifact && sha256sum VideoFlow_Android_UI_Step1_Review.apk | tee SHA256SUMS.txt)
+
+      - name: Upload Review APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step1-Review
+          path: review-artifact/
+          if-no-files-found: error
+          retention-days: 30
+
+  api35-review-install-certification:
+    name: API 35 Review install and in-place update certification
+    needs: build-review-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Reclaim hosted-runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake" "$ANDROID_HOME/system-images" "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/sources" "$ANDROID_HOME/extras" || true
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* /tmp/* || true
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Download exact Review APK
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step1-Review
+          path: review-artifact
+
+      - name: Verify downloaded artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s review-artifact/VideoFlow_Android_UI_Step1_Review.apk
+          (cd review-artifact && sha256sum -c SHA256SUMS.txt)
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: API 35 install, launch and reinstall/update
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 600
+          disk-size: 1536M
+          script: |
+            set -e
+            APK='review-artifact/VideoFlow_Android_UI_Step1_Review.apk'
+            mkdir -p review-install-reports
+            adb install "$APK" | tee review-install-reports/first-install.txt
+            adb shell pm path com.videoflow.app.review | tee review-install-reports/package-path.txt
+            grep -q 'package:' review-install-reports/package-path.txt
+            adb shell am start -W -n com.videoflow.app.review/com.videoflow.app.MainActivity | tee review-install-reports/launch.txt
+            adb shell pidof com.videoflow.app.review | tee review-install-reports/pid.txt
+            test -s review-install-reports/pid.txt
+            adb install -r "$APK" | tee review-install-reports/reinstall-update.txt
+            grep -q 'Success' review-install-reports/reinstall-update.txt
+            adb shell pm path com.videoflow.app.review | grep -q 'package:'
+
+      - name: Upload Review install evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step1-Review-Install-Evidence
+          path: review-install-reports
+          if-no-files-found: warn
+          retention-days: 30
