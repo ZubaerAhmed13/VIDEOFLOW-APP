@@ -282,7 +282,7 @@ private fun ToolRow(content: @Composable () -> Unit) {
 private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .width(66.dp)
+            .width(52.dp)
             .height(58.dp)
             .semantics { contentDescription = label }
             .clickable(role = Role.Button, onClick = onClick)
