@@ -259,9 +259,20 @@ jobs:
             cat step3-emulator-reports/instrumentation-output.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step3-emulator-reports/instrumentation-output.txt
             grep -E -q 'OK \([0-9]+ tests?\)' step3-emulator-reports/instrumentation-output.txt
-            COUNT=$(grep -Eo 'OK \([0-9]+ tests?\)' step3-emulator-reports/instrumentation-output.txt | tail -n 1 | grep -Eo '[0-9]+')
-            test -n "$COUNT"
-            printf 'Instrumentation: %s PASS / 0 FAIL\n' "$COUNT" | tee step3-emulator-reports/STEP_3_INSTRUMENTATION_COUNTS.txt
+            python3 - <<'PY'
+            import pathlib
+            import re
+
+            report = pathlib.Path('step3-emulator-reports/instrumentation-output.txt')
+            text = report.read_text(encoding='utf-8', errors='replace')
+            matches = re.findall(r'OK \((\d+) tests?\)', text)
+            if not matches:
+                raise SystemExit('Instrumentation passed the failure scan but no OK(test-count) summary could be parsed')
+            count = int(matches[-1])
+            result = f'Instrumentation: {count} PASS / 0 FAIL\n'
+            print(result, end='')
+            pathlib.Path('step3-emulator-reports/STEP_3_INSTRUMENTATION_COUNTS.txt').write_text(result, encoding='utf-8')
+            PY
 
       - name: Upload Step 3 emulator reports
         if: always()
