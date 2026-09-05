@@ -1,0 +1,429 @@
+name: UI Step 2 contextual panel completion patch
+
+on:
+  push:
+    branches: [ui-step2-contextual-tools]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Add one-shot contextual panel completion patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui-step2-contextual-tools
+          fetch-depth: 0
+      - name: Apply transient contextual panel architecture
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt')
+          s = p.read_text()
+
+          # Imports: replace modal-only layout with non-modal adaptive inspector primitives.
+          s = s.replace('import androidx.compose.foundation.layout.Column\n', 'import androidx.compose.foundation.layout.BoxWithConstraints\nimport androidx.compose.foundation.layout.Column\n')
+          s = s.replace('import androidx.compose.foundation.layout.fillMaxWidth\n', 'import androidx.compose.foundation.layout.fillMaxHeight\nimport androidx.compose.foundation.layout.fillMaxSize\nimport androidx.compose.foundation.layout.fillMaxWidth\n')
+          s = s.replace('import androidx.compose.foundation.layout.height\n', 'import androidx.compose.foundation.layout.height\nimport androidx.compose.foundation.layout.heightIn\n')
+          s = s.replace('import androidx.compose.foundation.layout.width\n', 'import androidx.compose.foundation.layout.width\nimport androidx.compose.foundation.layout.widthIn\n')
+          s = s.replace('import androidx.compose.foundation.rememberScrollState\n', 'import androidx.compose.foundation.rememberScrollState\nimport androidx.compose.foundation.verticalScroll\n')
+          s = s.replace('import androidx.compose.material3.ExperimentalMaterial3Api\n', '')
+          s = s.replace('import androidx.compose.material3.ModalBottomSheet\n', '')
+          s = s.replace('import androidx.compose.material3.Slider\n', 'import androidx.compose.material3.Slider\nimport androidx.compose.material3.Surface\n')
+          s = s.replace('import androidx.compose.ui.Modifier\n', 'import androidx.compose.ui.Alignment\nimport androidx.compose.ui.Modifier\n')
+
+          host = r'''@Composable
+          fun ContextualToolHost(
+              tool: EditorTool?,
+              projectId: String,
+              project: VideoFlowProject?,
+              editor: EditorProject?,
+              playheadUs: Long,
+              thumbnails: Map<String, String>,
+              waveforms: Map<String, FloatArray>,
+              editorVm: EditorViewModel,
+              contextualVm: ContextualEditingViewModel,
+              overlayVm: OverlayAdvancedViewModel,
+              previewDraft: ContextualPreviewDraft,
+              onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+              onDismiss: () -> Unit,
+              onSelect: (EditorSelection) -> Unit,
+              onOpenTool: (EditorTool) -> Unit,
+              onPreviewSeek: (Long) -> Unit,
+              refresh: () -> Unit
+          ) {
+              if (tool == null || editor == null) return
+              val timeline = editor.timeline
+
+              // Non-modal contextual inspector: the preview remains touchable for Crop/Transform.
+              // Portrait uses a bounded bottom panel; landscape/expanded width uses a side inspector.
+              BoxWithConstraints(Modifier.fillMaxSize()) {
+                  val wide = maxWidth > maxHeight || maxWidth.value >= 700f
+                  val panelModifier = if (wide) {
+                      Modifier.align(Alignment.CenterEnd).fillMaxHeight().widthIn(min = 320.dp, max = 390.dp)
+                  } else {
+                      Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = maxHeight * 0.45f)
+                  }
+                  Surface(
+                      modifier = panelModifier.imePadding(),
+                      color = VideoFlowEditorColors.EditorSurfaceElevated,
+                      tonalElevation = 8.dp
+                  ) {
+                      Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                          when (tool) {
+                              is EditorTool.Trim -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                                  TrimPanel(tool, clip, project, thumbnails, waveforms, contextualVm, projectId, onPreviewSeek, refresh, onDismiss)
+                              }
+                              is EditorTool.Speed -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                                  SpeedPanel(clip, editorVm, onDismiss)
+                              }
+                              is EditorTool.Crop -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                                  CropPanel(tool, clip, project, previewDraft, onPreviewDraftChange, contextualVm, projectId, refresh, onDismiss)
+                              }
+                              is EditorTool.Transform -> TransformPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
+                              is EditorTool.Opacity -> OpacityPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
+                              is EditorTool.Volume -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                                  VolumePanel(projectId, clip, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
+                              }
+                              is EditorTool.Fade -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                                  FadePanel(clip, previewDraft, onPreviewDraftChange, editorVm, waveforms, onDismiss)
+                              }
+                              is EditorTool.TextEditor -> TextEditorPanel(tool, projectId, playheadUs, editor, editorVm, contextualVm, previewDraft, onPreviewDraftChange, onSelect, refresh, onDismiss)
+                              is EditorTool.TextStyle -> TextStylePanel(tool, projectId, editor, contextualVm, overlayVm, previewDraft, onPreviewDraftChange, refresh, onDismiss)
+                              is EditorTool.Timing -> TimingPanel(tool, projectId, editor, contextualVm, refresh, onDismiss)
+                              is EditorTool.Keyframes -> KeyframePanel(tool, projectId, editor, playheadUs, contextualVm, editorVm, refresh, onDismiss)
+                              is EditorTool.More -> MorePanel(tool, projectId, editor, editorVm, contextualVm, onSelect, onOpenTool, refresh, onDismiss)
+                          }
+                          Spacer(Modifier.height(24.dp))
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun ToolHeader'''
+          s, n = re.subn(r'@OptIn\(ExperimentalMaterial3Api::class\)\n@Composable\nfun ContextualToolHost\(.*?\n}\n\n@Composable\nprivate fun ToolHeader', host, s, count=1, flags=re.S)
+          assert n == 1, 'host replacement failed'
+
+          crop = r'''@Composable
+          private fun CropPanel(
+              tool: EditorTool.Crop,
+              clip: TimelineClip,
+              project: VideoFlowProject?,
+              previewDraft: ContextualPreviewDraft,
+              onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+              contextualVm: ContextualEditingViewModel,
+              projectId: String,
+              refresh: () -> Unit,
+              onDismiss: () -> Unit
+          ) {
+              val asset = project?.mediaAssets?.firstOrNull { it.id == clip.assetId }
+              val crop = previewDraft.crop ?: clip.transform.crop
+              fun update(next: CropRect, aspect: Float? = previewDraft.cropNormalizedAspect) {
+                  onPreviewDraftChange(previewDraft.copy(crop = next, cropNormalizedAspect = aspect))
+              }
+              fun preset(w: Int, h: Int) {
+                  val sw = asset?.width ?: return
+                  val sh = asset.height ?: return
+                  val targetAspect = w.toFloat() / h.toFloat()
+                  val normalizedAspect = targetAspect / (sw.toFloat() / sh.toFloat())
+                  update(centeredCrop(sw, sh, targetAspect), normalizedAspect)
+              }
+
+              ToolHeader("Crop", "Drag the crop region directly on the preview or use precise bounds")
+              Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                  Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      OutlinedButton(onClick = { update(crop, null) }) { Text(if (previewDraft.cropNormalizedAspect == null) "✓ Free" else "Free") }
+                      OutlinedButton(onClick = { update(CropRect(), null) }) { Text("Original") }
+                      listOf(16 to 9, 9 to 16, 4 to 3, 3 to 2, 1 to 1, 4 to 5).forEach { (w, h) ->
+                          OutlinedButton(onClick = { preset(w, h) }) { Text("$w:$h") }
+                      }
+                  }
+                  CropEdgeSlider("Left", crop.left, 0f, crop.right - 0.01f) { update(CropRect(it, crop.top, crop.right, crop.bottom)) }
+                  CropEdgeSlider("Right", crop.right, crop.left + 0.01f, 1f) { update(CropRect(crop.left, crop.top, it, crop.bottom)) }
+                  CropEdgeSlider("Top", crop.top, 0f, crop.bottom - 0.01f) { update(CropRect(crop.left, it, crop.right, crop.bottom)) }
+                  CropEdgeSlider("Bottom", crop.bottom, crop.top + 0.01f, 1f) { update(CropRect(crop.left, crop.top, crop.right, it)) }
+              }
+              ActionRow(
+                  onCancel = onDismiss,
+                  onReset = { update(CropRect(), null) },
+                  onDone = { contextualVm.setClipCrop(projectId, tool.clipId, crop) { refresh(); onDismiss() } }
+              )
+          }
+
+          @Composable
+          private fun CropEdgeSlider'''
+          s, n = re.subn(r'@Composable\nprivate fun CropPanel\(.*?\n}\n\n@Composable\nprivate fun CropEdgeSlider', crop, s, count=1, flags=re.S)
+          assert n == 1, 'crop replacement failed'
+
+          transform = r'''@Composable
+          private fun TransformPanel(
+              projectId: String,
+              tool: EditorTool.Transform,
+              editor: EditorProject,
+              playheadUs: Long,
+              previewDraft: ContextualPreviewDraft,
+              onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+              contextualVm: ContextualEditingViewModel,
+              refresh: () -> Unit,
+              onDismiss: () -> Unit
+          ) {
+              val stored = when (tool.ownerType) {
+                  VisualOwnerType.CLIP -> editor.timeline.clips.firstOrNull { it.id == tool.ownerId }?.transform
+                  VisualOwnerType.TEXT -> editor.timeline.textOverlays.firstOrNull { it.id == tool.ownerId }?.transform
+                  VisualOwnerType.IMAGE -> editor.timeline.imageOverlays.firstOrNull { it.id == tool.ownerId }?.transform
+              } ?: return
+              val clip = editor.timeline.clips.firstOrNull { it.id == tool.ownerId }
+              val transform = previewDraft.transform ?: PreviewTransformDraft(
+                  stored.x, stored.y, stored.scaleX, stored.scaleY, stored.rotationDegrees,
+                  clip?.transform?.flipHorizontal ?: false,
+                  clip?.transform?.flipVertical ?: false
+              )
+              fun update(next: PreviewTransformDraft) = onPreviewDraftChange(previewDraft.copy(transform = next))
+              fun commit() {
+                  when (tool.ownerType) {
+                      VisualOwnerType.CLIP -> contextualVm.setClipTransform(
+                          projectId, tool.ownerId, transform.x, transform.y, transform.scaleX, transform.rotationDegrees,
+                          playheadUs = playheadUs, flipHorizontal = transform.flipHorizontal, flipVertical = transform.flipVertical
+                      ) { refresh(); onDismiss() }
+                      VisualOwnerType.TEXT -> contextualVm.setTextTransform(
+                          projectId, tool.ownerId, transform.x, transform.y, transform.scaleX, transform.rotationDegrees,
+                          playheadUs = playheadUs
+                      ) { refresh(); onDismiss() }
+                      VisualOwnerType.IMAGE -> contextualVm.setImageTransform(
+                          projectId, tool.ownerId, transform.x, transform.y, transform.scaleX, transform.rotationDegrees,
+                          playheadUs = playheadUs
+                      ) { refresh(); onDismiss() }
+                  }
+              }
+
+              ToolHeader("Transform", "Drag or pinch directly on the preview; sliders provide precise control")
+              Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                  LabeledSlider("Position X", transform.x, 0f..1f, "${(transform.x * 100).roundToInt()}%") { update(transform.copy(x = it)) }
+                  LabeledSlider("Position Y", transform.y, 0f..1f, "${(transform.y * 100).roundToInt()}%") { update(transform.copy(y = it)) }
+                  LabeledSlider("Scale", transform.scaleX.coerceIn(0.05f, 4f), 0.05f..4f, "${(transform.scaleX * 100).roundToInt()}%") { update(transform.copy(scaleX = it, scaleY = it)) }
+                  LabeledSlider("Rotation", normalize180(transform.rotationDegrees), -180f..180f, "${normalize180(transform.rotationDegrees).roundToInt()}°") { update(transform.copy(rotationDegrees = it)) }
+                  Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      listOf(0f, 90f, 180f, -90f).forEach { angle ->
+                          OutlinedButton(onClick = { update(transform.copy(rotationDegrees = angle)) }) { Text(if (angle == -90f) "270°" else "${angle.roundToInt()}°") }
+                      }
+                      if (tool.ownerType == VisualOwnerType.CLIP) {
+                          OutlinedButton(onClick = { update(transform.copy(flipHorizontal = !transform.flipHorizontal)) }) { Text(if (transform.flipHorizontal) "✓ Flip H" else "Flip H") }
+                          OutlinedButton(onClick = { update(transform.copy(flipVertical = !transform.flipVertical)) }) { Text(if (transform.flipVertical) "✓ Flip V" else "Flip V") }
+                      }
+                  }
+              }
+              ActionRow(
+                  onCancel = onDismiss,
+                  onReset = { update(transform.copy(x = 0.5f, y = 0.5f, scaleX = 1f, scaleY = 1f, rotationDegrees = 0f, flipHorizontal = false, flipVertical = false)) },
+                  onDone = ::commit
+              )
+          }
+
+          @Composable
+          private fun OpacityPanel'''
+          s, n = re.subn(r'@Composable\nprivate fun TransformPanel\(.*?\n}\n\n@Composable\nprivate fun OpacityPanel', transform, s, count=1, flags=re.S)
+          assert n == 1, 'transform replacement failed'
+
+          opacity = r'''@Composable
+          private fun OpacityPanel(
+              projectId: String,
+              tool: EditorTool.Opacity,
+              editor: EditorProject,
+              playheadUs: Long,
+              previewDraft: ContextualPreviewDraft,
+              onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+              contextualVm: ContextualEditingViewModel,
+              refresh: () -> Unit,
+              onDismiss: () -> Unit
+          ) {
+              val stored = when (tool.ownerType) {
+                  VisualOwnerType.CLIP -> editor.timeline.clips.firstOrNull { it.id == tool.ownerId }?.opacity
+                  VisualOwnerType.TEXT -> editor.timeline.textOverlays.firstOrNull { it.id == tool.ownerId }?.opacity
+                  VisualOwnerType.IMAGE -> editor.timeline.imageOverlays.firstOrNull { it.id == tool.ownerId }?.transform?.opacity
+              } ?: return
+              val value = (previewDraft.opacity ?: stored).coerceIn(0f, 1f)
+              fun update(next: Float) = onPreviewDraftChange(previewDraft.copy(opacity = next.coerceIn(0f, 1f)))
+              val ownerType = when (tool.ownerType) {
+                  VisualOwnerType.CLIP -> KeyframeOwnerType.CLIP
+                  VisualOwnerType.TEXT -> KeyframeOwnerType.TEXT_OVERLAY
+                  VisualOwnerType.IMAGE -> KeyframeOwnerType.IMAGE_OVERLAY
+              }
+              ToolHeader("Opacity")
+              Column(Modifier.padding(horizontal = 18.dp)) {
+                  Text("${(value * 100).roundToInt()}%")
+                  Slider(
+                      value = value,
+                      onValueChange = { update(it) },
+                      valueRange = 0f..1f,
+                      modifier = Modifier.semantics { contentDescription = "Opacity, ${(value * 100).roundToInt()} percent" }
+                  )
+              }
+              ActionRow(
+                  onCancel = onDismiss,
+                  onReset = { update(1f) },
+                  onDone = { contextualVm.setVisualOpacity(projectId, tool.ownerId, ownerType, value, playheadUs) { refresh(); onDismiss() } }
+              )
+          }
+
+          @Composable
+          private fun VolumePanel'''
+          s, n = re.subn(r'@Composable\nprivate fun OpacityPanel\(.*?\n}\n\n@Composable\nprivate fun VolumePanel', opacity, s, count=1, flags=re.S)
+          assert n == 1, 'opacity replacement failed'
+
+          volume = r'''@Composable
+          private fun VolumePanel(
+              projectId: String,
+              clip: TimelineClip,
+              playheadUs: Long,
+              previewDraft: ContextualPreviewDraft,
+              onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+              contextualVm: ContextualEditingViewModel,
+              refresh: () -> Unit,
+              onDismiss: () -> Unit
+          ) {
+              val value = (previewDraft.gainDb ?: clip.gainDb).coerceIn(-60f, 24f)
+              fun update(next: Float) = onPreviewDraftChange(previewDraft.copy(gainDb = next.coerceIn(-60f, 24f)))
+              ToolHeader("Clip Volume", "Track volume remains in Track Settings")
+              Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Text("${value.roundToInt()} dB${if (value == 0f) " • 100% reference" else ""}")
+                  Slider(
+                      value = value,
+                      onValueChange = { update(it) },
+                      valueRange = -60f..24f,
+                      modifier = Modifier.semantics { contentDescription = "Clip volume, ${value.roundToInt()} decibels" }
+                  )
+                  // The domain has gain but no distinct clip-mute flag. This is deliberately labelled as gain.
+                  OutlinedButton(onClick = { update(-60f) }) { Text("Silence (-60 dB)") }
+              }
+              ActionRow(
+                  onCancel = onDismiss,
+                  onReset = { update(0f) },
+                  onDone = { contextualVm.setClipGain(projectId, clip.id, value, playheadUs) { refresh(); onDismiss() } }
+              )
+          }
+
+          @Composable
+          private fun FadePanel'''
+          s, n = re.subn(r'@Composable\nprivate fun VolumePanel\(.*?\n}\n\n@Composable\nprivate fun FadePanel', volume, s, count=1, flags=re.S)
+          assert n == 1, 'volume replacement failed'
+
+          fade = r'''@Composable
+          private fun FadePanel(
+              clip: TimelineClip,
+              previewDraft: ContextualPreviewDraft,
+              onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+              editorVm: EditorViewModel,
+              waveforms: Map<String, FloatArray>,
+              onDismiss: () -> Unit
+          ) {
+              val maxUs = clip.timelineDurationUs.coerceAtLeast(100_000L)
+              val maxSeconds = maxUs / 1_000_000f
+              val fadeInUs = (previewDraft.fadeInUs ?: clip.fadeInUs).coerceIn(0L, maxUs)
+              val fadeOutUs = (previewDraft.fadeOutUs ?: clip.fadeOutUs).coerceIn(0L, maxUs)
+              fun update(inUs: Long = fadeInUs, outUs: Long = fadeOutUs) {
+                  onPreviewDraftChange(previewDraft.copy(fadeInUs = inUs.coerceIn(0L, maxUs), fadeOutUs = outUs.coerceIn(0L, maxUs)))
+              }
+              ToolHeader("Audio Fade", "Fade values are bounded by the clip duration")
+              Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                  WaveformPreview(waveforms[clip.assetId], Modifier.fillMaxWidth().height(48.dp), VideoFlowEditorColors.SelectionAccent)
+                  Text("Fade In ${"%.2f".format(fadeInUs / 1_000_000f)} s")
+                  Slider(value = fadeInUs / 1_000_000f, onValueChange = { update(inUs = (it * 1_000_000L).toLong()) }, valueRange = 0f..maxSeconds)
+                  Text("Fade Out ${"%.2f".format(fadeOutUs / 1_000_000f)} s")
+                  Slider(value = fadeOutUs / 1_000_000f, onValueChange = { update(outUs = (it * 1_000_000L).toLong()) }, valueRange = 0f..maxSeconds)
+              }
+              ActionRow(
+                  onCancel = onDismiss,
+                  onReset = { update(0L, 0L) },
+                  onDone = { editorVm.selectClip(clip.id); editorVm.setFades(fadeInUs, fadeOutUs); onDismiss() }
+              )
+          }
+
+          @Composable
+          private fun TextEditorPanel'''
+          s, n = re.subn(r'@Composable\nprivate fun FadePanel\(.*?\n}\n\n@Composable\nprivate fun TextEditorPanel', fade, s, count=1, flags=re.S)
+          assert n == 1, 'fade replacement failed'
+
+          textedit = r'''@Composable
+          private fun TextEditorPanel(
+              tool: EditorTool.TextEditor,
+              projectId: String,
+              playheadUs: Long,
+              editor: EditorProject,
+              editorVm: EditorViewModel,
+              contextualVm: ContextualEditingViewModel,
+              previewDraft: ContextualPreviewDraft,
+              onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+              onSelect: (EditorSelection) -> Unit,
+              refresh: () -> Unit,
+              onDismiss: () -> Unit
+          ) {
+              val existing = tool.overlayId?.let { id -> editor.timeline.textOverlays.firstOrNull { it.id == id } }
+              val draft = previewDraft.textContent ?: existing?.content.orEmpty()
+              ToolHeader(if (existing == null) "Add Text" else "Edit Text", "Typing updates the preview immediately; Done saves once")
+              Column(Modifier.padding(horizontal = 18.dp)) {
+                  OutlinedTextField(
+                      value = draft,
+                      onValueChange = { onPreviewDraftChange(previewDraft.copy(textContent = it.take(4096))) },
+                      modifier = Modifier.fillMaxWidth(),
+                      minLines = 2,
+                      label = { Text("Text") }
+                  )
+              }
+              ActionRow(
+                  onCancel = onDismiss,
+                  onDone = {
+                      if (existing == null) {
+                          contextualVm.addText(projectId, playheadUs, draft) { id -> refresh(); onSelect(EditorSelection.TextOverlay(id)); onDismiss() }
+                      } else {
+                          editorVm.updateTextContent(existing.id, draft)
+                          onDismiss()
+                      }
+                  }
+              )
+          }
+
+          @Composable
+          private fun TextStylePanel'''
+          s, n = re.subn(r'@Composable\nprivate fun TextEditorPanel\(.*?\n}\n\n@Composable\nprivate fun TextStylePanel', textedit, s, count=1, flags=re.S)
+          assert n == 1, 'text editor replacement failed'
+
+          # Extend TextStylePanel signature and publish local changes to the shared transient preview draft.
+          s = s.replace(
+              '    overlayVm: OverlayAdvancedViewModel,\n    refresh: () -> Unit,\n    onDismiss: () -> Unit\n) {',
+              '    overlayVm: OverlayAdvancedViewModel,\n    previewDraft: ContextualPreviewDraft,\n    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,\n    refresh: () -> Unit,\n    onDismiss: () -> Unit\n) {',
+              1
+          )
+          marker = '    var brightness by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[2]) }\n\n'
+          insertion = '''    var brightness by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[2]) }\n\n    fun publishStyle() {\n        onPreviewDraftChange(\n            previewDraft.copy(\n                textStyle = PreviewTextStyleDraft(size, weight, italic, alignment, color)\n            )\n        )\n    }\n\n'''
+          assert marker in s, 'text style marker missing'
+          s = s.replace(marker, insertion, 1)
+          s = s.replace('        syncHsv(color)\n    }\n\n    fun selectHsv(', '        syncHsv(color)\n        publishStyle()\n    }\n\n    fun selectHsv(', 1)
+          s = s.replace('        hex = argbToHex(color)\n    }\n\n    ToolHeader("Text Style"', '        hex = argbToHex(color)\n        publishStyle()\n    }\n\n    ToolHeader("Text Style"', 1)
+          s = s.replace('LabeledSlider("Font size", size, 6f..128f, "${size.roundToInt()} sp") { size = it }', 'LabeledSlider("Font size", size, 6f..128f, "${size.roundToInt()} sp") { size = it; publishStyle() }', 1)
+          s = s.replace('OutlinedButton(onClick = { weight = value })', 'OutlinedButton(onClick = { weight = value; publishStyle() })', 1)
+          s = s.replace('OutlinedButton(onClick = { italic = !italic })', 'OutlinedButton(onClick = { italic = !italic; publishStyle() })', 1)
+          s = s.replace('OutlinedButton(onClick = { alignment = value })', 'OutlinedButton(onClick = { alignment = value; publishStyle() })', 1)
+          s = s.replace('                    color = parsed\n                    syncHsv(parsed)', '                    color = parsed\n                    syncHsv(parsed)\n                    publishStyle()', 1)
+
+          # Scale is one user-facing property but two backend axes. Add/remove them atomically.
+          old_key = '''                    onClick = {\n                        if (current == null) {\n                            contextualVm.addKeyframe(projectId, tool.ownerId, ownerType, property, playheadUs, interpolation) { refresh() }\n                        } else {\n                            contextualVm.removeKeyframe(projectId, tool.ownerId, current.id) { refresh() }\n                        }\n                    },'''
+          new_key = '''                    onClick = {\n                        if (property == KeyframeProperty.SCALE_X) {\n                            if (current == null) contextualVm.addUniformScaleKeyframe(projectId, tool.ownerId, ownerType, playheadUs, interpolation) { refresh() }\n                            else contextualVm.removeUniformScaleKeyframes(projectId, tool.ownerId, localUs) { refresh() }\n                        } else if (current == null) {\n                            contextualVm.addKeyframe(projectId, tool.ownerId, ownerType, property, playheadUs, interpolation) { refresh() }\n                        } else {\n                            contextualVm.removeKeyframe(projectId, tool.ownerId, current.id) { refresh() }\n                        }\n                    },'''
+          assert old_key in s, 'keyframe action marker missing'
+          s = s.replace(old_key, new_key, 1)
+          s = s.replace('    ActionRow(onCancel = onDismiss, onDone = onDismiss)\n}\n\n@Composable\nprivate fun MorePanel', '''    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {\n        Text("Keyframe changes apply immediately and are undoable", modifier = Modifier.weight(1f))\n        Button(onClick = onDismiss) { Text("Close") }\n    }\n}\n\n@Composable\nprivate fun MorePanel''', 1)
+
+          p.write_text(s)
+          PY
+
+          git diff --check
+          git config user.name 'Zubaer Ahmed'
+          git config user.email 'zubaerknight@gmail.com'
+          git add app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+          git commit -m 'Complete Step 2 contextual panel interaction requirements'
+          git push origin ui-step2-contextual-tools
