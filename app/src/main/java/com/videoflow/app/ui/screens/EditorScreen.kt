@@ -211,8 +211,48 @@ fun EditorScreen(
                 .padding(padding)
                 .background(VideoFlowEditorColors.EditorBackground)
         ) {
+            val compactLandscape = maxWidth > maxHeight && maxHeight.value < 400f
             val wide = maxWidth > maxHeight || maxWidth.value >= 700f
-            if (wide) {
+
+            if (compactLandscape) {
+                Row(Modifier.fillMaxSize()) {
+                    Column(Modifier.weight(0.46f)) {
+                        PreviewWorkspace(project, editor, playheadUs, isPlaying, Modifier.weight(1f))
+                        EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
+                        TransportBar(
+                            playheadUs = playheadUs,
+                            durationUs = durationUs,
+                            isPlaying = isPlaying,
+                            onJumpStart = { isPlaying = false; vm.setPlayheadUs(0L) },
+                            onPlayPause = { isPlaying = !isPlaying }
+                        )
+                    }
+                    TimelineWorkspace(
+                        tracks = tracks,
+                        clips = clips,
+                        textOverlays = timeline?.textOverlays.orEmpty(),
+                        imageOverlays = timeline?.imageOverlays.orEmpty(),
+                        keyframes = timeline?.keyframes.orEmpty(),
+                        playheadUs = playheadUs,
+                        durationUs = durationUs,
+                        pixelsPerSecond = pixelsPerSecond,
+                        selection = selection,
+                        mediaNames = mediaNames,
+                        thumbnails = thumbnails,
+                        waveforms = waveforms,
+                        onZoom = { pixelsPerSecond = it },
+                        onSeek = { isPlaying = false; vm.setPlayheadUs(it.coerceAtMost(durationUs)) },
+                        onSelect = ::select,
+                        onClearSelection = ::clearSelection,
+                        onMoveClip = { clipId, deltaUs -> vm.selectClip(clipId); selection = EditorSelection.Clip(clipId); vm.moveSelectedSnapped(deltaUs, pixelsPerSecond.toDouble()) },
+                        onToggleMute = { vm.toggleTrackMute(it.id, !it.muted) },
+                        onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
+                        onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
+                        onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
+                        modifier = Modifier.weight(0.54f)
+                    )
+                }
+            } else if (wide) {
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.weight(0.56f)) {
                         PreviewWorkspace(project, editor, playheadUs, isPlaying, Modifier.weight(0.70f))
