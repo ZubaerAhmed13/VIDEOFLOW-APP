@@ -1,0 +1,137 @@
+name: VideoFlow Android UI Step 2 Certification
+
+on:
+  push:
+    branches:
+      - ui-step2-contextual-tools
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-step2-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-regression-package:
+    name: Contextual editing build, regression and APK packaging
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install Android API 37.0 platform and build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM_URL='https://dl.google.com/android/repository/platform-37.0_r02.zip'
+          PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
+          curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
+          echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          mkdir -p "$ANDROID_HOME/platforms"
+          unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
+          sdkmanager 'build-tools;36.0.0'
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          rm -f /tmp/platform-37.0_r02.zip
+
+      - name: Restore stable non-production Review signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ci/review-test.keystore.b64
+          base64 --decode ci/review-test.keystore.b64 > ci/review-test.keystore
+          chmod 600 ci/review-test.keystore
+          FINGERPRINT=$(keytool -list -v -keystore ci/review-test.keystore -storepass videoflow-review -alias videoflow-review | awk -F'SHA256: ' '/SHA256:/{print $2; exit}')
+          test "$FINGERPRINT" = 'F3:D4:E6:6B:35:08:00:BC:A7:39:B2:C5:F6:F4:D2:C7:F1:5C:7D:C8:9B:1B:87:63:BD:51:46:8A:B7:15:0C:C7'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: UI Step 2 architecture audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODELS='app/src/main/java/com/videoflow/app/ui/editor/EditorWorkspaceModels.kt'
+          TOOLS='app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt'
+          PREVIEW='app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt'
+          SCREEN='app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt'
+          test -s "$MODELS"
+          test -s "$TOOLS"
+          test -s "$PREVIEW"
+          test -s "$SCREEN"
+          grep -q 'sealed interface EditorTool' "$MODELS"
+          grep -q 'CropInteractionOverlay' "$PREVIEW"
+          grep -q 'detectTransformGestures' "$PREVIEW"
+          grep -q 'ContextualToolHost' "$SCREEN"
+          grep -q 'onTransformGesture' "$SCREEN"
+          ! grep -q 'WebView' "$TOOLS"
+          ! grep -q 'INTERNET' app/src/main/AndroidManifest.xml
+
+      - name: Step 1, Step 2, Step 3 and UI regression tests
+        run: ./gradlew test --stacktrace
+
+      - name: Android lint
+        run: ./gradlew lint --stacktrace
+
+      - name: Compile instrumentation and Compose tests
+        run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
+
+      - name: Assemble Debug, Review and Release APKs
+        run: ./gradlew assembleDebug assembleReview assembleRelease --stacktrace
+
+      - name: Verify Review package and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/review/app-review.apk'
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee review-badging.txt
+          grep -q "package: name='com.videoflow.app.review'" review-badging.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee review-signature.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: f3d4e66b350800bca739b2c5f6f4d2c7f15c7dc89b1b8763bd51468ab7150cc7' review-signature.txt
+
+      - name: Package UI Step 2 APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ui-step2-artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk ui-step2-artifacts/VideoFlow_Android_UI_Step2_Debug.apk
+          cp app/build/outputs/apk/review/app-review.apk ui-step2-artifacts/VideoFlow_Android_UI_Step2_Review.apk
+          cp app/build/outputs/apk/release/app-release.apk ui-step2-artifacts/VideoFlow_Android_UI_Step2_Release.apk
+          cp review-badging.txt review-signature.txt ui-step2-artifacts/
+          (cd ui-step2-artifacts && sha256sum *.apk | tee SHA256SUMS.txt)
+
+      - name: Upload UI Step 2 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step2-APKs
+          path: ui-step2-artifacts/
+          if-no-files-found: error
+          retention-days: 30
