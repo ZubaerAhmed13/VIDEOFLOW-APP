@@ -47,6 +47,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -57,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.videoflow.app.util.formatDurationUs
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +76,20 @@ fun EditorTopBar(
     onRedo: () -> Unit,
     onExport: () -> Unit
 ) {
+    var hadSaveInFlight by remember { mutableStateOf(false) }
+    var showSavedConfirmation by remember { mutableStateOf(false) }
+    LaunchedEffect(saving) {
+        if (saving) {
+            hadSaveInFlight = true
+            showSavedConfirmation = false
+        } else if (hadSaveInFlight) {
+            hadSaveInFlight = false
+            showSavedConfirmation = true
+            delay(1_500L)
+            showSavedConfirmation = false
+        }
+    }
+
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = VideoFlowEditorColors.EditorSurface,
@@ -90,10 +110,9 @@ fun EditorTopBar(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                if (saving) {
-                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.width(16.dp).height(16.dp))
-                } else {
-                    Icon(
+                when {
+                    saving -> CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.width(16.dp).height(16.dp))
+                    showSavedConfirmation -> Icon(
                         Icons.Default.Check,
                         contentDescription = "Saved",
                         tint = VideoFlowEditorColors.SuccessColor,
