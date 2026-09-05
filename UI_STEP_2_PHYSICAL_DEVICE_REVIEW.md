@@ -47,6 +47,7 @@ Status: **NOT VERIFIED**
 
 - [ ] Video thumbnail strip is visible.
 - [ ] Start/end handles are easy to grab.
+- [ ] Dragging either boundary updates the fixed main preview to that boundary.
 - [ ] Start/End/Duration values update correctly.
 - [ ] Reset behaves predictably.
 - [ ] Cancel leaves original trim unchanged.
@@ -70,10 +71,13 @@ Status: **NOT VERIFIED**
 - [ ] Four corners are easy to grab.
 - [ ] Four edges are easy to grab.
 - [ ] Entire crop region can be repositioned.
+- [ ] Free Crop works without forced aspect locking.
 - [ ] Original, 16:9, 9:16, 4:3, 3:2, 1:1 and 4:5 presets stay inside source.
 - [ ] Precise edge sliders work.
-- [ ] Cancel restores exact original crop.
+- [ ] Preview follows finger movement continuously.
+- [ ] Cancel restores exact original crop without a visible compensating edit.
 - [ ] Reset returns full frame.
+- [ ] One continuous crop gesture becomes one logical Undo action.
 
 Status: **NOT VERIFIED**
 
@@ -85,17 +89,30 @@ Status: **NOT VERIFIED**
 - [ ] X/Y/Scale/Rotation precision controls match preview.
 - [ ] 0/90/180/270 controls work.
 - [ ] Flip H and Flip V work for video clip.
-- [ ] Center guides appear appropriately.
-- [ ] Cancel restores prior state.
+- [ ] Center guides/snapping appear appropriately.
+- [ ] Cancel restores prior state without a visible compensating write.
 - [ ] One continuous gesture becomes one logical Undo action.
 
 Status: **NOT VERIFIED**
 
 ### Opacity
 
-- [ ] 0%, 50% and 100% preview correctly.
+- [ ] 0%, 50% and 100% preview correctly while the control is moving.
 - [ ] Reset returns 100%.
 - [ ] Cancel restores prior opacity.
+- [ ] Done creates the expected single logical edit.
+
+Status: **NOT VERIFIED**
+
+## Timeline direct editing
+
+- [ ] Dragging the selected clip body moves the clip rather than trimming it.
+- [ ] Left trim-edge zone trims only the left boundary.
+- [ ] Right trim-edge zone trims only the right boundary.
+- [ ] Selected trim handles remain visually understandable.
+- [ ] Moving a clip near the left/right visible timeline edge auto-scrolls naturally.
+- [ ] Trimming near the left/right visible timeline edge auto-scrolls naturally.
+- [ ] Auto-scroll does not cause uncontrolled jumps.
 
 Status: **NOT VERIFIED**
 
@@ -103,11 +120,13 @@ Status: **NOT VERIFIED**
 
 - [ ] Pure-audio Trim uses waveform, not thumbnails.
 - [ ] Clip Volume is visibly separate from Track Volume.
-- [ ] Volume adjustment is audible and stable.
+- [ ] Volume adjustment previews audibly and remains stable.
+- [ ] Cancel restores the previous clip volume.
 - [ ] Mute-equivalent minimum gain is effectively silent.
 - [ ] Fade In works and is audible.
 - [ ] Fade Out works and is audible.
 - [ ] Fade values never exceed clip duration.
+- [ ] Cancel restores previous fade values.
 
 Status: **NOT VERIFIED**
 
@@ -115,17 +134,23 @@ Status: **NOT VERIFIED**
 
 - [ ] Add Text opens keyboard and creates visible text.
 - [ ] Existing text can be edited without leaving editor.
+- [ ] Text changes preview live while editing.
 - [ ] Size works.
 - [ ] Regular/Medium/Bold work.
 - [ ] Italic works.
 - [ ] Left/Center/Right alignment works.
 - [ ] Quick colors work.
-- [ ] Hex color input works.
+- [ ] Hue control works.
+- [ ] Saturation control works.
+- [ ] Brightness/Value control works.
+- [ ] HSV controls remain synchronized with displayed hex color.
+- [ ] Hex color input works and updates HSV consistently.
 - [ ] Opacity works.
 - [ ] Direct Transform works.
 - [ ] Timing works.
 - [ ] Duplicate works.
 - [ ] Delete is undoable.
+- [ ] Cancel restores the text state that existed before entering the tool.
 
 Backend note: font-family persistence is not present in the existing model, so no fake font-family picker is expected.
 
@@ -141,17 +166,21 @@ Status: **NOT VERIFIED**
 - [ ] Timing works.
 - [ ] Duplicate works without copying original source media.
 - [ ] Delete is undoable.
+- [ ] Cancel restores the previous transform/opacity state.
 
 Status: **NOT VERIFIED**
 
 ## Keyframes
 
 - [ ] Diamond add behavior is understandable.
-- [ ] Active diamond/remove behavior targets only intended point.
+- [ ] Active diamond/remove behavior targets only the intended exact point.
+- [ ] Editing at an existing keyframe updates that keyframe rather than creating an unintended duplicate.
 - [ ] Previous navigates correctly.
 - [ ] Next navigates correctly.
 - [ ] Hold evaluates correctly.
 - [ ] Linear interpolates correctly.
+- [ ] Scale animation remains uniform rather than independently distorting X/Y scale.
+- [ ] Timeline markers use the correct owner duration for video clips, text and image overlays.
 - [ ] Timeline markers remain visible without dominating clips.
 - [ ] Scrubbing evaluates animation.
 - [ ] Playback animates properties correctly.
@@ -164,6 +193,7 @@ Status: **NOT VERIFIED**
 - [ ] Portrait phone layout is usable.
 - [ ] Small phone around 360×800dp keeps Trim/Crop/Transform/Text/Keyframes reachable.
 - [ ] Around 430dp width remains usable.
+- [ ] Contextual tool surfaces do not unnecessarily hide the preview behind a modal scrim.
 - [ ] Landscape Crop works without unusably covering preview/timeline.
 - [ ] Landscape Transform works.
 - [ ] Landscape Text works.
@@ -178,6 +208,7 @@ Status: **NOT VERIFIED**
 - [ ] Toolbar targets are comfortable.
 - [ ] No accidental destructive Delete action.
 - [ ] No preview gesture conflicts.
+- [ ] Direct edits visually follow the finger without obvious persistence-induced lag.
 
 Status: **NOT VERIFIED**
 
@@ -198,6 +229,7 @@ Confirm understandable focus/labels for:
 - [ ] Transform values
 - [ ] Opacity
 - [ ] Volume
+- [ ] Text color HSV/hex controls
 - [ ] Keyframes
 - [ ] Done
 - [ ] Cancel/Close
