@@ -17,6 +17,18 @@ android {
         versionName = "1.0.0-alpha01"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        manifestPlaceholders["appLabel"] = "VideoFlow"
+    }
+
+    signingConfigs {
+        create("review") {
+            // Intentionally non-production signing identity for installable review/test APKs only.
+            // The decoded keystore is produced by CI from ci/review-test.keystore.b64.
+            storeFile = rootProject.file("ci/review-test.keystore")
+            storePassword = "videoflow-review"
+            keyAlias = "videoflow-review"
+            keyPassword = "videoflow-review"
+        }
     }
 
     buildTypes {
@@ -24,8 +36,16 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
+        create("review") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".review"
+            versionNameSuffix = "-review"
+            signingConfig = signingConfigs.getByName("review")
+            manifestPlaceholders["appLabel"] = "VideoFlow Review"
+            matchingFallbacks += listOf("debug")
+        }
         release {
-            // Step 2 continues to produce a locally installable test-signed release. No private key is committed.
+            // Step 2 continues to produce a locally installable test-signed release. No private production key is committed.
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
