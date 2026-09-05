@@ -2,6 +2,7 @@ package com.videoflow.app.ui.editor
 
 import com.videoflow.app.domain.editor.TimelineClip
 
+/** Passive sheets that do not directly manipulate the preview. */
 enum class EditorPanelKind {
     MEDIA,
     AUDIO,
@@ -10,6 +11,8 @@ enum class EditorPanelKind {
     SNAPSHOTS,
     TRACK_SETTINGS,
     MEDIA_DETAILS,
+    // Legacy tool kinds are retained for source compatibility while UI Step 2 routes
+    // editing through EditorTool instead of a matrix of independent booleans/sheets.
     CLIP_TRIM,
     CLIP_SPEED,
     CLIP_CROP,
@@ -49,9 +52,36 @@ sealed interface EditorPanel {
     data object More : EditorPanel { override val kind = EditorPanelKind.MORE }
     data class TrackSettings(val trackId: String) : EditorPanel { override val kind = EditorPanelKind.TRACK_SETTINGS }
     data class MediaDetails(val assetId: String) : EditorPanel { override val kind = EditorPanelKind.MEDIA_DETAILS }
+
+    /** Kept only so the approved UI Step 1 code remains source-compatible. */
     data class ClipTool(override val kind: EditorPanelKind, val clipId: String) : EditorPanel
     data class TextTool(override val kind: EditorPanelKind, val overlayId: String) : EditorPanel
     data class ImageTool(override val kind: EditorPanelKind, val overlayId: String) : EditorPanel
+}
+
+enum class VisualOwnerType { CLIP, TEXT, IMAGE }
+enum class TimedOwnerType { TEXT, IMAGE }
+
+/**
+ * Single explicit contextual editing state for UI Step 2.
+ *
+ * Passive library/settings sheets remain EditorPanel. Any operation that changes media
+ * or an overlay is represented here so Back/Cancel/Done and preview gestures have one
+ * predictable state machine.
+ */
+sealed interface EditorTool {
+    data class Trim(val clipId: String) : EditorTool
+    data class Speed(val clipId: String) : EditorTool
+    data class Crop(val clipId: String) : EditorTool
+    data class Transform(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
+    data class Opacity(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
+    data class Volume(val clipId: String) : EditorTool
+    data class Fade(val clipId: String) : EditorTool
+    data class TextEditor(val overlayId: String?) : EditorTool
+    data class TextStyle(val overlayId: String) : EditorTool
+    data class Timing(val ownerId: String, val ownerType: TimedOwnerType) : EditorTool
+    data class Keyframes(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
+    data class More(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
 }
 
 data class EditorWorkspaceUiState(
