@@ -35,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.videoflow.app.data.editor.EditorProject
 import com.videoflow.app.domain.editor.CropRect
-import com.videoflow.app.domain.editor.Keyframe
 import com.videoflow.app.domain.editor.KeyframeInterpolation
 import com.videoflow.app.domain.editor.KeyframeOwnerType
 import com.videoflow.app.domain.editor.KeyframeProperty
@@ -287,27 +286,28 @@ private fun CropPanel(
 ) {
     val asset = project?.mediaAssets?.firstOrNull { it.id == clip.assetId }
     val crop = clip.transform.crop
-    fun apply(next: CropRect) = contextualVm.setClipCrop(projectId, clip.id, next) { refresh() }
+    fun applyCrop(next: CropRect) = contextualVm.setClipCrop(projectId, clip.id, next) { refresh() }
     fun preset(w: Int, h: Int) {
         val sw = asset?.width ?: return
         val sh = asset.height ?: return
-        apply(centeredCrop(sw, sh, w.toFloat() / h.toFloat()))
+        applyCrop(centeredCrop(sw, sh, w.toFloat() / h.toFloat()))
     }
 
     ToolHeader("Crop", "Drag the crop region directly on the preview or use precise bounds")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(onClick = { apply(CropRect()) }) { Text("Original") }
+            OutlinedButton(onClick = { }) { Text("Free") }
+            OutlinedButton(onClick = { applyCrop(CropRect()) }) { Text("Original") }
             listOf(16 to 9, 9 to 16, 4 to 3, 3 to 2, 1 to 1, 4 to 5).forEach { (w, h) ->
                 OutlinedButton(onClick = { preset(w, h) }) { Text("$w:$h") }
             }
         }
-        CropEdgeSlider("Left", crop.left, 0f, crop.right - 0.01f) { apply(CropRect(it, crop.top, crop.right, crop.bottom)) }
-        CropEdgeSlider("Right", crop.right, crop.left + 0.01f, 1f) { apply(CropRect(crop.left, crop.top, it, crop.bottom)) }
-        CropEdgeSlider("Top", crop.top, 0f, crop.bottom - 0.01f) { apply(CropRect(crop.left, it, crop.right, crop.bottom)) }
-        CropEdgeSlider("Bottom", crop.bottom, crop.top + 0.01f, 1f) { apply(CropRect(crop.left, crop.top, crop.right, it)) }
+        CropEdgeSlider("Left", crop.left, 0f, crop.right - 0.01f) { applyCrop(CropRect(it, crop.top, crop.right, crop.bottom)) }
+        CropEdgeSlider("Right", crop.right, crop.left + 0.01f, 1f) { applyCrop(CropRect(crop.left, crop.top, it, crop.bottom)) }
+        CropEdgeSlider("Top", crop.top, 0f, crop.bottom - 0.01f) { applyCrop(CropRect(crop.left, it, crop.right, crop.bottom)) }
+        CropEdgeSlider("Bottom", crop.bottom, crop.top + 0.01f, 1f) { applyCrop(CropRect(crop.left, crop.top, crop.right, it)) }
     }
-    ActionRow(onCancel = onCancel, onReset = { apply(CropRect()) }, onDone = onDismiss)
+    ActionRow(onCancel = onCancel, onReset = { applyCrop(CropRect()) }, onDone = onDismiss)
 }
 
 @Composable
@@ -339,7 +339,7 @@ private fun TransformPanel(
         VisualOwnerType.IMAGE -> editor.timeline.imageOverlays.firstOrNull { it.id == tool.ownerId }?.transform
     } ?: return
 
-    fun apply(x: Float = transform.x, y: Float = transform.y, scale: Float = transform.scaleX, rotation: Float = transform.rotationDegrees) {
+    fun applyTransform(x: Float = transform.x, y: Float = transform.y, scale: Float = transform.scaleX, rotation: Float = transform.rotationDegrees) {
         when (tool.ownerType) {
             VisualOwnerType.CLIP -> contextualVm.setClipTransform(projectId, tool.ownerId, x, y, scale, rotation) { refresh() }
             VisualOwnerType.TEXT -> contextualVm.setTextTransform(projectId, tool.ownerId, x, y, scale, rotation) { refresh() }
@@ -349,12 +349,12 @@ private fun TransformPanel(
 
     ToolHeader("Transform", "Drag or pinch directly on the preview; sliders provide precise control")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        LabeledSlider("Position X", transform.x, 0f..1f, "${(transform.x * 100).roundToInt()}%") { apply(x = it) }
-        LabeledSlider("Position Y", transform.y, 0f..1f, "${(transform.y * 100).roundToInt()}%") { apply(y = it) }
-        LabeledSlider("Scale", transform.scaleX.coerceIn(0.05f, 4f), 0.05f..4f, "${(transform.scaleX * 100).roundToInt()}%") { apply(scale = it) }
-        LabeledSlider("Rotation", normalize180(transform.rotationDegrees), -180f..180f, "${normalize180(transform.rotationDegrees).roundToInt()}°") { apply(rotation = it) }
+        LabeledSlider("Position X", transform.x, 0f..1f, "${(transform.x * 100).roundToInt()}%") { applyTransform(x = it) }
+        LabeledSlider("Position Y", transform.y, 0f..1f, "${(transform.y * 100).roundToInt()}%") { applyTransform(y = it) }
+        LabeledSlider("Scale", transform.scaleX.coerceIn(0.05f, 4f), 0.05f..4f, "${(transform.scaleX * 100).roundToInt()}%") { applyTransform(scale = it) }
+        LabeledSlider("Rotation", normalize180(transform.rotationDegrees), -180f..180f, "${normalize180(transform.rotationDegrees).roundToInt()}°") { applyTransform(rotation = it) }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(0f, 90f, 180f, -90f).forEach { angle -> OutlinedButton(onClick = { apply(rotation = angle) }) { Text(if (angle == -90f) "270°" else "${angle.roundToInt()}°") } }
+            listOf(0f, 90f, 180f, -90f).forEach { angle -> OutlinedButton(onClick = { applyTransform(rotation = angle) }) { Text(if (angle == -90f) "270°" else "${angle.roundToInt()}°") } }
             if (tool.ownerType == VisualOwnerType.CLIP) {
                 OutlinedButton(onClick = { editorVm.selectClip(tool.ownerId); editorVm.toggleFlipHorizontal() }) { Text("Flip H") }
                 OutlinedButton(onClick = { editorVm.selectClip(tool.ownerId); editorVm.toggleFlipVertical() }) { Text("Flip V") }
@@ -363,7 +363,7 @@ private fun TransformPanel(
     }
     ActionRow(
         onCancel = onCancel,
-        onReset = { apply(x = 0.5f, y = 0.5f, scale = 1f, rotation = 0f) },
+        onReset = { applyTransform(x = 0.5f, y = 0.5f, scale = 1f, rotation = 0f) },
         onDone = onDismiss
     )
 }
@@ -375,7 +375,7 @@ private fun OpacityPanel(tool: EditorTool.Opacity, editor: EditorProject, editor
         VisualOwnerType.TEXT -> editor.timeline.textOverlays.firstOrNull { it.id == tool.ownerId }?.opacity
         VisualOwnerType.IMAGE -> editor.timeline.imageOverlays.firstOrNull { it.id == tool.ownerId }?.transform?.opacity
     } ?: return
-    fun apply(next: Float) = when (tool.ownerType) {
+    fun applyOpacity(next: Float) = when (tool.ownerType) {
         VisualOwnerType.CLIP -> { editorVm.selectClip(tool.ownerId); editorVm.setOpacity(next) }
         VisualOwnerType.TEXT -> editorVm.setTextOpacity(tool.ownerId, next)
         VisualOwnerType.IMAGE -> editorVm.setImageOpacity(tool.ownerId, next)
@@ -383,9 +383,14 @@ private fun OpacityPanel(tool: EditorTool.Opacity, editor: EditorProject, editor
     ToolHeader("Opacity")
     Column(Modifier.padding(horizontal = 18.dp)) {
         Text("${(value * 100).roundToInt()}%")
-        Slider(value, apply, valueRange = 0f..1f, modifier = Modifier.semantics { contentDescription = "Opacity, ${(value * 100).roundToInt()} percent" })
+        Slider(
+            value = value,
+            onValueChange = { applyOpacity(it) },
+            valueRange = 0f..1f,
+            modifier = Modifier.semantics { contentDescription = "Opacity, ${(value * 100).roundToInt()} percent" }
+        )
     }
-    ActionRow(onCancel = onCancel, onReset = { apply(1f) }, onDone = onDismiss)
+    ActionRow(onCancel = onCancel, onReset = { applyOpacity(1f) }, onDone = onDismiss)
 }
 
 @Composable
@@ -668,9 +673,13 @@ private fun MorePanel(
     refresh: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val clip = if (tool.ownerType == VisualOwnerType.CLIP) editor.timeline.clips.firstOrNull { it.id == tool.ownerId } else null
+    val clipTrack = clip?.let { target -> editor.timeline.tracks.firstOrNull { it.id == target.trackId } }
+    val audioOnlyClip = clipTrack?.type == com.videoflow.app.domain.editor.TrackType.AUDIO
+
     ToolHeader("More")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (tool.ownerType != VisualOwnerType.CLIP || editor.timeline.clips.any { it.id == tool.ownerId }) {
+        if (!audioOnlyClip) {
             OutlinedButton(onClick = { onOpenTool(EditorTool.Transform(tool.ownerId, tool.ownerType)) }, modifier = Modifier.fillMaxWidth()) { Text("Transform") }
             OutlinedButton(onClick = { onOpenTool(EditorTool.Opacity(tool.ownerId, tool.ownerType)) }, modifier = Modifier.fillMaxWidth()) { Text("Opacity") }
             OutlinedButton(onClick = { onOpenTool(EditorTool.Keyframes(tool.ownerId, tool.ownerType)) }, modifier = Modifier.fillMaxWidth()) { Text("Keyframes") }
