@@ -19,11 +19,10 @@ import com.videoflow.app.domain.editor.TimelineClip
 import com.videoflow.app.domain.editor.TimelineTrack
 import com.videoflow.app.domain.editor.TrackType
 import com.videoflow.app.domain.export.ExportSize
-import com.videoflow.app.domain.export.HdrPolicy
 import com.videoflow.app.domain.export.FinalRenderPlan
+import com.videoflow.app.domain.export.HdrPolicy
 import com.videoflow.app.domain.export.ResolvedExportSettings
 import java.io.File
-import kotlin.math.roundToInt
 
 @UnstableApi
 data class Media3CompositionBundle(
@@ -80,7 +79,12 @@ class Media3CompositionBuilder(
                 }
                 is VisualItem.Image -> {
                     val source = plan.originalSources.getValue(item.overlay.assetId)
-                    videoSequences += singleSourceImageSequence(source.sourceUri, item.overlay.timelineStartUs, item.overlay.timelineEndUs - item.overlay.timelineStartUs, settings)
+                    videoSequences += singleSourceImageSequence(
+                        source.sourceUri,
+                        item.overlay.timelineStartUs,
+                        item.overlay.timelineEndUs - item.overlay.timelineStartUs,
+                        settings
+                    )
                     val width = (source.width ?: outputSize.width).toFloat()
                     val height = (source.height ?: outputSize.height).toFloat()
                     val (sx, sy) = aspectFitScale(width, height, outputSize)
@@ -93,7 +97,12 @@ class Media3CompositionBuilder(
                         outputSize
                     )
                     val bounds = imageBounds(textFile)
-                    videoSequences += singleImageSequence(textFile, item.overlay.timelineStartUs, item.overlay.timelineEndUs - item.overlay.timelineStartUs, settings)
+                    videoSequences += singleImageSequence(
+                        textFile,
+                        item.overlay.timelineStartUs,
+                        item.overlay.timelineEndUs - item.overlay.timelineStartUs,
+                        settings
+                    )
                     layers += RenderVisualLayer(
                         RenderLayerKind.TEXT_OVERLAY,
                         item.overlay.id,
@@ -104,7 +113,7 @@ class Media3CompositionBuilder(
             }
         }
 
-        val audioSequences = buildAudioSequences(plan, tracksById)
+        val audioSequences = buildAudioSequences(plan, tracksById, settings)
         val allSequences = videoSequences + audioSequences
         val compositor = TimelineVideoCompositorSettings(plan, outputSize, layers)
         val hdrMode = when (settings.hdrPolicy) {
@@ -120,7 +129,8 @@ class Media3CompositionBuilder(
 
     private fun buildAudioSequences(
         plan: FinalRenderPlan,
-        tracksById: Map<String, TimelineTrack>
+        tracksById: Map<String, TimelineTrack>,
+        settings: ResolvedExportSettings
     ): List<EditedMediaItemSequence> {
         val audioCapableTracks = tracksById.values.filter { it.type == TrackType.AUDIO || it.type == TrackType.VIDEO }
         val soloTracks = audioCapableTracks.filter { it.solo }
@@ -137,14 +147,19 @@ class Media3CompositionBuilder(
             .sortedWith(compareBy<TimelineClip> { tracksById[it.trackId]?.orderIndex ?: Int.MAX_VALUE }.thenBy { it.timelineStartUs }.thenBy { it.id })
             .map { clip ->
                 val track = tracksById.getValue(clip.trackId)
-                val media = clippedMediaItem(plan.originalSources.getValue(clip.assetId).sourceUri, clip.sourceStartUs, clip.sourceEndUs)
+                val media = clippedMediaItem(
+                    plan.originalSources.getValue(clip.assetId).sourceUri,
+                    clip.sourceStartUs,
+                    clip.sourceEndUs
+                )
                 val gainProcessor = AutomationGainAudioProcessor(
                     baseGainDb = clip.gainDb + track.gainDb,
                     fadeInUs = clip.fadeInUs,
                     fadeOutUs = clip.fadeOutUs,
                     timelineDurationUs = clip.timelineDurationUs,
                     speed = clip.speed,
-                    gainKeyframes = keyframesByOwner[clip.id].orEmpty().filter { it.property == KeyframeProperty.AUDIO_GAIN }
+                    gainKeyframes = keyframesByOwner[clip.id].orEmpty().filter { it.property == KeyframeProperty.AUDIO_GAIN },
+                    outputChannelCount = settings.audioChannels
                 )
                 val item = EditedMediaItem.Builder(media)
                     .setRemoveVideo(true)
@@ -218,7 +233,12 @@ class Media3CompositionBuilder(
         startUs: Long,
         durationUs: Long,
         settings: ResolvedExportSettings
-    ): EditedMediaItemSequence = singleSourceImageSequence(Uri.fromFile(file).toString(), startUs, durationUs, settings)
+    ): EditedMediaItemSequence = singleSourceImageSequence(
+        Uri.fromFile(file).toString(),
+        startUs,
+        durationUs,
+        settings
+    )
 
     private fun clippedMediaItem(sourceUri: String, startUs: Long, endUs: Long): MediaItem =
         MediaItem.Builder()
@@ -237,11 +257,16 @@ class Media3CompositionBuilder(
         return options.outWidth.coerceAtLeast(1) to options.outHeight.coerceAtLeast(1)
     }
 
-    private fun aspectFitScale(sourceWidth: Number, sourceHeight: Number, output: ExportSize): Pair<Float, Float> {
+    private fun aspectFitScale(
+        sourceWidth: Number,
+        sourceHeight: Number,
+        output: ExportSize
+    ): Pair<Float, Float> {
         val sw = sourceWidth.toFloat().coerceAtLeast(1f)
         val sh = sourceHeight.toFloat().coerceAtLeast(1f)
         val factor = minOf(output.width / sw, output.height / sh)
-        return ((sw * factor) / output.width).coerceAtMost(1f) to ((sh * factor) / output.height).coerceAtMost(1f)
+        return ((sw * factor) / output.width).coerceAtMost(1f) to
+            ((sh * factor) / output.height).coerceAtMost(1f)
     }
 
     private sealed interface VisualItem {
@@ -253,10 +278,12 @@ class Media3CompositionBuilder(
             override val timelineStartUs: Long get() = clip.timelineStartUs
             override val ownerId: String get() = clip.id
         }
+
         data class Image(override val trackOrder: Int, val overlay: ImageOverlay) : VisualItem {
             override val timelineStartUs: Long get() = overlay.timelineStartUs
             override val ownerId: String get() = overlay.id
         }
+
         data class Text(override val trackOrder: Int, val overlay: TextOverlay) : VisualItem {
             override val timelineStartUs: Long get() = overlay.timelineStartUs
             override val ownerId: String get() = overlay.id
@@ -264,7 +291,10 @@ class Media3CompositionBuilder(
     }
 
     private class ConstantSpeedProvider(private val speed: Float) : SpeedProvider {
-        init { require(speed.isFinite() && speed > 0f) }
+        init {
+            require(speed.isFinite() && speed > 0f)
+        }
+
         override fun getSpeed(timeUs: Long): Float = speed
         override fun getNextSpeedChangeTimeUs(timeUs: Long): Long = C.TIME_UNSET
     }
