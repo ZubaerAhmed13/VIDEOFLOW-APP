@@ -555,6 +555,7 @@ fun EditorScreen(
         onDismiss = ::clearToolSession,
         onSelect = ::select,
         onOpenTool = ::openTool,
+        onPreviewSeek = { vm.setPlayheadUs(it) },
         refresh = { vm.load(id) }
     )
 

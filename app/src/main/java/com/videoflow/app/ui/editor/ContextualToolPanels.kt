@@ -64,6 +64,7 @@ fun ContextualToolHost(
     onDismiss: () -> Unit,
     onSelect: (EditorSelection) -> Unit,
     onOpenTool: (EditorTool) -> Unit,
+    onPreviewSeek: (Long) -> Unit,
     refresh: () -> Unit
 ) {
     if (tool == null || editor == null) return
@@ -143,7 +144,7 @@ fun ContextualToolHost(
         when (tool) {
             is EditorTool.Trim -> {
                 val clip = timeline.clips.firstOrNull { it.id == tool.clipId }
-                if (clip != null) TrimPanel(tool, clip, project, thumbnails, waveforms, contextualVm, projectId, refresh, onDismiss)
+                if (clip != null) TrimPanel(tool, clip, project, thumbnails, waveforms, contextualVm, projectId, onPreviewSeek, refresh, onDismiss)
             }
             is EditorTool.Speed -> {
                 val clip = timeline.clips.firstOrNull { it.id == tool.clipId }
@@ -199,6 +200,7 @@ private fun TrimPanel(
     waveforms: Map<String, FloatArray>,
     contextualVm: ContextualEditingViewModel,
     projectId: String,
+    onPreviewSeek: (Long) -> Unit,
     refresh: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -208,6 +210,8 @@ private fun TrimPanel(
     var range by remember(tool.clipId) {
         mutableStateOf((clip.sourceStartUs.toFloat() / sourceDuration)..(clip.sourceEndUs.toFloat() / sourceDuration))
     }
+    var pendingPreviewUs by remember(tool.clipId) { mutableLongStateOf(clip.timelineStartUs) }
+    var lastPreviewSeekMs by remember(tool.clipId) { mutableLongStateOf(0L) }
     val startUs = (range.start * sourceDuration).toLong().coerceIn(0L, sourceDuration - 1L)
     val endUs = (range.endInclusive * sourceDuration).toLong().coerceIn(startUs + 1L, sourceDuration)
 
@@ -226,8 +230,27 @@ private fun TrimPanel(
             value = range,
             onValueChange = { next ->
                 val minGap = (100_000f / sourceDuration.toFloat()).coerceAtMost(0.2f)
-                if (next.endInclusive - next.start >= minGap) range = next
+                if (next.endInclusive - next.start >= minGap) {
+                    val previous = range
+                    range = next
+                    val startDelta = kotlin.math.abs(next.start - previous.start)
+                    val endDelta = kotlin.math.abs(next.endInclusive - previous.endInclusive)
+                    val sourceBoundaryUs = if (startDelta >= endDelta) {
+                        (next.start * sourceDuration).toLong()
+                    } else {
+                        (next.endInclusive * sourceDuration).toLong()
+                    }.coerceIn(0L, sourceDuration)
+                    val timelineOffsetUs = ((sourceBoundaryUs - clip.sourceStartUs).toDouble() / clip.speed).toLong()
+                    pendingPreviewUs = (clip.timelineStartUs + timelineOffsetUs)
+                        .coerceIn(clip.timelineStartUs, clip.timelineEndUs)
+                    val nowMs = android.os.SystemClock.elapsedRealtime()
+                    if (nowMs - lastPreviewSeekMs >= 50L) {
+                        lastPreviewSeekMs = nowMs
+                        onPreviewSeek(pendingPreviewUs)
+                    }
+                }
             },
+            onValueChangeFinished = { onPreviewSeek(pendingPreviewUs) },
             valueRange = 0f..1f,
             modifier = Modifier.semantics { contentDescription = "Trim start and end handles" }
         )
@@ -487,6 +510,42 @@ private fun TextStylePanel(
     var alignment by remember(tool.overlayId) { mutableStateOf(overlay.alignment) }
     var color by remember(tool.overlayId) { mutableLongStateOf(overlay.colorArgb) }
     var hex by remember(tool.overlayId) { mutableStateOf(argbToHex(overlay.colorArgb)) }
+    val initialHsv = remember(tool.overlayId) {
+        FloatArray(3).also { android.graphics.Color.colorToHSV(overlay.colorArgb.toInt(), it) }
+    }
+    var hue by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[0]) }
+    var saturation by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[1]) }
+    var brightness by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[2]) }
+
+    fun syncHsv(nextColor: Long) {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(nextColor.toInt(), hsv)
+        hue = hsv[0]
+        saturation = hsv[1]
+        brightness = hsv[2]
+    }
+
+    fun selectColor(nextColor: Long) {
+        color = nextColor and 0xFFFFFFFFL
+        hex = argbToHex(color)
+        syncHsv(color)
+    }
+
+    fun selectHsv(
+        nextHue: Float = hue,
+        nextSaturation: Float = saturation,
+        nextBrightness: Float = brightness
+    ) {
+        hue = nextHue.coerceIn(0f, 360f)
+        saturation = nextSaturation.coerceIn(0f, 1f)
+        brightness = nextBrightness.coerceIn(0f, 1f)
+        val alpha = ((color ushr 24) and 0xFF).toInt().coerceIn(0, 255)
+        color = android.graphics.Color.HSVToColor(
+            alpha,
+            floatArrayOf(hue, saturation, brightness)
+        ).toLong() and 0xFFFFFFFFL
+        hex = argbToHex(color)
+    }
 
     ToolHeader("Text Style", "Only properties supported by the real text backend are shown")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -511,13 +570,19 @@ private fun TextStylePanel(
                 0xFFFFFF00L to "Yellow",
                 0xFF4CAF50L to "Green",
                 0xFF42A5F5L to "Blue"
-            ).forEach { (value, label) -> OutlinedButton(onClick = { color = value; hex = argbToHex(value) }) { Text(label) } }
+            ).forEach { (value, label) -> OutlinedButton(onClick = { selectColor(value) }) { Text(label) } }
         }
+        LabeledSlider("Hue", hue, 0f..360f, "${hue.roundToInt()}°") { selectHsv(nextHue = it) }
+        LabeledSlider("Saturation", saturation, 0f..1f, "${(saturation * 100).roundToInt()}%") { selectHsv(nextSaturation = it) }
+        LabeledSlider("Brightness", brightness, 0f..1f, "${(brightness * 100).roundToInt()}%") { selectHsv(nextBrightness = it) }
         OutlinedTextField(
             value = hex,
             onValueChange = { raw ->
                 hex = raw.take(9)
-                parseArgb(hex)?.let { color = it }
+                parseArgb(hex)?.let { parsed ->
+                    color = parsed
+                    syncHsv(parsed)
+                }
             },
             label = { Text("Hex color") },
             singleLine = true
