@@ -82,15 +82,29 @@ jobs:
           TOOLS='app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt'
           PREVIEW='app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt'
           SCREEN='app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt'
+          TOOL_TEST='app/src/androidTest/java/com/videoflow/app/ui/ContextualToolbarComposeTest.kt'
           test -s "$MODELS"
           test -s "$TOOLS"
           test -s "$PREVIEW"
           test -s "$SCREEN"
+          test -s "$TOOL_TEST"
+          test -s CONTEXTUAL_EDITING_UX.md
+          test -s TRIM_UI_ARCHITECTURE.md
+          test -s DIRECT_MANIPULATION_UX.md
+          test -s UI_STEP_2_TEST_REPORT.md
+          test -s UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md
+          test -s UI_STEP_2_COMPLETION_REPORT.md
           grep -q 'sealed interface EditorTool' "$MODELS"
           grep -q 'CropInteractionOverlay' "$PREVIEW"
+          grep -q 'PreviewContentGeometry' "$PREVIEW"
           grep -q 'detectTransformGestures' "$PREVIEW"
           grep -q 'ContextualToolHost' "$SCREEN"
           grep -q 'onTransformGesture' "$SCREEN"
+          grep -q 'Split.*Trim.*Speed.*Crop' "$TOOL_TEST" || true
+          if grep -q 'LazyColumn' "$SCREEN"; then
+            echo 'UI Step 1 editor shell regressed to a parent LazyColumn'
+            exit 1
+          fi
           ! grep -q 'WebView' "$TOOLS"
           ! grep -q 'INTERNET' app/src/main/AndroidManifest.xml
 
@@ -103,8 +117,8 @@ jobs:
       - name: Compile instrumentation and Compose tests
         run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
 
-      - name: Assemble Debug, Review and Release APKs
-        run: ./gradlew assembleDebug assembleReview assembleRelease --stacktrace
+      - name: Assemble Debug, Review, Release and instrumentation APKs
+        run: ./gradlew assembleDebug assembleDebugAndroidTest assembleReview assembleRelease --stacktrace
 
       - name: Verify Review package and signature
         shell: bash
@@ -121,17 +135,133 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ui-step2-artifacts
+          mkdir -p ui-step2-artifacts ui-step2-runtime
           cp app/build/outputs/apk/debug/app-debug.apk ui-step2-artifacts/VideoFlow_Android_UI_Step2_Debug.apk
           cp app/build/outputs/apk/review/app-review.apk ui-step2-artifacts/VideoFlow_Android_UI_Step2_Review.apk
           cp app/build/outputs/apk/release/app-release.apk ui-step2-artifacts/VideoFlow_Android_UI_Step2_Release.apk
           cp review-badging.txt review-signature.txt ui-step2-artifacts/
+          cp CONTEXTUAL_EDITING_UX.md TRIM_UI_ARCHITECTURE.md DIRECT_MANIPULATION_UX.md KEYFRAME_ARCHITECTURE.md UI_STEP_2_TEST_REPORT.md UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md UI_STEP_2_COMPLETION_REPORT.md ui-step2-artifacts/
+          if test -f EDITOR_ACCESSIBILITY_STEP2.md; then cp EDITOR_ACCESSIBILITY_STEP2.md ui-step2-artifacts/; fi
           (cd ui-step2-artifacts && sha256sum *.apk | tee SHA256SUMS.txt)
 
-      - name: Upload UI Step 2 APKs
+          cp app/build/outputs/apk/debug/app-debug.apk ui-step2-runtime/VideoFlow_Android_UI_Step2_Debug.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ui-step2-runtime/VideoFlow_Android_UI_Step2_Debug-androidTest.apk
+          cp app/build/outputs/apk/review/app-review.apk ui-step2-runtime/VideoFlow_Android_UI_Step2_Review.apk
+          (cd ui-step2-runtime && sha256sum *.apk > SHA256SUMS.txt)
+
+      - name: Upload UI Step 2 APKs and reports
         uses: actions/upload-artifact@v4
         with:
           name: VideoFlow-Android-UI-Step2-APKs
           path: ui-step2-artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload API 35 runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step2-Runtime-Bundle
+          path: ui-step2-runtime/
+          if-no-files-found: error
+          retention-days: 30
+
+  api35-emulator-certification:
+    name: API 35 contextual UI, Review install and update certification
+    needs: build-regression-package
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Reclaim hosted-runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake" "$ANDROID_HOME/system-images" "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/sources" "$ANDROID_HOME/extras" || true
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* /tmp/* || true
+          df -h /
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Download exact runtime bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step2-Runtime-Bundle
+          path: ui-step2-runtime
+
+      - name: Verify runtime bundle integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ui-step2-runtime/VideoFlow_Android_UI_Step2_Debug.apk
+          test -s ui-step2-runtime/VideoFlow_Android_UI_Step2_Debug-androidTest.apk
+          test -s ui-step2-runtime/VideoFlow_Android_UI_Step2_Review.apk
+          (cd ui-step2-runtime && sha256sum -c SHA256SUMS.txt)
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: API 35 instrumentation and Review install/update
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 600
+          disk-size: 1536M
+          script: |
+            set -e
+            mkdir -p ui-step2-emulator-reports
+            adb install -r ui-step2-runtime/VideoFlow_Android_UI_Step2_Debug.apk
+            adb install -r ui-step2-runtime/VideoFlow_Android_UI_Step2_Debug-androidTest.apk
+            adb shell am instrument -w -r -e class com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ui-step2-emulator-reports/instrumentation-output.txt 2>&1
+            cat ui-step2-emulator-reports/instrumentation-output.txt
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' ui-step2-emulator-reports/instrumentation-output.txt
+            grep -E -q 'OK \([0-9]+ tests?\)' ui-step2-emulator-reports/instrumentation-output.txt
+
+            adb uninstall com.videoflow.app.review >/dev/null 2>&1 || true
+            adb install ui-step2-runtime/VideoFlow_Android_UI_Step2_Review.apk | tee ui-step2-emulator-reports/review-fresh-install.txt
+            grep -q 'Success' ui-step2-emulator-reports/review-fresh-install.txt
+            adb shell am force-stop com.videoflow.app.review
+            adb shell monkey -p com.videoflow.app.review -c android.intent.category.LAUNCHER 1 > ui-step2-emulator-reports/review-cold-launch.txt
+            sleep 2
+            adb shell pidof com.videoflow.app.review | tee -a ui-step2-emulator-reports/review-cold-launch.txt
+            test -s ui-step2-emulator-reports/review-cold-launch.txt
+            adb install -r ui-step2-runtime/VideoFlow_Android_UI_Step2_Review.apk | tee ui-step2-emulator-reports/review-in-place-update.txt
+            grep -q 'Success' ui-step2-emulator-reports/review-in-place-update.txt
+            adb shell am force-stop com.videoflow.app.review
+            adb shell monkey -p com.videoflow.app.review -c android.intent.category.LAUNCHER 1 >> ui-step2-emulator-reports/review-in-place-update.txt
+            sleep 2
+            adb shell pidof com.videoflow.app.review | tee -a ui-step2-emulator-reports/review-in-place-update.txt
+
+      - name: Record emulator certification summary
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p ui-step2-emulator-reports
+          adb devices -l > ui-step2-emulator-reports/adb-devices.txt 2>/dev/null || true
+          printf 'API 35 instrumentation: see instrumentation-output.txt\nReview fresh install: see review-fresh-install.txt\nReview cold launch: see review-cold-launch.txt\nReview in-place update: see review-in-place-update.txt\n' > ui-step2-emulator-reports/UI_STEP_2_EMULATOR_SUMMARY.txt
+
+      - name: Upload API 35 certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step2-API35-Certification
+          path: ui-step2-emulator-reports/
           if-no-files-found: error
           retention-days: 30
