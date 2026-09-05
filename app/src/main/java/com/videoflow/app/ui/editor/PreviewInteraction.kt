@@ -1,13 +1,18 @@
 package com.videoflow.app.ui.editor
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -47,25 +52,31 @@ private enum class CropDragMode { LEFT, RIGHT, TOP, BOTTOM, TOP_LEFT, TOP_RIGHT,
 @Composable
 fun CropInteractionOverlay(
     crop: CropRect,
+    aspectRatio: Float? = null,
     onCropChange: (CropRect) -> Unit,
+    onCropCommit: (CropRect) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
     val hitPx = with(density) { 28.dp.toPx() }
+    val latestCrop by rememberUpdatedState(crop)
+    val latestAspect by rememberUpdatedState(aspectRatio)
     var mode by remember { mutableStateOf(CropDragMode.MOVE) }
+    var working by remember { mutableStateOf(crop) }
 
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(crop) {
+            .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { p ->
+                        working = latestCrop
                         val width = size.width.toFloat().coerceAtLeast(1f)
                         val height = size.height.toFloat().coerceAtLeast(1f)
-                        val left = crop.left * width
-                        val right = crop.right * width
-                        val top = crop.top * height
-                        val bottom = crop.bottom * height
+                        val left = working.left * width
+                        val right = working.right * width
+                        val top = working.top * height
+                        val bottom = working.bottom * height
                         val nearL = abs(p.x - left) <= hitPx
                         val nearR = abs(p.x - right) <= hitPx
                         val nearT = abs(p.y - top) <= hitPx
@@ -82,6 +93,8 @@ fun CropInteractionOverlay(
                             else -> CropDragMode.MOVE
                         }
                     },
+                    onDragCancel = { working = latestCrop },
+                    onDragEnd = { onCropCommit(working) },
                     onDrag = { change, drag ->
                         change.consume()
                         val widthPx = size.width.toFloat().coerceAtLeast(1f)
@@ -89,10 +102,10 @@ fun CropInteractionOverlay(
                         val dx = drag.x / widthPx
                         val dy = drag.y / heightPx
                         val minSize = 0.02f
-                        var l = crop.left
-                        var r = crop.right
-                        var t = crop.top
-                        var b = crop.bottom
+                        var l = working.left
+                        var r = working.right
+                        var t = working.top
+                        var b = working.bottom
                         when (mode) {
                             CropDragMode.LEFT, CropDragMode.TOP_LEFT, CropDragMode.BOTTOM_LEFT -> l = (l + dx).coerceIn(0f, r - minSize)
                             CropDragMode.RIGHT, CropDragMode.TOP_RIGHT, CropDragMode.BOTTOM_RIGHT -> r = (r + dx).coerceIn(l + minSize, 1f)
@@ -111,7 +124,9 @@ fun CropInteractionOverlay(
                             r = l + width
                             b = t + height
                         }
-                        onCropChange(CropRect(l, t, r, b))
+                        val constrained = constrainCropAspect(CropRect(l, t, r, b), latestAspect, mode, minSize)
+                        working = constrained
+                        onCropChange(constrained)
                     }
                 )
             }
@@ -135,27 +150,102 @@ fun CropInteractionOverlay(
     }
 }
 
+private fun constrainCropAspect(
+    source: CropRect,
+    normalizedAspect: Float?,
+    mode: CropDragMode,
+    minSize: Float
+): CropRect {
+    val aspect = normalizedAspect?.takeIf { it.isFinite() && it > 0f } ?: return source
+    if (mode == CropDragMode.MOVE) return source
+    var l = source.left
+    var r = source.right
+    var t = source.top
+    var b = source.bottom
+    var width = (r - l).coerceAtLeast(minSize)
+    var height = (b - t).coerceAtLeast(minSize)
+    if (width / height > aspect) width = height * aspect else height = width / aspect
+    width = width.coerceAtMost(1f)
+    height = height.coerceAtMost(1f)
+
+    when (mode) {
+        CropDragMode.TOP_LEFT -> { l = r - width; t = b - height }
+        CropDragMode.TOP_RIGHT -> { r = l + width; t = b - height }
+        CropDragMode.BOTTOM_LEFT -> { l = r - width; b = t + height }
+        CropDragMode.BOTTOM_RIGHT -> { r = l + width; b = t + height }
+        CropDragMode.LEFT -> {
+            l = r - width
+            val cy = (t + b) / 2f
+            t = cy - height / 2f; b = cy + height / 2f
+        }
+        CropDragMode.RIGHT -> {
+            r = l + width
+            val cy = (t + b) / 2f
+            t = cy - height / 2f; b = cy + height / 2f
+        }
+        CropDragMode.TOP -> {
+            t = b - height
+            val cx = (l + r) / 2f
+            l = cx - width / 2f; r = cx + width / 2f
+        }
+        CropDragMode.BOTTOM -> {
+            b = t + height
+            val cx = (l + r) / 2f
+            l = cx - width / 2f; r = cx + width / 2f
+        }
+        CropDragMode.MOVE -> Unit
+    }
+
+    val shiftX = when {
+        l < 0f -> -l
+        r > 1f -> 1f - r
+        else -> 0f
+    }
+    l += shiftX; r += shiftX
+    val shiftY = when {
+        t < 0f -> -t
+        b > 1f -> 1f - b
+        else -> 0f
+    }
+    t += shiftY; b += shiftY
+    return CropRect(l.coerceIn(0f, 1f), t.coerceIn(0f, 1f), r.coerceIn(0f, 1f), b.coerceIn(0f, 1f))
+}
+
 @Composable
 fun TransformInteractionOverlay(
     centerX: Float,
     centerY: Float,
     scale: Float,
     onGesture: (dxNormalized: Float, dyNormalized: Float, zoom: Float, rotationDelta: Float) -> Unit,
+    onGestureEnd: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val latestGesture by rememberUpdatedState(onGesture)
+    val latestEnd by rememberUpdatedState(onGestureEnd)
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, rotation ->
-                    val widthPx = size.width.toFloat().coerceAtLeast(1f)
-                    val heightPx = size.height.toFloat().coerceAtLeast(1f)
-                    onGesture(
-                        pan.x / widthPx,
-                        pan.y / heightPx,
-                        zoom.coerceIn(0.5f, 2f),
-                        rotation
-                    )
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val pan = event.calculatePan()
+                        val zoom = event.calculateZoom()
+                        val rotation = event.calculateRotation()
+                        if (pan != Offset.Zero || zoom != 1f || rotation != 0f) {
+                            val widthPx = size.width.toFloat().coerceAtLeast(1f)
+                            val heightPx = size.height.toFloat().coerceAtLeast(1f)
+                            latestGesture(
+                                pan.x / widthPx,
+                                pan.y / heightPx,
+                                zoom.coerceIn(0.5f, 2f),
+                                rotation
+                            )
+                            event.changes.forEach { if (it.pressed) it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                    latestEnd()
                 }
             }
     ) {
