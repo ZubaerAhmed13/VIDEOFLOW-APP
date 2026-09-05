@@ -28,17 +28,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.videoflow.app.domain.editor.ImageOverlay
 import com.videoflow.app.domain.editor.ProxyStatus
+import com.videoflow.app.domain.editor.TextOverlay
+import com.videoflow.app.domain.editor.TimelineClip
 import com.videoflow.app.domain.model.ImportState
 import com.videoflow.app.domain.model.SourceStatus
+import com.videoflow.app.ui.ContextualEditingViewModel
 import com.videoflow.app.ui.EditorViewModel
 import com.videoflow.app.ui.OverlayAdvancedViewModel
 import com.videoflow.app.ui.ProjectViewModel
 import com.videoflow.app.ui.TrackLifecycleViewModel
+import com.videoflow.app.ui.editor.ContextualToolHost
 import com.videoflow.app.ui.editor.EditorBottomToolbar
 import com.videoflow.app.ui.editor.EditorPanel
 import com.videoflow.app.ui.editor.EditorPanelHost
 import com.videoflow.app.ui.editor.EditorSelection
+import com.videoflow.app.ui.editor.EditorTool
 import com.videoflow.app.ui.editor.EditorTopBar
 import com.videoflow.app.ui.editor.EditorWarningBanner
 import com.videoflow.app.ui.editor.LandscapeInfoPane
@@ -46,6 +52,7 @@ import com.videoflow.app.ui.editor.PreviewWorkspace
 import com.videoflow.app.ui.editor.TimelineWorkspace
 import com.videoflow.app.ui.editor.TransportBar
 import com.videoflow.app.ui.editor.VideoFlowEditorColors
+import com.videoflow.app.ui.editor.VisualOwnerType
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,6 +66,7 @@ fun EditorScreen(
     val projectVm: ProjectViewModel = hiltViewModel()
     val overlayVm: OverlayAdvancedViewModel = hiltViewModel()
     val trackVm: TrackLifecycleViewModel = hiltViewModel()
+    val contextualVm: ContextualEditingViewModel = hiltViewModel()
 
     val project by vm.project.collectAsState()
     val editor by vm.editor.collectAsState()
@@ -82,6 +90,10 @@ fun EditorScreen(
     var pixelsPerSecond by rememberSaveable { mutableFloatStateOf(72f) }
     var selection by remember { mutableStateOf<EditorSelection>(EditorSelection.None) }
     var activePanel by remember { mutableStateOf<EditorPanel?>(null) }
+    var activeTool by remember { mutableStateOf<EditorTool?>(null) }
+    var initialToolClip by remember { mutableStateOf<TimelineClip?>(null) }
+    var initialToolText by remember { mutableStateOf<TextOverlay?>(null) }
+    var initialToolImage by remember { mutableStateOf<ImageOverlay?>(null) }
     var pendingDeleteTrackId by rememberSaveable { mutableStateOf<String?>(null) }
     var relinkAssetId by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -158,7 +170,15 @@ fun EditorScreen(
     val offlineCount = project?.mediaAssets.orEmpty().count { it.sourceStatus !in setOf(SourceStatus.AVAILABLE, SourceStatus.CHANGED) }
     val changedCount = project?.mediaAssets.orEmpty().count { it.sourceStatus == SourceStatus.CHANGED }
 
+    fun clearToolSession() {
+        activeTool = null
+        initialToolClip = null
+        initialToolText = null
+        initialToolImage = null
+    }
+
     fun clearSelection() {
+        clearToolSession()
         selection = EditorSelection.None
         vm.selectClip(null)
     }
@@ -171,15 +191,160 @@ fun EditorScreen(
         }
     }
 
+    fun openTool(tool: EditorTool) {
+        activePanel = null
+        activeTool = tool
+        initialToolClip = null
+        initialToolText = null
+        initialToolImage = null
+        val ownerId = when (tool) {
+            is EditorTool.Trim -> tool.clipId
+            is EditorTool.Speed -> tool.clipId
+            is EditorTool.Crop -> tool.clipId
+            is EditorTool.Volume -> tool.clipId
+            is EditorTool.Fade -> tool.clipId
+            is EditorTool.Transform -> tool.ownerId
+            is EditorTool.Opacity -> tool.ownerId
+            is EditorTool.TextEditor -> tool.overlayId
+            is EditorTool.TextStyle -> tool.overlayId
+            is EditorTool.Timing -> tool.ownerId
+            is EditorTool.Keyframes -> tool.ownerId
+            is EditorTool.More -> tool.ownerId
+        }
+        when (tool) {
+            is EditorTool.Trim, is EditorTool.Speed, is EditorTool.Crop, is EditorTool.Volume, is EditorTool.Fade -> {
+                initialToolClip = ownerId?.let { idValue -> clips.firstOrNull { it.id == idValue } }
+                initialToolClip?.let { clip ->
+                    vm.selectClip(clip.id)
+                    if (playheadUs !in clip.timelineStartUs until clip.timelineEndUs) vm.setPlayheadUs(clip.timelineStartUs)
+                }
+            }
+            is EditorTool.Transform -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> initialToolClip = clips.firstOrNull { it.id == tool.ownerId }
+                VisualOwnerType.TEXT -> initialToolText = timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }
+                VisualOwnerType.IMAGE -> initialToolImage = timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }
+            }
+            is EditorTool.Opacity -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> initialToolClip = clips.firstOrNull { it.id == tool.ownerId }
+                VisualOwnerType.TEXT -> initialToolText = timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }
+                VisualOwnerType.IMAGE -> initialToolImage = timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }
+            }
+            is EditorTool.TextEditor -> initialToolText = tool.overlayId?.let { owner -> timeline?.textOverlays?.firstOrNull { it.id == owner } }
+            is EditorTool.TextStyle -> initialToolText = timeline?.textOverlays?.firstOrNull { it.id == tool.overlayId }
+            is EditorTool.Timing -> Unit
+            is EditorTool.Keyframes -> Unit
+            is EditorTool.More -> Unit
+        }
+        when (tool) {
+            is EditorTool.Trim, is EditorTool.Crop, is EditorTool.TextEditor, is EditorTool.TextStyle -> isPlaying = false
+            is EditorTool.Transform -> isPlaying = false
+            else -> Unit
+        }
+        val ownerWindow = when (tool) {
+            is EditorTool.Transform -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> clips.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+                VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+                VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+            }
+            is EditorTool.Opacity -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> clips.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+                VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+                VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+            }
+            is EditorTool.TextEditor -> tool.overlayId?.let { owner -> timeline?.textOverlays?.firstOrNull { it.id == owner }?.let { it.timelineStartUs to it.timelineEndUs } }
+            is EditorTool.TextStyle -> timeline?.textOverlays?.firstOrNull { it.id == tool.overlayId }?.let { it.timelineStartUs to it.timelineEndUs }
+            is EditorTool.Timing -> when (tool.ownerType) {
+                com.videoflow.app.ui.editor.TimedOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+                com.videoflow.app.ui.editor.TimedOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+            }
+            is EditorTool.Keyframes -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> clips.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+                VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+                VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.let { it.timelineStartUs to it.timelineEndUs }
+            }
+            else -> null
+        }
+        ownerWindow?.let { (start, end) -> if (playheadUs !in start until end) vm.setPlayheadUs(start) }
+    }
+
+    fun cancelActiveTool() {
+        when (val tool = activeTool) {
+            is EditorTool.Crop -> initialToolClip?.let { before ->
+                contextualVm.setClipCrop(id, before.id, before.transform.crop) { vm.load(id) }
+            }
+            is EditorTool.Transform -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> initialToolClip?.let { before ->
+                    val current = clips.firstOrNull { it.id == before.id }
+                    contextualVm.setClipTransform(id, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { vm.load(id) }
+                    vm.selectClip(before.id)
+                    if (current != null && current.transform.flipHorizontal != before.transform.flipHorizontal) vm.toggleFlipHorizontal()
+                    if (current != null && current.transform.flipVertical != before.transform.flipVertical) vm.toggleFlipVertical()
+                }
+                VisualOwnerType.TEXT -> initialToolText?.let { before ->
+                    contextualVm.setTextTransform(id, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { vm.load(id) }
+                }
+                VisualOwnerType.IMAGE -> initialToolImage?.let { before ->
+                    contextualVm.setImageTransform(id, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { vm.load(id) }
+                }
+            }
+            is EditorTool.Opacity -> when (tool.ownerType) {
+                VisualOwnerType.CLIP -> initialToolClip?.let { vm.selectClip(it.id); vm.setOpacity(it.opacity) }
+                VisualOwnerType.TEXT -> initialToolText?.let { vm.setTextOpacity(it.id, it.opacity) }
+                VisualOwnerType.IMAGE -> initialToolImage?.let { vm.setImageOpacity(it.id, it.transform.opacity) }
+            }
+            is EditorTool.Volume -> initialToolClip?.let { vm.selectClip(it.id); vm.setClipGain(it.gainDb) }
+            is EditorTool.Fade -> initialToolClip?.let { vm.selectClip(it.id); vm.setFades(it.fadeInUs, it.fadeOutUs) }
+            else -> Unit
+        }
+        clearToolSession()
+    }
+
     fun closeOrBack() {
         when {
+            activeTool != null -> cancelActiveTool()
             activePanel != null -> activePanel = null
             selection != EditorSelection.None -> clearSelection()
             else -> onBack()
         }
     }
 
-    BackHandler(enabled = activePanel != null || selection != EditorSelection.None, onBack = ::closeOrBack)
+    fun transformGesture(dx: Float, dy: Float, zoom: Float, rotation: Float) {
+        val tool = activeTool as? EditorTool.Transform ?: return
+        when (tool.ownerType) {
+            VisualOwnerType.CLIP -> clips.firstOrNull { it.id == tool.ownerId }?.let { target ->
+                contextualVm.setClipTransform(
+                    id,
+                    target.id,
+                    (target.transform.x + dx).coerceIn(0f, 1f),
+                    (target.transform.y + dy).coerceIn(0f, 1f),
+                    (target.transform.scaleX * zoom).coerceIn(0.05f, 10f),
+                    target.transform.rotationDegrees + rotation
+                ) { vm.load(id) }
+            }
+            VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.let { target ->
+                contextualVm.setTextTransform(
+                    id,
+                    target.id,
+                    (target.transform.x + dx).coerceIn(0f, 1f),
+                    (target.transform.y + dy).coerceIn(0f, 1f),
+                    (target.transform.scaleX * zoom).coerceIn(0.05f, 10f),
+                    target.transform.rotationDegrees + rotation
+                ) { vm.load(id) }
+            }
+            VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.let { target ->
+                contextualVm.setImageTransform(
+                    id,
+                    target.id,
+                    (target.transform.x + dx).coerceIn(0f, 1f),
+                    (target.transform.y + dy).coerceIn(0f, 1f),
+                    (target.transform.scaleX * zoom).coerceIn(0.05f, 10f),
+                    target.transform.rotationDegrees + rotation
+                ) { vm.load(id) }
+            }
+        }
+    }
+
+    BackHandler(enabled = activeTool != null || activePanel != null || selection != EditorSelection.None, onBack = ::closeOrBack)
 
     Scaffold(
         containerColor = VideoFlowEditorColors.EditorBackground,
@@ -200,7 +365,8 @@ fun EditorScreen(
             EditorBottomToolbar(
                 selection = selection,
                 selectedClipMime = selectedClipMime,
-                onPanel = { activePanel = it },
+                onPanel = { clearToolSession(); activePanel = it },
+                onTool = ::openTool,
                 onSplit = { vm.splitSelected() }
             )
         }
@@ -217,7 +383,13 @@ fun EditorScreen(
             if (compactLandscape) {
                 Row(Modifier.fillMaxSize()) {
                     Column(Modifier.weight(0.46f)) {
-                        PreviewWorkspace(project, editor, playheadUs, isPlaying, Modifier.weight(1f))
+                        PreviewWorkspace(
+                            project, editor, playheadUs, isPlaying, Modifier.weight(1f), activeTool,
+                            onCropChange = { crop ->
+                                (activeTool as? EditorTool.Crop)?.let { tool -> contextualVm.setClipCrop(id, tool.clipId, crop) { vm.load(id) } }
+                            },
+                            onTransformGesture = ::transformGesture
+                        )
                         EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
                         TransportBar(
                             playheadUs = playheadUs,
@@ -255,7 +427,13 @@ fun EditorScreen(
             } else if (wide) {
                 Column(Modifier.fillMaxSize()) {
                     Row(Modifier.weight(0.56f)) {
-                        PreviewWorkspace(project, editor, playheadUs, isPlaying, Modifier.weight(0.70f))
+                        PreviewWorkspace(
+                            project, editor, playheadUs, isPlaying, Modifier.weight(0.70f), activeTool,
+                            onCropChange = { crop ->
+                                (activeTool as? EditorTool.Crop)?.let { tool -> contextualVm.setClipCrop(id, tool.clipId, crop) { vm.load(id) } }
+                            },
+                            onTransformGesture = ::transformGesture
+                        )
                         LandscapeInfoPane(
                             selection = selection,
                             projectName = project?.name ?: "VideoFlow",
@@ -298,7 +476,13 @@ fun EditorScreen(
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
-                    PreviewWorkspace(project, editor, playheadUs, isPlaying, Modifier.weight(0.42f))
+                    PreviewWorkspace(
+                        project, editor, playheadUs, isPlaying, Modifier.weight(0.42f), activeTool,
+                        onCropChange = { crop ->
+                            (activeTool as? EditorTool.Crop)?.let { tool -> contextualVm.setClipCrop(id, tool.clipId, crop) { vm.load(id) } }
+                        },
+                        onTransformGesture = ::transformGesture
+                    )
                     EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
                     TransportBar(
                         playheadUs = playheadUs,
@@ -355,6 +539,23 @@ fun EditorScreen(
         onSelect = ::select,
         onDeleteTrack = { pendingDeleteTrackId = it },
         onOpenPanel = { activePanel = it }
+    )
+
+    ContextualToolHost(
+        tool = activeTool,
+        projectId = id,
+        project = project,
+        editor = editor,
+        playheadUs = playheadUs,
+        thumbnails = thumbnails,
+        waveforms = waveforms,
+        editorVm = vm,
+        contextualVm = contextualVm,
+        overlayVm = overlayVm,
+        onDismiss = ::clearToolSession,
+        onSelect = ::select,
+        onOpenTool = ::openTool,
+        refresh = { vm.load(id) }
     )
 
     pendingDeleteTrackId?.let { trackId ->
