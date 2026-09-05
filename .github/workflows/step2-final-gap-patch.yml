@@ -1,0 +1,125 @@
+name: VideoFlow UI Step 2 Final Gap Patch
+
+on:
+  push:
+    branches:
+      - ui-step2-contextual-tools
+    paths:
+      - .github/workflows/step2-final-gap-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-final-gaps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Step 2 branch
+        uses: actions/checkout@v4
+        with:
+          ref: ui-step2-contextual-tools
+          fetch-depth: 0
+
+      - name: Apply HSV custom color and Trim preview-seek patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          panels_path = Path('app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt')
+          panels = panels_path.read_text()
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          panels = replace_once(
+              panels,
+              '''    onSelect: (EditorSelection) -> Unit,\n    onOpenTool: (EditorTool) -> Unit,\n    refresh: () -> Unit\n) {''',
+              '''    onSelect: (EditorSelection) -> Unit,\n    onOpenTool: (EditorTool) -> Unit,\n    onPreviewSeek: (Long) -> Unit,\n    refresh: () -> Unit\n) {''',
+              'ContextualToolHost preview-seek parameter'
+          )
+
+          panels = replace_once(
+              panels,
+              '''if (clip != null) TrimPanel(tool, clip, project, thumbnails, waveforms, contextualVm, projectId, refresh, onDismiss)''',
+              '''if (clip != null) TrimPanel(tool, clip, project, thumbnails, waveforms, contextualVm, projectId, onPreviewSeek, refresh, onDismiss)''',
+              'TrimPanel call'
+          )
+
+          panels = replace_once(
+              panels,
+              '''    contextualVm: ContextualEditingViewModel,\n    projectId: String,\n    refresh: () -> Unit,\n    onDismiss: () -> Unit\n) {''',
+              '''    contextualVm: ContextualEditingViewModel,\n    projectId: String,\n    onPreviewSeek: (Long) -> Unit,\n    refresh: () -> Unit,\n    onDismiss: () -> Unit\n) {''',
+              'TrimPanel preview-seek parameter'
+          )
+
+          panels = replace_once(
+              panels,
+              '''    var range by remember(tool.clipId) {\n        mutableStateOf((clip.sourceStartUs.toFloat() / sourceDuration)..(clip.sourceEndUs.toFloat() / sourceDuration))\n    }\n    val startUs = (range.start * sourceDuration).toLong().coerceIn(0L, sourceDuration - 1L)''',
+              '''    var range by remember(tool.clipId) {\n        mutableStateOf((clip.sourceStartUs.toFloat() / sourceDuration)..(clip.sourceEndUs.toFloat() / sourceDuration))\n    }\n    var pendingPreviewUs by remember(tool.clipId) { mutableLongStateOf(clip.timelineStartUs) }\n    var lastPreviewSeekMs by remember(tool.clipId) { mutableLongStateOf(0L) }\n    val startUs = (range.start * sourceDuration).toLong().coerceIn(0L, sourceDuration - 1L)''',
+              'Trim preview state'
+          )
+
+          panels = replace_once(
+              panels,
+              '''            onValueChange = { next ->\n                val minGap = (100_000f / sourceDuration.toFloat()).coerceAtMost(0.2f)\n                if (next.endInclusive - next.start >= minGap) range = next\n            },\n            valueRange = 0f..1f,''',
+              '''            onValueChange = { next ->\n                val minGap = (100_000f / sourceDuration.toFloat()).coerceAtMost(0.2f)\n                if (next.endInclusive - next.start >= minGap) {\n                    val previous = range\n                    range = next\n                    val startDelta = kotlin.math.abs(next.start - previous.start)\n                    val endDelta = kotlin.math.abs(next.endInclusive - previous.endInclusive)\n                    val sourceBoundaryUs = if (startDelta >= endDelta) {\n                        (next.start * sourceDuration).toLong()\n                    } else {\n                        (next.endInclusive * sourceDuration).toLong()\n                    }.coerceIn(0L, sourceDuration)\n                    val timelineOffsetUs = ((sourceBoundaryUs - clip.sourceStartUs).toDouble() / clip.speed).toLong()\n                    pendingPreviewUs = (clip.timelineStartUs + timelineOffsetUs)\n                        .coerceIn(clip.timelineStartUs, clip.timelineEndUs)\n                    val nowMs = android.os.SystemClock.elapsedRealtime()\n                    if (nowMs - lastPreviewSeekMs >= 50L) {\n                        lastPreviewSeekMs = nowMs\n                        onPreviewSeek(pendingPreviewUs)\n                    }\n                }\n            },\n            onValueChangeFinished = { onPreviewSeek(pendingPreviewUs) },\n            valueRange = 0f..1f,''',
+              'Trim throttled boundary preview'
+          )
+
+          panels = replace_once(
+              panels,
+              '''    var color by remember(tool.overlayId) { mutableLongStateOf(overlay.colorArgb) }\n    var hex by remember(tool.overlayId) { mutableStateOf(argbToHex(overlay.colorArgb)) }\n\n    ToolHeader("Text Style", "Only properties supported by the real text backend are shown")''',
+              '''    var color by remember(tool.overlayId) { mutableLongStateOf(overlay.colorArgb) }\n    var hex by remember(tool.overlayId) { mutableStateOf(argbToHex(overlay.colorArgb)) }\n    val initialHsv = remember(tool.overlayId) {\n        FloatArray(3).also { android.graphics.Color.colorToHSV(overlay.colorArgb.toInt(), it) }\n    }\n    var hue by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[0]) }\n    var saturation by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[1]) }\n    var brightness by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[2]) }\n\n    fun syncHsv(nextColor: Long) {\n        val hsv = FloatArray(3)\n        android.graphics.Color.colorToHSV(nextColor.toInt(), hsv)\n        hue = hsv[0]\n        saturation = hsv[1]\n        brightness = hsv[2]\n    }\n\n    fun selectColor(nextColor: Long) {\n        color = nextColor and 0xFFFFFFFFL\n        hex = argbToHex(color)\n        syncHsv(color)\n    }\n\n    fun selectHsv(\n        nextHue: Float = hue,\n        nextSaturation: Float = saturation,\n        nextBrightness: Float = brightness\n    ) {\n        hue = nextHue.coerceIn(0f, 360f)\n        saturation = nextSaturation.coerceIn(0f, 1f)\n        brightness = nextBrightness.coerceIn(0f, 1f)\n        val alpha = ((color ushr 24) and 0xFF).toInt().coerceIn(0, 255)\n        color = android.graphics.Color.HSVToColor(\n            alpha,\n            floatArrayOf(hue, saturation, brightness)\n        ).toLong() and 0xFFFFFFFFL\n        hex = argbToHex(color)\n    }\n\n    ToolHeader("Text Style", "Only properties supported by the real text backend are shown")''',
+              'Text HSV state'
+          )
+
+          panels = replace_once(
+              panels,
+              ''').forEach { (value, label) -> OutlinedButton(onClick = { color = value; hex = argbToHex(value) }) { Text(label) } }\n        }\n        OutlinedTextField(''',
+              ''').forEach { (value, label) -> OutlinedButton(onClick = { selectColor(value) }) { Text(label) } }\n        }\n        LabeledSlider("Hue", hue, 0f..360f, "${hue.roundToInt()}°") { selectHsv(nextHue = it) }\n        LabeledSlider("Saturation", saturation, 0f..1f, "${(saturation * 100).roundToInt()}%") { selectHsv(nextSaturation = it) }\n        LabeledSlider("Brightness", brightness, 0f..1f, "${(brightness * 100).roundToInt()}%") { selectHsv(nextBrightness = it) }\n        OutlinedTextField(''',
+              'Text HSV controls'
+          )
+
+          panels = replace_once(
+              panels,
+              '''                hex = raw.take(9)\n                parseArgb(hex)?.let { color = it }''',
+              '''                hex = raw.take(9)\n                parseArgb(hex)?.let { parsed ->\n                    color = parsed\n                    syncHsv(parsed)\n                }''',
+              'Hex-to-HSV synchronization'
+          )
+
+          panels_path.write_text(panels)
+
+          screen_path = Path('app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt')
+          screen = screen_path.read_text()
+          screen = replace_once(
+              screen,
+              '''        onSelect = ::select,\n        onOpenTool = ::openTool,\n        refresh = { vm.load(id) }''',
+              '''        onSelect = ::select,\n        onOpenTool = ::openTool,\n        onPreviewSeek = { vm.setPlayheadUs(it) },\n        refresh = { vm.load(id) }''',
+              'EditorScreen preview-seek wiring'
+          )
+          screen_path.write_text(screen)
+          PY
+
+          git diff --check
+          grep -q 'LabeledSlider("Hue"' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+          grep -q 'onPreviewSeek(pendingPreviewUs)' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+          grep -q 'onPreviewSeek = { vm.setPlayheadUs(it) }' app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt
+
+      - name: Commit final Step 2 requirement patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'VideoFlow CI Patch'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt
+          if git diff --cached --quiet; then
+            echo 'No patch required.'
+            exit 0
+          fi
+          git commit -m 'Complete Step 2 HSV color and trim boundary preview'
+          git push origin HEAD:ui-step2-contextual-tools
