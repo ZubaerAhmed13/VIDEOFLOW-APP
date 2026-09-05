@@ -2,9 +2,9 @@
 
 ## Overall Status
 
-**PARTIAL — IMPLEMENTATION READY FOR FINAL AUTOMATED CERTIFICATION AND PHYSICAL REVIEW**
+**AUTOMATED IMPLEMENTATION COMPLETE — PHYSICAL HARD GATE OPEN**
 
-This report intentionally does not use the Step 2 success label. The specification requires a real-phone hard gate and final export-parity review; those remain `NOT VERIFIED` until the exact final Review APK is tested.
+The Step 2 implementation and automated certification are complete. This report intentionally does not use the final Step 2 success label because the specification requires a real Android phone review and final native-export parity check. Those physical items remain `NOT VERIFIED` until the exact final Review APK is tested.
 
 ## Source control
 
@@ -14,25 +14,39 @@ This report intentionally does not use the Step 2 success label. The specificati
 - No automatic merge performed.
 - UI Step 3 has not been started.
 
-The exact certified Step 2 SHA is the `GITHUB_SHA` of the final successful `VideoFlow Android UI Step 2 Certification` run after this report is committed.
+The authoritative automated certificate is the latest successful branch-head run of `VideoFlow Android UI Step 2 Certification`. The implementation predecessor `7575852dbfebad6e16adb7eee39a40309bad2266` passed that complete workflow in run `33990902558`; this documentation synchronization intentionally creates a newer candidate SHA which must pass the same workflow before distribution.
 
 ## UI Step 1 regression
 
-Editor-shell architecture is preserved:
+The approved editor-shell architecture remains preserved:
 
-- fixed preview
-- compact transport controls
-- permanently visible timeline
-- bottom toolbar
-- passive Media/Audio/Canvas/Track Settings/Snapshots surfaces
-- adaptive portrait/landscape structure
-- VideoFlow editor design language
+- fixed preview;
+- compact transport controls;
+- permanently visible timeline;
+- bottom toolbar;
+- passive Media/Audio/Canvas/Track Settings/Snapshots surfaces;
+- adaptive portrait/landscape structure;
+- VideoFlow editor design language.
 
-Pre-final predecessor evidence includes successful JVM regression, lint, and AndroidTest compilation. Final branch-head status must be taken from the latest Step 2 workflow.
+The complete existing Step 1/2/3 and UI regression task passes on the completed implementation.
+
+## Contextual editing architecture
+
+Step 2 now follows a preview-first, commit-once interaction model rather than persisting every pointer delta:
+
+- direct Crop and Transform gestures update transient editor draft state during interaction;
+- the preview renders that draft state immediately;
+- a continuous direct gesture creates one durable semantic commit at gesture end rather than one database/history record per pointer frame;
+- tool-level precision controls share the same transient values where applicable;
+- Done commits the current tool draft;
+- Cancel discards the draft and leaves the previously persisted project state unchanged;
+- no second/fake render model is introduced.
+
+This architecture is also used to keep live Text, Opacity, Volume and Fade editing responsive without turning every intermediate UI value into a durable project transaction.
 
 ## Video tools
 
-| Capability | Candidate status |
+| Capability | Status |
 |---|---|
 | Split | IMPLEMENTED / existing direct action preserved |
 | Visual Trim | IMPLEMENTED |
@@ -41,6 +55,7 @@ Pre-final predecessor evidence includes successful JVM regression, lint, and And
 | Speed presets + slider | IMPLEMENTED |
 | Speed duration preview | IMPLEMENTED |
 | Visual Crop | IMPLEMENTED |
+| Free Crop | IMPLEMENTED |
 | Crop direct manipulation | IMPLEMENTED |
 | Crop ratios | IMPLEMENTED |
 | Transform | IMPLEMENTED |
@@ -49,10 +64,13 @@ Pre-final predecessor evidence includes successful JVM regression, lint, and And
 | Rotation gesture + slider | IMPLEMENTED |
 | Flip H/V | IMPLEMENTED for clip backend |
 | Opacity | IMPLEMENTED |
+| Timeline clip-body move zone | IMPLEMENTED |
+| Separate trim-edge gesture zones | IMPLEMENTED |
+| Timeline edge auto-scroll during move/trim | IMPLEMENTED |
 
 ## Audio tools
 
-| Capability | Candidate status |
+| Capability | Status |
 |---|---|
 | Audio Trim | IMPLEMENTED with waveform |
 | Trim boundary preview seeking | IMPLEMENTED through shared Trim path |
@@ -62,14 +80,14 @@ Pre-final predecessor evidence includes successful JVM regression, lint, and And
 | Fade Out | IMPLEMENTED |
 | Speed | IMPLEMENTED where clip backend supports it |
 
-No claim of professional pitch preservation is made; no unsupported pitch-correction feature is exposed.
+No unsupported professional pitch-correction claim is made.
 
 ## Text tools
 
-| Capability | Candidate status |
+| Capability | Status |
 |---|---|
 | Add | IMPLEMENTED |
-| Edit | IMPLEMENTED |
+| Edit with live preview | IMPLEMENTED |
 | Font family | NOT EXPOSED — no persisted backend font-family field |
 | Font size | IMPLEMENTED |
 | Weight | IMPLEMENTED |
@@ -88,7 +106,7 @@ No fake font picker, stroke, shadow or background controls were added.
 
 ## Image tools
 
-| Capability | Candidate status |
+| Capability | Status |
 |---|---|
 | Transform | IMPLEMENTED |
 | Direct drag/pinch/rotation | IMPLEMENTED |
@@ -100,15 +118,18 @@ Duplicate creates another project overlay reference and does not copy the source
 
 ## Keyframes
 
-| Capability | Candidate status |
+| Capability | Status |
 |---|---|
 | Generic owner model preserved | PASS |
 | Friendly diamond UI | IMPLEMENTED |
 | Add | IMPLEMENTED |
+| Edit exact keyframe point | IMPLEMENTED |
 | Remove exact point | IMPLEMENTED |
 | Previous/Next | IMPLEMENTED |
 | Hold | IMPLEMENTED |
 | Linear | IMPLEMENTED |
+| Uniform Scale keyframes | IMPLEMENTED |
+| Clip/text/image marker positions use owner duration | IMPLEMENTED |
 | Raw backend jargon hidden | PASS by design |
 | Preview evaluation | existing evaluator preserved |
 | Undo/redo history | IMPLEMENTED through semantic history |
@@ -117,12 +138,12 @@ Auto-Keyframe and advanced easing remain intentionally absent.
 
 ## History and tool lifecycle
 
-- Undo/redo architecture preserved.
-- Crop/Transform use existing coalesced semantic history.
+- Undo/redo architecture is preserved.
+- Direct Crop/Transform pointer movement is transient and does not write Room/history per frame.
+- A continuous direct gesture becomes one logical durable edit at gesture end.
 - Trim commits one semantic history operation; preview seeking does not persist trim state or create history entries.
 - Back hierarchy is active tool → passive panel → selection → editor exit.
-- Preview-then-commit tools discard draft state on Cancel.
-- Live tools restore captured pre-tool values on Cancel where applicable.
+- Cancel discards active transient tool state instead of writing a compensating project edit.
 - Reset is available for Trim, Speed, Crop, Transform, Opacity, Volume and Fade.
 
 ## Direct preview manipulation
@@ -132,9 +153,14 @@ Auto-Keyframe and advanced easing remain intentionally absent.
 - crop edge/corner/move gestures added;
 - transform pan/pinch/rotation added;
 - Trim handle movement seeks the selected boundary on the fixed main preview through the existing playhead;
-- center guides added;
+- center guides/snapping added;
 - persistent values remain normalized project/domain values rather than screen pixels;
-- precise non-gesture controls remain available.
+- precise non-gesture controls remain available;
+- contextual tool panels are adaptive/non-modal so direct preview manipulation remains visible while editing.
+
+## Timeline interaction completion
+
+The completed Step 2 timeline distinguishes clip-body movement from left/right trim-edge manipulation. Selected clips expose trim handles, and moving/trimming near the visible timeline boundary drives edge auto-scroll. Timeline keyframe diamonds are positioned using the actual duration of their owning clip, text overlay or image overlay instead of a shared unrelated duration.
 
 ## Accessibility
 
@@ -144,7 +170,7 @@ Implemented structurally:
 - slider descriptions;
 - keyframe semantics;
 - non-gesture alternatives for visual edits;
-- HSV and other precision edits use labeled sliders/fields;
+- HSV and other precision edits use labeled controls;
 - IME-aware text tool;
 - Step 1 150% font-scale emulator path retained.
 
@@ -161,11 +187,11 @@ Step 2 does not change the existing large-media architecture. It does not:
 - replace proxy/thumbnail/waveform caches;
 - change project format for presentation state.
 
-Trim preview seeking is throttled rather than issuing an uncontrolled seek for every raw pointer delta.
+Trim preview seeking is throttled rather than issuing an uncontrolled seek for every raw pointer delta. Direct preview gestures use transient UI/project-space state rather than high-frequency durable database writes.
 
 ## PreviewPlan / RenderPlan parity
 
-The new UI mutations call the existing editor/domain services rather than maintaining a second rendering model. Static architecture therefore preserves the existing PreviewPlan/RenderPlan state path.
+The contextual UI commits into the existing editor/domain state used by the established PreviewPlan/RenderPlan path rather than maintaining a second rendering model. Automated regression and native-render architecture tests pass.
 
 Physical final-export comparison: **NOT VERIFIED** and remains a hard gate.
 
@@ -173,21 +199,24 @@ Physical final-export comparison: **NOT VERIFIED** and remains a hard gate.
 
 Dedicated workflow: `.github/workflows/android-ui-step2-ci.yml`
 
-It verifies:
+The completed implementation has passed:
 
-- architecture contracts;
-- JVM regression;
-- lint;
-- AndroidTest compile;
-- Debug/Review/Release APKs;
-- stable Review package/signature;
+- UI Step 2 architecture contracts;
+- Step 1 + Step 2 + Step 3 + UI JVM regression;
+- Android lint;
+- AndroidTest/Compose compilation;
+- Debug, Review, Release and instrumentation APK assembly;
+- stable Review package/signature verification;
 - API 35 instrumentation;
-- Step 1 visual/large-font regression tests;
-- Step 2 contextual toolbar Compose test;
-- Review fresh install, cold launch and in-place update;
-- artifact SHA-256 values.
+- Step 1 portrait/landscape/150% font emulator regression;
+- long-timeline smoke coverage;
+- Step 2 contextual toolbar Compose tests;
+- Review fresh install;
+- Review cold launch;
+- Review in-place update;
+- artifact SHA-256 generation and runtime-bundle integrity checks.
 
-The latest successful branch-head run is the authoritative automated certificate.
+The latest successful branch-head run after this documentation synchronization is the final automated certificate.
 
 ## Deliverables
 
@@ -206,20 +235,21 @@ Expected from final successful CI artifact `VideoFlow-Android-UI-Step2-APKs`:
 - `UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md`
 - `UI_STEP_2_COMPLETION_REPORT.md`
 
-## Known limitations / open hard gates
+## Remaining hard gates
 
-1. Real-phone Review APK installation/update and touch behavior are not yet physically verified.
-2. Physical TalkBack is not yet verified.
-3. Physical final native-export parity is not yet verified.
-4. Timeline-edge trim/move auto-scroll is not newly certified in this Step 2 candidate; it is a recommended enhancement rather than an identified hard blocker.
-5. Font-family storage does not exist in the current backend, so a font-family picker is not faked.
-6. Advanced easing, transitions, effects, AI, text stroke/shadow and pitch correction remain out of scope/unsupported.
+Only physical-device requirements remain before the final Step 2 success label:
+
+1. Real-phone Review APK fresh/install-update and touch behavior.
+2. Physical TalkBack review.
+3. Physical final native-export parity against editor preview.
+
+Unsupported backend capabilities remain intentionally absent rather than faked: font-family persistence, text stroke/shadow, advanced easing, pitch correction, transitions, effects and AI.
 
 ## UI Step 3 readiness
 
 **NOT READY TO START AUTOMATICALLY.**
 
-The Step 2 implementation must first pass the latest automated workflow and then the real-device checklist in `UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md`. Only after independent approval should UI Step 3 begin.
+The exact final Review APK must first pass `UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md`. Only after that independent approval should UI Step 3 begin.
 
 ## Stop rule
 
