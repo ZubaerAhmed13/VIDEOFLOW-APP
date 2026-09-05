@@ -44,8 +44,11 @@ fun PreviewWorkspace(
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
     activeTool: EditorTool? = null,
+    previewDraft: ContextualPreviewDraft = ContextualPreviewDraft(),
     onCropChange: (CropRect) -> Unit = {},
-    onTransformGesture: (dxNormalized: Float, dyNormalized: Float, zoom: Float, rotationDelta: Float) -> Unit = { _, _, _, _ -> }
+    onCropCommit: (CropRect) -> Unit = {},
+    onTransformGesture: (dxNormalized: Float, dyNormalized: Float, zoom: Float, rotationDelta: Float) -> Unit = { _, _, _, _ -> },
+    onTransformGestureEnd: () -> Unit = {}
 ) {
     val timeline = editor?.timeline
     val tracks = timeline?.tracks.orEmpty()
@@ -69,32 +72,44 @@ fun PreviewWorkspace(
     val sourcePositionMs = activeVideoClip?.let { clip ->
         ((clip.sourceStartUs + activeLocalUs * clip.speed) / 1000.0).toLong()
     } ?: 0L
-    val evaluatedGain = activeVideoClip?.let { clip ->
-        KeyframeEvaluator.evaluate(
-            clip.gainDb,
-            activeLocalUs,
-            activeFrames.filter { it.property == KeyframeProperty.AUDIO_GAIN }
-        )
-    } ?: 0f
-    val videoVolume = if (activeVideoClip != null && activeVideoTrack != null && activeVideoTrack.id in effectiveAudioTrackIds) {
-        val gain = AudioMath.dbToLinear(evaluatedGain + activeVideoTrack.gainDb)
-        val fade = AudioMath.fadeGain(activeLocalUs, activeVideoClip.timelineDurationUs, activeVideoClip.fadeInUs, activeVideoClip.fadeOutUs)
-        (gain * fade).coerceIn(0f, 1f)
-    } else 0f
 
     fun evaluated(property: KeyframeProperty, base: Float): Float =
         KeyframeEvaluator.evaluate(base, activeLocalUs, activeFrames.filter { it.property == property })
 
+    val videoTransformDraft = (activeTool as? EditorTool.Transform)
+        ?.takeIf { it.ownerType == VisualOwnerType.CLIP && it.ownerId == activeVideoClip?.id }
+        ?.let { previewDraft.transform }
+    val videoOpacityDraft = (activeTool as? EditorTool.Opacity)
+        ?.takeIf { it.ownerType == VisualOwnerType.CLIP && it.ownerId == activeVideoClip?.id }
+        ?.let { previewDraft.opacity }
+    val evaluatedGain = activeVideoClip?.let { clip ->
+        KeyframeEvaluator.evaluate(clip.gainDb, activeLocalUs, activeFrames.filter { it.property == KeyframeProperty.AUDIO_GAIN })
+    } ?: 0f
+    val effectiveGainDb = (activeTool as? EditorTool.Volume)
+        ?.takeIf { it.clipId == activeVideoClip?.id }
+        ?.let { previewDraft.gainDb } ?: evaluatedGain
+    val effectiveFadeInUs = (activeTool as? EditorTool.Fade)
+        ?.takeIf { it.clipId == activeVideoClip?.id }
+        ?.let { previewDraft.fadeInUs } ?: activeVideoClip?.fadeInUs ?: 0L
+    val effectiveFadeOutUs = (activeTool as? EditorTool.Fade)
+        ?.takeIf { it.clipId == activeVideoClip?.id }
+        ?.let { previewDraft.fadeOutUs } ?: activeVideoClip?.fadeOutUs ?: 0L
+    val videoVolume = if (activeVideoClip != null && activeVideoTrack != null && activeVideoTrack.id in effectiveAudioTrackIds) {
+        val gain = AudioMath.dbToLinear(effectiveGainDb + activeVideoTrack.gainDb)
+        val fade = AudioMath.fadeGain(activeLocalUs, activeVideoClip.timelineDurationUs, effectiveFadeInUs, effectiveFadeOutUs)
+        (gain * fade).coerceIn(0f, 1f)
+    } else 0f
+
     val transform = activeVideoClip?.let { clip ->
         EvaluatedPreviewTransform(
-            x = evaluated(KeyframeProperty.POSITION_X, clip.transform.x),
-            y = evaluated(KeyframeProperty.POSITION_Y, clip.transform.y),
-            scaleX = evaluated(KeyframeProperty.SCALE_X, clip.transform.scaleX),
-            scaleY = evaluated(KeyframeProperty.SCALE_Y, clip.transform.scaleY),
-            rotation = evaluated(KeyframeProperty.ROTATION, clip.transform.rotationDegrees),
-            opacity = evaluated(KeyframeProperty.OPACITY, clip.opacity),
-            flipHorizontal = clip.transform.flipHorizontal,
-            flipVertical = clip.transform.flipVertical
+            x = videoTransformDraft?.x ?: evaluated(KeyframeProperty.POSITION_X, clip.transform.x),
+            y = videoTransformDraft?.y ?: evaluated(KeyframeProperty.POSITION_Y, clip.transform.y),
+            scaleX = videoTransformDraft?.scaleX ?: evaluated(KeyframeProperty.SCALE_X, clip.transform.scaleX),
+            scaleY = videoTransformDraft?.scaleY ?: evaluated(KeyframeProperty.SCALE_Y, clip.transform.scaleY),
+            rotation = videoTransformDraft?.rotationDegrees ?: evaluated(KeyframeProperty.ROTATION, clip.transform.rotationDegrees),
+            opacity = videoOpacityDraft ?: evaluated(KeyframeProperty.OPACITY, clip.opacity),
+            flipHorizontal = videoTransformDraft?.flipHorizontal ?: clip.transform.flipHorizontal,
+            flipVertical = videoTransformDraft?.flipVertical ?: clip.transform.flipVertical
         )
     }
 
@@ -130,7 +145,10 @@ fun PreviewWorkspace(
             when {
                 previewSource != null && activeAsset?.mimeType?.startsWith("video/") == true -> {
                     val t = transform ?: EvaluatedPreviewTransform()
-                    val crop = activeVideoClip?.transform?.crop
+                    val cropDraft = (activeTool as? EditorTool.Crop)
+                        ?.takeIf { it.clipId == activeVideoClip?.id }
+                        ?.let { previewDraft.crop }
+                    val crop = cropDraft ?: activeVideoClip?.transform?.crop
                     val cropWidth = (crop?.right?.minus(crop.left) ?: 1f).coerceAtLeast(0.01f)
                     val cropHeight = (crop?.bottom?.minus(crop.top) ?: 1f).coerceAtLeast(0.01f)
                     val cropCenterX = ((crop?.left ?: 0f) + (crop?.right ?: 1f)) / 2f
@@ -158,10 +176,7 @@ fun PreviewWorkspace(
                     )
                 }
                 activeAsset != null && activeAsset.sourceStatus != SourceStatus.AVAILABLE && activeProxy == null -> {
-                    ColumnMessage(
-                        title = "Original unavailable",
-                        subtitle = "Locate the source from Media details."
-                    )
+                    ColumnMessage(title = "Original unavailable", subtitle = "Locate the source from Media details.")
                 }
                 (timeline?.durationUs ?: 0L) == 0L -> ColumnMessage("Start your video", "Add media from the toolbar below.")
                 else -> Text("Project background", color = VideoFlowEditorColors.SecondaryText)
@@ -172,19 +187,25 @@ fun PreviewWorkspace(
                 val localUs = (playheadUs - overlay.timelineStartUs).coerceAtLeast(0L)
                 val frames = keyframes.filter { it.ownerId == overlay.id }
                 fun value(property: KeyframeProperty, base: Float) = KeyframeEvaluator.evaluate(base, localUs, frames.filter { it.property == property })
+                val draftTransform = (activeTool as? EditorTool.Transform)
+                    ?.takeIf { it.ownerType == VisualOwnerType.IMAGE && it.ownerId == overlay.id }
+                    ?.let { previewDraft.transform }
+                val draftOpacity = (activeTool as? EditorTool.Opacity)
+                    ?.takeIf { it.ownerType == VisualOwnerType.IMAGE && it.ownerId == overlay.id }
+                    ?.let { previewDraft.opacity }
                 BoundedImagePreview(
                     sourceUri = asset.sourceUri,
                     modifier = Modifier
                         .widthIn(max = 220.dp)
                         .offset(
-                            x = maxWidth * (value(KeyframeProperty.POSITION_X, overlay.transform.x) - 0.5f),
-                            y = maxHeight * (value(KeyframeProperty.POSITION_Y, overlay.transform.y) - 0.5f)
+                            x = maxWidth * ((draftTransform?.x ?: value(KeyframeProperty.POSITION_X, overlay.transform.x)) - 0.5f),
+                            y = maxHeight * ((draftTransform?.y ?: value(KeyframeProperty.POSITION_Y, overlay.transform.y)) - 0.5f)
                         )
                         .graphicsLayer(
-                            scaleX = value(KeyframeProperty.SCALE_X, overlay.transform.scaleX),
-                            scaleY = value(KeyframeProperty.SCALE_Y, overlay.transform.scaleY),
-                            rotationZ = value(KeyframeProperty.ROTATION, overlay.transform.rotationDegrees),
-                            alpha = value(KeyframeProperty.OPACITY, overlay.transform.opacity).coerceIn(0f, 1f)
+                            scaleX = draftTransform?.scaleX ?: value(KeyframeProperty.SCALE_X, overlay.transform.scaleX),
+                            scaleY = draftTransform?.scaleY ?: value(KeyframeProperty.SCALE_Y, overlay.transform.scaleY),
+                            rotationZ = draftTransform?.rotationDegrees ?: value(KeyframeProperty.ROTATION, overlay.transform.rotationDegrees),
+                            alpha = (draftOpacity ?: value(KeyframeProperty.OPACITY, overlay.transform.opacity)).coerceIn(0f, 1f)
                         )
                 )
             }
@@ -193,13 +214,25 @@ fun PreviewWorkspace(
                 val localUs = (playheadUs - overlay.timelineStartUs).coerceAtLeast(0L)
                 val frames = keyframes.filter { it.ownerId == overlay.id }
                 fun value(property: KeyframeProperty, base: Float) = KeyframeEvaluator.evaluate(base, localUs, frames.filter { it.property == property })
+                val draftTransform = (activeTool as? EditorTool.Transform)
+                    ?.takeIf { it.ownerType == VisualOwnerType.TEXT && it.ownerId == overlay.id }
+                    ?.let { previewDraft.transform }
+                val draftOpacity = (activeTool as? EditorTool.Opacity)
+                    ?.takeIf { it.ownerType == VisualOwnerType.TEXT && it.ownerId == overlay.id }
+                    ?.let { previewDraft.opacity }
+                val draftContent = (activeTool as? EditorTool.TextEditor)
+                    ?.takeIf { it.overlayId == overlay.id }
+                    ?.let { previewDraft.textContent }
+                val draftStyle = (activeTool as? EditorTool.TextStyle)
+                    ?.takeIf { it.overlayId == overlay.id }
+                    ?.let { previewDraft.textStyle }
                 Text(
-                    text = overlay.content,
-                    color = Color(overlay.colorArgb.toInt()).copy(alpha = value(KeyframeProperty.OPACITY, overlay.opacity).coerceIn(0f, 1f)),
-                    fontSize = overlay.fontSizeSp.sp,
-                    fontWeight = FontWeight(overlay.fontWeight.coerceIn(100, 900)),
-                    fontStyle = if (overlay.italic) FontStyle.Italic else FontStyle.Normal,
-                    textAlign = when (overlay.alignment) {
+                    text = draftContent ?: overlay.content,
+                    color = Color((draftStyle?.colorArgb ?: overlay.colorArgb).toInt()).copy(alpha = (draftOpacity ?: value(KeyframeProperty.OPACITY, overlay.opacity)).coerceIn(0f, 1f)),
+                    fontSize = (draftStyle?.fontSizeSp ?: overlay.fontSizeSp).sp,
+                    fontWeight = FontWeight((draftStyle?.fontWeight ?: overlay.fontWeight).coerceIn(100, 900)),
+                    fontStyle = if (draftStyle?.italic ?: overlay.italic) FontStyle.Italic else FontStyle.Normal,
+                    textAlign = when (draftStyle?.alignment ?: overlay.alignment) {
                         "START" -> TextAlign.Start
                         "END" -> TextAlign.End
                         else -> TextAlign.Center
@@ -207,14 +240,27 @@ fun PreviewWorkspace(
                     modifier = Modifier
                         .widthIn(max = 280.dp)
                         .offset(
-                            x = maxWidth * (value(KeyframeProperty.POSITION_X, overlay.transform.x) - 0.5f),
-                            y = maxHeight * (value(KeyframeProperty.POSITION_Y, overlay.transform.y) - 0.5f)
+                            x = maxWidth * ((draftTransform?.x ?: value(KeyframeProperty.POSITION_X, overlay.transform.x)) - 0.5f),
+                            y = maxHeight * ((draftTransform?.y ?: value(KeyframeProperty.POSITION_Y, overlay.transform.y)) - 0.5f)
                         )
                         .graphicsLayer(
-                            scaleX = value(KeyframeProperty.SCALE_X, overlay.transform.scaleX),
-                            scaleY = value(KeyframeProperty.SCALE_Y, overlay.transform.scaleY),
-                            rotationZ = value(KeyframeProperty.ROTATION, overlay.transform.rotationDegrees)
+                            scaleX = draftTransform?.scaleX ?: value(KeyframeProperty.SCALE_X, overlay.transform.scaleX),
+                            scaleY = draftTransform?.scaleY ?: value(KeyframeProperty.SCALE_Y, overlay.transform.scaleY),
+                            rotationZ = draftTransform?.rotationDegrees ?: value(KeyframeProperty.ROTATION, overlay.transform.rotationDegrees)
                         )
+                )
+            }
+
+            // New text gets a real preview before it is persisted.
+            val newTextDraft = (activeTool as? EditorTool.TextEditor)?.takeIf { it.overlayId == null }?.let { previewDraft.textContent }
+            if (newTextDraft != null && newTextDraft.isNotBlank()) {
+                Text(
+                    text = newTextDraft,
+                    color = Color.White,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.Center).widthIn(max = 280.dp)
                 )
             }
 
@@ -223,24 +269,28 @@ fun PreviewWorkspace(
                     val target = timeline?.clips?.firstOrNull { it.id == tool.clipId }
                     if (target != null) {
                         CropInteractionOverlay(
-                            crop = target.transform.crop,
+                            crop = previewDraft.crop ?: target.transform.crop,
+                            aspectRatio = previewDraft.cropNormalizedAspect,
                             onCropChange = onCropChange,
+                            onCropCommit = onCropCommit,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
                 is EditorTool.Transform -> {
-                    val t = when (tool.ownerType) {
+                    val stored = when (tool.ownerType) {
                         VisualOwnerType.CLIP -> timeline?.clips?.firstOrNull { it.id == tool.ownerId }?.transform
                         VisualOwnerType.TEXT -> timeline?.textOverlays?.firstOrNull { it.id == tool.ownerId }?.transform
                         VisualOwnerType.IMAGE -> timeline?.imageOverlays?.firstOrNull { it.id == tool.ownerId }?.transform
                     }
-                    if (t != null) {
+                    val draft = previewDraft.transform
+                    if (stored != null) {
                         TransformInteractionOverlay(
-                            centerX = t.x,
-                            centerY = t.y,
-                            scale = t.scaleX,
+                            centerX = draft?.x ?: stored.x,
+                            centerY = draft?.y ?: stored.y,
+                            scale = draft?.scaleX ?: stored.scaleX,
                             onGesture = onTransformGesture,
+                            onGestureEnd = onTransformGestureEnd,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -264,9 +314,12 @@ fun PreviewWorkspace(
         val track = tracks.firstOrNull { it.id == clip.trackId } ?: return@forEach
         val localUs = (playheadUs - clip.timelineStartUs).coerceAtLeast(0L)
         val frames = keyframes.filter { it.ownerId == clip.id && it.property == KeyframeProperty.AUDIO_GAIN }
-        val clipGain = KeyframeEvaluator.evaluate(clip.gainDb, localUs, frames)
+        val evaluatedClipGain = KeyframeEvaluator.evaluate(clip.gainDb, localUs, frames)
+        val clipGain = (activeTool as? EditorTool.Volume)?.takeIf { it.clipId == clip.id }?.let { previewDraft.gainDb } ?: evaluatedClipGain
+        val fadeInUs = (activeTool as? EditorTool.Fade)?.takeIf { it.clipId == clip.id }?.let { previewDraft.fadeInUs } ?: clip.fadeInUs
+        val fadeOutUs = (activeTool as? EditorTool.Fade)?.takeIf { it.clipId == clip.id }?.let { previewDraft.fadeOutUs } ?: clip.fadeOutUs
         val gain = AudioMath.dbToLinear(clipGain + track.gainDb)
-        val fade = AudioMath.fadeGain(localUs, clip.timelineDurationUs, clip.fadeInUs, clip.fadeOutUs)
+        val fade = AudioMath.fadeGain(localUs, clip.timelineDurationUs, fadeInUs, fadeOutUs)
         NativeAudioPreview(
             uri = asset.sourceUri,
             startPositionMs = ((clip.sourceStartUs + localUs * clip.speed) / 1000.0).toLong(),
