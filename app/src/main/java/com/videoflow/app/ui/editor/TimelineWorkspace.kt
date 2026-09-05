@@ -386,11 +386,7 @@ private fun TimelineClipCard(
         val visibleX = pointerTimelinePx - horizontal.value.toFloat()
         val edgePx = with(density) { 56.dp.toPx() }
         val maxStepPx = with(density) { 18.dp.toPx() }
-        val delta = when {
-            visibleX < edgePx -> -maxStepPx * ((edgePx - visibleX) / edgePx).coerceIn(0f, 1f)
-            visibleX > viewportWidthPx - edgePx -> maxStepPx * ((visibleX - (viewportWidthPx - edgePx)) / edgePx).coerceIn(0f, 1f)
-            else -> 0f
-        }
+        val delta = timelineAutoScrollDelta(visibleX, viewportWidthPx, edgePx, maxStepPx)
         if (abs(delta) > 0.01f) horizontal.dispatchRawDelta(delta)
     }
 
@@ -562,7 +558,7 @@ private fun KeyframeStrip(frames: List<Keyframe>, ownerDurationUs: Long, modifie
     if (frames.isEmpty() || ownerDurationUs <= 0L) return
     Canvas(modifier.clearAndSetSemantics { }) {
         frames.forEach { frame ->
-            val x = (frame.timeUs.toFloat() / ownerDurationUs.toFloat()).coerceIn(0f, 1f) * size.width
+            val x = keyframeMarkerFraction(frame.timeUs, ownerDurationUs) * size.width
             val y = size.height / 2f
             val radius = 4.5f
             val diamond = Path().apply {

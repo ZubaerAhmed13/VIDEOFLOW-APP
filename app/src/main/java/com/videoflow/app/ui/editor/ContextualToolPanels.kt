@@ -263,8 +263,9 @@ private fun CropPanel(
         onPreviewDraftChange(previewDraft.copy(crop = next, cropNormalizedAspect = aspect))
     }
     fun preset(w: Int, h: Int) {
-        val sw = asset?.width ?: return
-        val sh = asset.height ?: return
+        val encodedWidth = asset?.width ?: return
+        val encodedHeight = asset.height ?: return
+        val (sw, sh) = displayDimensionsForRotation(encodedWidth, encodedHeight, asset.rotationDegrees)
         val targetAspect = w.toFloat() / h.toFloat()
         val normalizedAspect = targetAspect / (sw.toFloat() / sh.toFloat())
         update(centeredCrop(sw, sh, targetAspect), normalizedAspect)

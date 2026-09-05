@@ -54,6 +54,7 @@ import com.videoflow.app.ui.editor.LandscapeInfoPane
 import com.videoflow.app.ui.editor.PreviewWorkspace
 import com.videoflow.app.ui.editor.PreviewTextStyleDraft
 import com.videoflow.app.ui.editor.PreviewTransformDraft
+import com.videoflow.app.ui.editor.snapNormalizedToCenter
 import com.videoflow.app.ui.editor.TimelineWorkspace
 import com.videoflow.app.ui.editor.TransportBar
 import com.videoflow.app.ui.editor.VideoFlowEditorColors
@@ -345,8 +346,8 @@ fun EditorScreen(
         val rawX = (current.x + dx).coerceIn(0f, 1f)
         val rawY = (current.y + dy).coerceIn(0f, 1f)
         previewDraft = previewDraft.copy(transform = current.copy(
-            x = if (abs(rawX - 0.5f) < 0.018f) 0.5f else rawX,
-            y = if (abs(rawY - 0.5f) < 0.018f) 0.5f else rawY,
+            x = snapNormalizedToCenter(rawX),
+            y = snapNormalizedToCenter(rawY),
             scaleX = (current.scaleX * zoom).coerceIn(0.05f, 10f),
             scaleY = (current.scaleY * zoom).coerceIn(0.05f, 10f),
             rotationDegrees = current.rotationDegrees + rotation

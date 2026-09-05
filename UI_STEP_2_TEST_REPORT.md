@@ -58,6 +58,19 @@ The branch-head workflow must pass all of the following:
 - letterbox touches are rejected;
 - normalized project → screen → normalized project round-trips accurately.
 
+### Final interaction hardening regression
+
+`ContextualEditingMathTest` and `Step2LateInteractionContractTest` explicitly lock the late Step 2 fixes that previously depended mostly on broad CI/static review:
+
+- 90°/270° source rotation swaps display dimensions before Crop preset math;
+- center snapping occurs only inside the visual tolerance and preserves values outside it;
+- keyframe diamonds use owner duration rather than the last keyframe as their scale;
+- timeline edge auto-scroll is directional, proportional and bounded;
+- Crop/Transform keep transient pointer state separate from durable commit boundaries;
+- the contextual inspector remains non-modal so the preview stays touchable;
+- Free Crop remains a real action;
+- exact-keyframe updates and paired X/Y uniform Scale paths remain present.
+
 ### Existing regression coverage
 
 The repository regression suite remains authoritative for core editor/domain behavior including timeline operations, project persistence, media/source handling, render planning, keyframe evaluation/history and native export architecture.
