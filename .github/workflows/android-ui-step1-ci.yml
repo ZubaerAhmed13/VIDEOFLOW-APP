@@ -233,13 +233,10 @@ jobs:
             cat ui-step1-emulator-reports/instrumentation-output.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' ui-step1-emulator-reports/instrumentation-output.txt
             grep -E -q 'OK \([0-9]+ tests?\)' ui-step1-emulator-reports/instrumentation-output.txt
-            COUNT=$(grep -Eo 'OK \([0-9]+ tests?\)' ui-step1-emulator-reports/instrumentation-output.txt | tail -n 1 | grep -Eo '[0-9]+')
-            test -n "$COUNT"
-            printf 'UI visual/accessibility instrumentation: %s PASS / 0 FAIL / 0 SKIP\n' "$COUNT" | tee ui-step1-emulator-reports/UI_STEP_1_VISUAL_TEST_COUNTS.txt
-            for image in editor-portrait.png editor-landscape.png editor-font-scale-150.png; do
-              adb exec-out run-as com.videoflow.app.debug cat "files/ui-step1-visual/$image" > "ui-step1-emulator-reports/screenshots/$image"
-              test -s "ui-step1-emulator-reports/screenshots/$image"
-            done
+            COUNT=$(grep -Eo 'OK \([0-9]+ tests?\)' ui-step1-emulator-reports/instrumentation-output.txt | tail -n 1 | grep -Eo '[0-9]+'); test -n "$COUNT"; printf 'UI visual/accessibility instrumentation: %s PASS / 0 FAIL / 0 SKIP\n' "$COUNT" | tee ui-step1-emulator-reports/UI_STEP_1_VISUAL_TEST_COUNTS.txt
+            adb exec-out run-as com.videoflow.app.debug cat files/ui-step1-visual/editor-portrait.png > ui-step1-emulator-reports/screenshots/editor-portrait.png && test -s ui-step1-emulator-reports/screenshots/editor-portrait.png
+            adb exec-out run-as com.videoflow.app.debug cat files/ui-step1-visual/editor-landscape.png > ui-step1-emulator-reports/screenshots/editor-landscape.png && test -s ui-step1-emulator-reports/screenshots/editor-landscape.png
+            adb exec-out run-as com.videoflow.app.debug cat files/ui-step1-visual/editor-font-scale-150.png > ui-step1-emulator-reports/screenshots/editor-font-scale-150.png && test -s ui-step1-emulator-reports/screenshots/editor-font-scale-150.png
             sha256sum ui-step1-emulator-reports/screenshots/*.png > ui-step1-emulator-reports/SCREENSHOT_SHA256SUMS.txt
 
       - name: Package emulator visual evidence
