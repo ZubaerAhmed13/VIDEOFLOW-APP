@@ -2,23 +2,28 @@ package com.videoflow.app.ui.editor
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +33,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -48,7 +54,6 @@ import com.videoflow.app.ui.WaveformPreview
 import com.videoflow.app.util.formatDurationUs
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContextualToolHost(
     tool: EditorTool?,
@@ -61,6 +66,8 @@ fun ContextualToolHost(
     editorVm: EditorViewModel,
     contextualVm: ContextualEditingViewModel,
     overlayVm: OverlayAdvancedViewModel,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
     onDismiss: () -> Unit,
     onSelect: (EditorSelection) -> Unit,
     onOpenTool: (EditorTool) -> Unit,
@@ -68,109 +75,50 @@ fun ContextualToolHost(
     refresh: () -> Unit
 ) {
     if (tool == null || editor == null) return
-
     val timeline = editor.timeline
-    val targetClipId = when (tool) {
-        is EditorTool.Trim -> tool.clipId
-        is EditorTool.Speed -> tool.clipId
-        is EditorTool.Crop -> tool.clipId
-        is EditorTool.Volume -> tool.clipId
-        is EditorTool.Fade -> tool.clipId
-        is EditorTool.Transform -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.CLIP }
-        is EditorTool.Opacity -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.CLIP }
-        is EditorTool.Keyframes -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.CLIP }
-        is EditorTool.More -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.CLIP }
-        else -> null
-    }
-    val initialClip = remember(tool) { targetClipId?.let { id -> timeline.clips.firstOrNull { it.id == id } } }
-    val initialText = remember(tool) {
-        val id = when (tool) {
-            is EditorTool.TextEditor -> tool.overlayId
-            is EditorTool.TextStyle -> tool.overlayId
-            is EditorTool.Transform -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.TEXT }
-            is EditorTool.Opacity -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.TEXT }
-            is EditorTool.Timing -> tool.ownerId.takeIf { tool.ownerType == TimedOwnerType.TEXT }
-            is EditorTool.Keyframes -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.TEXT }
-            is EditorTool.More -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.TEXT }
-            else -> null
-        }
-        id?.let { ownerId -> timeline.textOverlays.firstOrNull { it.id == ownerId } }
-    }
-    val initialImage = remember(tool) {
-        val id = when (tool) {
-            is EditorTool.Transform -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.IMAGE }
-            is EditorTool.Opacity -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.IMAGE }
-            is EditorTool.Timing -> tool.ownerId.takeIf { tool.ownerType == TimedOwnerType.IMAGE }
-            is EditorTool.Keyframes -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.IMAGE }
-            is EditorTool.More -> tool.ownerId.takeIf { tool.ownerType == VisualOwnerType.IMAGE }
-            else -> null
-        }
-        id?.let { ownerId -> timeline.imageOverlays.firstOrNull { it.id == ownerId } }
-    }
 
-    fun cancelLiveEdit() {
-        when (tool) {
-            is EditorTool.Crop -> initialClip?.let { before ->
-                contextualVm.setClipCrop(projectId, before.id, before.transform.crop) { refresh() }
-            }
-            is EditorTool.Transform -> when (tool.ownerType) {
-                VisualOwnerType.CLIP -> initialClip?.let { before ->
-                    contextualVm.setClipTransform(projectId, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { refresh() }
-                }
-                VisualOwnerType.TEXT -> initialText?.let { before ->
-                    contextualVm.setTextTransform(projectId, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { refresh() }
-                }
-                VisualOwnerType.IMAGE -> initialImage?.let { before ->
-                    contextualVm.setImageTransform(projectId, before.id, before.transform.x, before.transform.y, before.transform.scaleX, before.transform.rotationDegrees) { refresh() }
-                }
-            }
-            is EditorTool.Opacity -> when (tool.ownerType) {
-                VisualOwnerType.CLIP -> initialClip?.let { editorVm.selectClip(it.id); editorVm.setOpacity(it.opacity) }
-                VisualOwnerType.TEXT -> initialText?.let { editorVm.setTextOpacity(it.id, it.opacity) }
-                VisualOwnerType.IMAGE -> initialImage?.let { editorVm.setImageOpacity(it.id, it.transform.opacity) }
-            }
-            is EditorTool.Volume -> initialClip?.let { editorVm.selectClip(it.id); editorVm.setClipGain(it.gainDb) }
-            is EditorTool.Fade -> initialClip?.let { editorVm.selectClip(it.id); editorVm.setFades(it.fadeInUs, it.fadeOutUs) }
-            else -> Unit
+    // Non-modal contextual inspector: the preview remains touchable for Crop/Transform.
+    // Portrait uses a bounded bottom panel; landscape/expanded width uses a side inspector.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth > maxHeight || maxWidth.value >= 700f
+        val panelModifier = if (wide) {
+            Modifier.align(Alignment.CenterEnd).fillMaxHeight().widthIn(min = 320.dp, max = 390.dp)
+        } else {
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = maxHeight * 0.45f)
         }
-        onDismiss()
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = ::cancelLiveEdit,
-        containerColor = VideoFlowEditorColors.EditorSurfaceElevated,
-        modifier = Modifier.imePadding()
-    ) {
-        when (tool) {
-            is EditorTool.Trim -> {
-                val clip = timeline.clips.firstOrNull { it.id == tool.clipId }
-                if (clip != null) TrimPanel(tool, clip, project, thumbnails, waveforms, contextualVm, projectId, onPreviewSeek, refresh, onDismiss)
+        Surface(
+            modifier = panelModifier.imePadding(),
+            color = VideoFlowEditorColors.EditorSurfaceElevated,
+            tonalElevation = 8.dp
+        ) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                when (tool) {
+                    is EditorTool.Trim -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                        TrimPanel(tool, clip, project, thumbnails, waveforms, contextualVm, projectId, onPreviewSeek, refresh, onDismiss)
+                    }
+                    is EditorTool.Speed -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                        SpeedPanel(clip, editorVm, onDismiss)
+                    }
+                    is EditorTool.Crop -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                        CropPanel(tool, clip, project, previewDraft, onPreviewDraftChange, contextualVm, projectId, refresh, onDismiss)
+                    }
+                    is EditorTool.Transform -> TransformPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
+                    is EditorTool.Opacity -> OpacityPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
+                    is EditorTool.Volume -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                        VolumePanel(projectId, clip, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
+                    }
+                    is EditorTool.Fade -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                        FadePanel(clip, previewDraft, onPreviewDraftChange, editorVm, waveforms, onDismiss)
+                    }
+                    is EditorTool.TextEditor -> TextEditorPanel(tool, projectId, playheadUs, editor, editorVm, contextualVm, previewDraft, onPreviewDraftChange, onSelect, refresh, onDismiss)
+                    is EditorTool.TextStyle -> TextStylePanel(tool, projectId, editor, contextualVm, overlayVm, previewDraft, onPreviewDraftChange, refresh, onDismiss)
+                    is EditorTool.Timing -> TimingPanel(tool, projectId, editor, contextualVm, refresh, onDismiss)
+                    is EditorTool.Keyframes -> KeyframePanel(tool, projectId, editor, playheadUs, contextualVm, editorVm, refresh, onDismiss)
+                    is EditorTool.More -> MorePanel(tool, projectId, editor, editorVm, contextualVm, onSelect, onOpenTool, refresh, onDismiss)
+                }
+                Spacer(Modifier.height(24.dp))
             }
-            is EditorTool.Speed -> {
-                val clip = timeline.clips.firstOrNull { it.id == tool.clipId }
-                if (clip != null) SpeedPanel(clip, editorVm, onDismiss)
-            }
-            is EditorTool.Crop -> {
-                val clip = timeline.clips.firstOrNull { it.id == tool.clipId }
-                if (clip != null) CropPanel(projectId, clip, project, contextualVm, refresh, ::cancelLiveEdit, onDismiss)
-            }
-            is EditorTool.Transform -> TransformPanel(projectId, tool, editor, contextualVm, editorVm, refresh, ::cancelLiveEdit, onDismiss)
-            is EditorTool.Opacity -> OpacityPanel(tool, editor, editorVm, ::cancelLiveEdit, onDismiss)
-            is EditorTool.Volume -> {
-                val clip = timeline.clips.firstOrNull { it.id == tool.clipId }
-                if (clip != null) VolumePanel(clip, editorVm, ::cancelLiveEdit, onDismiss)
-            }
-            is EditorTool.Fade -> {
-                val clip = timeline.clips.firstOrNull { it.id == tool.clipId }
-                if (clip != null) FadePanel(clip, editorVm, waveforms, ::cancelLiveEdit, onDismiss)
-            }
-            is EditorTool.TextEditor -> TextEditorPanel(tool, projectId, playheadUs, editor, editorVm, contextualVm, onSelect, refresh, onDismiss)
-            is EditorTool.TextStyle -> TextStylePanel(tool, projectId, editor, contextualVm, overlayVm, refresh, onDismiss)
-            is EditorTool.Timing -> TimingPanel(tool, projectId, editor, contextualVm, refresh, onDismiss)
-            is EditorTool.Keyframes -> KeyframePanel(tool, projectId, editor, playheadUs, contextualVm, editorVm, refresh, onDismiss)
-            is EditorTool.More -> MorePanel(tool, projectId, editor, editorVm, contextualVm, onSelect, onOpenTool, refresh, onDismiss)
         }
-        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -299,38 +247,48 @@ private fun SpeedPanel(clip: TimelineClip, editorVm: EditorViewModel, onDismiss:
 
 @Composable
 private fun CropPanel(
-    projectId: String,
+    tool: EditorTool.Crop,
     clip: TimelineClip,
     project: VideoFlowProject?,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
     contextualVm: ContextualEditingViewModel,
+    projectId: String,
     refresh: () -> Unit,
-    onCancel: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val asset = project?.mediaAssets?.firstOrNull { it.id == clip.assetId }
-    val crop = clip.transform.crop
-    fun applyCrop(next: CropRect) = contextualVm.setClipCrop(projectId, clip.id, next) { refresh() }
+    val crop = previewDraft.crop ?: clip.transform.crop
+    fun update(next: CropRect, aspect: Float? = previewDraft.cropNormalizedAspect) {
+        onPreviewDraftChange(previewDraft.copy(crop = next, cropNormalizedAspect = aspect))
+    }
     fun preset(w: Int, h: Int) {
         val sw = asset?.width ?: return
         val sh = asset.height ?: return
-        applyCrop(centeredCrop(sw, sh, w.toFloat() / h.toFloat()))
+        val targetAspect = w.toFloat() / h.toFloat()
+        val normalizedAspect = targetAspect / (sw.toFloat() / sh.toFloat())
+        update(centeredCrop(sw, sh, targetAspect), normalizedAspect)
     }
 
     ToolHeader("Crop", "Drag the crop region directly on the preview or use precise bounds")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(onClick = { }) { Text("Free") }
-            OutlinedButton(onClick = { applyCrop(CropRect()) }) { Text("Original") }
+            OutlinedButton(onClick = { update(crop, null) }) { Text(if (previewDraft.cropNormalizedAspect == null) "✓ Free" else "Free") }
+            OutlinedButton(onClick = { update(CropRect(), null) }) { Text("Original") }
             listOf(16 to 9, 9 to 16, 4 to 3, 3 to 2, 1 to 1, 4 to 5).forEach { (w, h) ->
                 OutlinedButton(onClick = { preset(w, h) }) { Text("$w:$h") }
             }
         }
-        CropEdgeSlider("Left", crop.left, 0f, crop.right - 0.01f) { applyCrop(CropRect(it, crop.top, crop.right, crop.bottom)) }
-        CropEdgeSlider("Right", crop.right, crop.left + 0.01f, 1f) { applyCrop(CropRect(crop.left, crop.top, it, crop.bottom)) }
-        CropEdgeSlider("Top", crop.top, 0f, crop.bottom - 0.01f) { applyCrop(CropRect(crop.left, it, crop.right, crop.bottom)) }
-        CropEdgeSlider("Bottom", crop.bottom, crop.top + 0.01f, 1f) { applyCrop(CropRect(crop.left, crop.top, crop.right, it)) }
+        CropEdgeSlider("Left", crop.left, 0f, crop.right - 0.01f) { update(CropRect(it, crop.top, crop.right, crop.bottom)) }
+        CropEdgeSlider("Right", crop.right, crop.left + 0.01f, 1f) { update(CropRect(crop.left, crop.top, it, crop.bottom)) }
+        CropEdgeSlider("Top", crop.top, 0f, crop.bottom - 0.01f) { update(CropRect(crop.left, it, crop.right, crop.bottom)) }
+        CropEdgeSlider("Bottom", crop.bottom, crop.top + 0.01f, 1f) { update(CropRect(crop.left, crop.top, crop.right, it)) }
     }
-    ActionRow(onCancel = onCancel, onReset = { applyCrop(CropRect()) }, onDone = onDismiss)
+    ActionRow(
+        onCancel = onDismiss,
+        onReset = { update(CropRect(), null) },
+        onDone = { contextualVm.setClipCrop(projectId, tool.clipId, crop) { refresh(); onDismiss() } }
+    )
 }
 
 @Composable
@@ -350,108 +308,167 @@ private fun TransformPanel(
     projectId: String,
     tool: EditorTool.Transform,
     editor: EditorProject,
+    playheadUs: Long,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
     contextualVm: ContextualEditingViewModel,
-    editorVm: EditorViewModel,
     refresh: () -> Unit,
-    onCancel: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val transform = when (tool.ownerType) {
+    val stored = when (tool.ownerType) {
         VisualOwnerType.CLIP -> editor.timeline.clips.firstOrNull { it.id == tool.ownerId }?.transform
         VisualOwnerType.TEXT -> editor.timeline.textOverlays.firstOrNull { it.id == tool.ownerId }?.transform
         VisualOwnerType.IMAGE -> editor.timeline.imageOverlays.firstOrNull { it.id == tool.ownerId }?.transform
     } ?: return
-
-    fun applyTransform(x: Float = transform.x, y: Float = transform.y, scale: Float = transform.scaleX, rotation: Float = transform.rotationDegrees) {
+    val clip = editor.timeline.clips.firstOrNull { it.id == tool.ownerId }
+    val transform = previewDraft.transform ?: PreviewTransformDraft(
+        stored.x, stored.y, stored.scaleX, stored.scaleY, stored.rotationDegrees,
+        clip?.transform?.flipHorizontal ?: false,
+        clip?.transform?.flipVertical ?: false
+    )
+    fun update(next: PreviewTransformDraft) = onPreviewDraftChange(previewDraft.copy(transform = next))
+    fun commit() {
         when (tool.ownerType) {
-            VisualOwnerType.CLIP -> contextualVm.setClipTransform(projectId, tool.ownerId, x, y, scale, rotation) { refresh() }
-            VisualOwnerType.TEXT -> contextualVm.setTextTransform(projectId, tool.ownerId, x, y, scale, rotation) { refresh() }
-            VisualOwnerType.IMAGE -> contextualVm.setImageTransform(projectId, tool.ownerId, x, y, scale, rotation) { refresh() }
+            VisualOwnerType.CLIP -> contextualVm.setClipTransform(
+                projectId, tool.ownerId, transform.x, transform.y, transform.scaleX, transform.rotationDegrees,
+                playheadUs = playheadUs, flipHorizontal = transform.flipHorizontal, flipVertical = transform.flipVertical
+            ) { refresh(); onDismiss() }
+            VisualOwnerType.TEXT -> contextualVm.setTextTransform(
+                projectId, tool.ownerId, transform.x, transform.y, transform.scaleX, transform.rotationDegrees,
+                playheadUs = playheadUs
+            ) { refresh(); onDismiss() }
+            VisualOwnerType.IMAGE -> contextualVm.setImageTransform(
+                projectId, tool.ownerId, transform.x, transform.y, transform.scaleX, transform.rotationDegrees,
+                playheadUs = playheadUs
+            ) { refresh(); onDismiss() }
         }
     }
 
     ToolHeader("Transform", "Drag or pinch directly on the preview; sliders provide precise control")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        LabeledSlider("Position X", transform.x, 0f..1f, "${(transform.x * 100).roundToInt()}%") { applyTransform(x = it) }
-        LabeledSlider("Position Y", transform.y, 0f..1f, "${(transform.y * 100).roundToInt()}%") { applyTransform(y = it) }
-        LabeledSlider("Scale", transform.scaleX.coerceIn(0.05f, 4f), 0.05f..4f, "${(transform.scaleX * 100).roundToInt()}%") { applyTransform(scale = it) }
-        LabeledSlider("Rotation", normalize180(transform.rotationDegrees), -180f..180f, "${normalize180(transform.rotationDegrees).roundToInt()}°") { applyTransform(rotation = it) }
+        LabeledSlider("Position X", transform.x, 0f..1f, "${(transform.x * 100).roundToInt()}%") { update(transform.copy(x = it)) }
+        LabeledSlider("Position Y", transform.y, 0f..1f, "${(transform.y * 100).roundToInt()}%") { update(transform.copy(y = it)) }
+        LabeledSlider("Scale", transform.scaleX.coerceIn(0.05f, 4f), 0.05f..4f, "${(transform.scaleX * 100).roundToInt()}%") { update(transform.copy(scaleX = it, scaleY = it)) }
+        LabeledSlider("Rotation", normalize180(transform.rotationDegrees), -180f..180f, "${normalize180(transform.rotationDegrees).roundToInt()}°") { update(transform.copy(rotationDegrees = it)) }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(0f, 90f, 180f, -90f).forEach { angle -> OutlinedButton(onClick = { applyTransform(rotation = angle) }) { Text(if (angle == -90f) "270°" else "${angle.roundToInt()}°") } }
+            listOf(0f, 90f, 180f, -90f).forEach { angle ->
+                OutlinedButton(onClick = { update(transform.copy(rotationDegrees = angle)) }) { Text(if (angle == -90f) "270°" else "${angle.roundToInt()}°") }
+            }
             if (tool.ownerType == VisualOwnerType.CLIP) {
-                OutlinedButton(onClick = { editorVm.selectClip(tool.ownerId); editorVm.toggleFlipHorizontal() }) { Text("Flip H") }
-                OutlinedButton(onClick = { editorVm.selectClip(tool.ownerId); editorVm.toggleFlipVertical() }) { Text("Flip V") }
+                OutlinedButton(onClick = { update(transform.copy(flipHorizontal = !transform.flipHorizontal)) }) { Text(if (transform.flipHorizontal) "✓ Flip H" else "Flip H") }
+                OutlinedButton(onClick = { update(transform.copy(flipVertical = !transform.flipVertical)) }) { Text(if (transform.flipVertical) "✓ Flip V" else "Flip V") }
             }
         }
     }
     ActionRow(
-        onCancel = onCancel,
-        onReset = { applyTransform(x = 0.5f, y = 0.5f, scale = 1f, rotation = 0f) },
-        onDone = onDismiss
+        onCancel = onDismiss,
+        onReset = { update(transform.copy(x = 0.5f, y = 0.5f, scaleX = 1f, scaleY = 1f, rotationDegrees = 0f, flipHorizontal = false, flipVertical = false)) },
+        onDone = ::commit
     )
 }
 
 @Composable
-private fun OpacityPanel(tool: EditorTool.Opacity, editor: EditorProject, editorVm: EditorViewModel, onCancel: () -> Unit, onDismiss: () -> Unit) {
-    val value = when (tool.ownerType) {
+private fun OpacityPanel(
+    projectId: String,
+    tool: EditorTool.Opacity,
+    editor: EditorProject,
+    playheadUs: Long,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+    contextualVm: ContextualEditingViewModel,
+    refresh: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val stored = when (tool.ownerType) {
         VisualOwnerType.CLIP -> editor.timeline.clips.firstOrNull { it.id == tool.ownerId }?.opacity
         VisualOwnerType.TEXT -> editor.timeline.textOverlays.firstOrNull { it.id == tool.ownerId }?.opacity
         VisualOwnerType.IMAGE -> editor.timeline.imageOverlays.firstOrNull { it.id == tool.ownerId }?.transform?.opacity
     } ?: return
-    fun applyOpacity(next: Float) = when (tool.ownerType) {
-        VisualOwnerType.CLIP -> { editorVm.selectClip(tool.ownerId); editorVm.setOpacity(next) }
-        VisualOwnerType.TEXT -> editorVm.setTextOpacity(tool.ownerId, next)
-        VisualOwnerType.IMAGE -> editorVm.setImageOpacity(tool.ownerId, next)
+    val value = (previewDraft.opacity ?: stored).coerceIn(0f, 1f)
+    fun update(next: Float) = onPreviewDraftChange(previewDraft.copy(opacity = next.coerceIn(0f, 1f)))
+    val ownerType = when (tool.ownerType) {
+        VisualOwnerType.CLIP -> KeyframeOwnerType.CLIP
+        VisualOwnerType.TEXT -> KeyframeOwnerType.TEXT_OVERLAY
+        VisualOwnerType.IMAGE -> KeyframeOwnerType.IMAGE_OVERLAY
     }
     ToolHeader("Opacity")
     Column(Modifier.padding(horizontal = 18.dp)) {
         Text("${(value * 100).roundToInt()}%")
         Slider(
             value = value,
-            onValueChange = { applyOpacity(it) },
+            onValueChange = { update(it) },
             valueRange = 0f..1f,
             modifier = Modifier.semantics { contentDescription = "Opacity, ${(value * 100).roundToInt()} percent" }
         )
     }
-    ActionRow(onCancel = onCancel, onReset = { applyOpacity(1f) }, onDone = onDismiss)
+    ActionRow(
+        onCancel = onDismiss,
+        onReset = { update(1f) },
+        onDone = { contextualVm.setVisualOpacity(projectId, tool.ownerId, ownerType, value, playheadUs) { refresh(); onDismiss() } }
+    )
 }
 
 @Composable
-private fun VolumePanel(clip: TimelineClip, editorVm: EditorViewModel, onCancel: () -> Unit, onDismiss: () -> Unit) {
+private fun VolumePanel(
+    projectId: String,
+    clip: TimelineClip,
+    playheadUs: Long,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+    contextualVm: ContextualEditingViewModel,
+    refresh: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val value = (previewDraft.gainDb ?: clip.gainDb).coerceIn(-60f, 24f)
+    fun update(next: Float) = onPreviewDraftChange(previewDraft.copy(gainDb = next.coerceIn(-60f, 24f)))
     ToolHeader("Clip Volume", "Track volume remains in Track Settings")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("${clip.gainDb.roundToInt()} dB${if (clip.gainDb == 0f) " • 100% reference" else ""}")
+        Text("${value.roundToInt()} dB${if (value == 0f) " • 100% reference" else ""}")
         Slider(
-            value = clip.gainDb.coerceIn(-60f, 24f),
-            onValueChange = { editorVm.selectClip(clip.id); editorVm.setClipGain(it) },
+            value = value,
+            onValueChange = { update(it) },
             valueRange = -60f..24f,
-            modifier = Modifier.semantics { contentDescription = "Clip volume, ${clip.gainDb.roundToInt()} decibels" }
+            modifier = Modifier.semantics { contentDescription = "Clip volume, ${value.roundToInt()} decibels" }
         )
-        OutlinedButton(onClick = { editorVm.selectClip(clip.id); editorVm.setClipGain(-60f) }) { Text("Mute") }
+        // The domain has gain but no distinct clip-mute flag. This is deliberately labelled as gain.
+        OutlinedButton(onClick = { update(-60f) }) { Text("Silence (-60 dB)") }
     }
-    ActionRow(onCancel = onCancel, onReset = { editorVm.selectClip(clip.id); editorVm.setClipGain(0f) }, onDone = onDismiss)
+    ActionRow(
+        onCancel = onDismiss,
+        onReset = { update(0f) },
+        onDone = { contextualVm.setClipGain(projectId, clip.id, value, playheadUs) { refresh(); onDismiss() } }
+    )
 }
 
 @Composable
-private fun FadePanel(clip: TimelineClip, editorVm: EditorViewModel, waveforms: Map<String, FloatArray>, onCancel: () -> Unit, onDismiss: () -> Unit) {
-    val maxSeconds = (clip.timelineDurationUs / 1_000_000f).coerceAtLeast(0.1f)
+private fun FadePanel(
+    clip: TimelineClip,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+    editorVm: EditorViewModel,
+    waveforms: Map<String, FloatArray>,
+    onDismiss: () -> Unit
+) {
+    val maxUs = clip.timelineDurationUs.coerceAtLeast(100_000L)
+    val maxSeconds = maxUs / 1_000_000f
+    val fadeInUs = (previewDraft.fadeInUs ?: clip.fadeInUs).coerceIn(0L, maxUs)
+    val fadeOutUs = (previewDraft.fadeOutUs ?: clip.fadeOutUs).coerceIn(0L, maxUs)
+    fun update(inUs: Long = fadeInUs, outUs: Long = fadeOutUs) {
+        onPreviewDraftChange(previewDraft.copy(fadeInUs = inUs.coerceIn(0L, maxUs), fadeOutUs = outUs.coerceIn(0L, maxUs)))
+    }
     ToolHeader("Audio Fade", "Fade values are bounded by the clip duration")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         WaveformPreview(waveforms[clip.assetId], Modifier.fillMaxWidth().height(48.dp), VideoFlowEditorColors.SelectionAccent)
-        Text("Fade In ${"%.2f".format(clip.fadeInUs / 1_000_000f)} s")
-        Slider(
-            value = (clip.fadeInUs / 1_000_000f).coerceIn(0f, maxSeconds),
-            onValueChange = { editorVm.selectClip(clip.id); editorVm.setFades((it * 1_000_000L).toLong(), clip.fadeOutUs) },
-            valueRange = 0f..maxSeconds
-        )
-        Text("Fade Out ${"%.2f".format(clip.fadeOutUs / 1_000_000f)} s")
-        Slider(
-            value = (clip.fadeOutUs / 1_000_000f).coerceIn(0f, maxSeconds),
-            onValueChange = { editorVm.selectClip(clip.id); editorVm.setFades(clip.fadeInUs, (it * 1_000_000L).toLong()) },
-            valueRange = 0f..maxSeconds
-        )
+        Text("Fade In ${"%.2f".format(fadeInUs / 1_000_000f)} s")
+        Slider(value = fadeInUs / 1_000_000f, onValueChange = { update(inUs = (it * 1_000_000L).toLong()) }, valueRange = 0f..maxSeconds)
+        Text("Fade Out ${"%.2f".format(fadeOutUs / 1_000_000f)} s")
+        Slider(value = fadeOutUs / 1_000_000f, onValueChange = { update(outUs = (it * 1_000_000L).toLong()) }, valueRange = 0f..maxSeconds)
     }
-    ActionRow(onCancel = onCancel, onReset = { editorVm.selectClip(clip.id); editorVm.setFades(0L, 0L) }, onDone = onDismiss)
+    ActionRow(
+        onCancel = onDismiss,
+        onReset = { update(0L, 0L) },
+        onDone = { editorVm.selectClip(clip.id); editorVm.setFades(fadeInUs, fadeOutUs); onDismiss() }
+    )
 }
 
 @Composable
@@ -462,17 +479,19 @@ private fun TextEditorPanel(
     editor: EditorProject,
     editorVm: EditorViewModel,
     contextualVm: ContextualEditingViewModel,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
     onSelect: (EditorSelection) -> Unit,
     refresh: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val existing = tool.overlayId?.let { id -> editor.timeline.textOverlays.firstOrNull { it.id == id } }
-    var draft by remember(tool) { mutableStateOf(existing?.content.orEmpty()) }
-    ToolHeader(if (existing == null) "Add Text" else "Edit Text", "Type normally; raw backend fields are never exposed")
+    val draft = previewDraft.textContent ?: existing?.content.orEmpty()
+    ToolHeader(if (existing == null) "Add Text" else "Edit Text", "Typing updates the preview immediately; Done saves once")
     Column(Modifier.padding(horizontal = 18.dp)) {
         OutlinedTextField(
             value = draft,
-            onValueChange = { draft = it.take(4096) },
+            onValueChange = { onPreviewDraftChange(previewDraft.copy(textContent = it.take(4096))) },
             modifier = Modifier.fillMaxWidth(),
             minLines = 2,
             label = { Text("Text") }
@@ -482,9 +501,7 @@ private fun TextEditorPanel(
         onCancel = onDismiss,
         onDone = {
             if (existing == null) {
-                contextualVm.addText(projectId, playheadUs, draft) { id ->
-                    refresh(); onSelect(EditorSelection.TextOverlay(id)); onDismiss()
-                }
+                contextualVm.addText(projectId, playheadUs, draft) { id -> refresh(); onSelect(EditorSelection.TextOverlay(id)); onDismiss() }
             } else {
                 editorVm.updateTextContent(existing.id, draft)
                 onDismiss()
@@ -500,6 +517,8 @@ private fun TextStylePanel(
     editor: EditorProject,
     contextualVm: ContextualEditingViewModel,
     overlayVm: OverlayAdvancedViewModel,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
     refresh: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -517,6 +536,14 @@ private fun TextStylePanel(
     var saturation by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[1]) }
     var brightness by remember(tool.overlayId) { mutableFloatStateOf(initialHsv[2]) }
 
+    fun publishStyle() {
+        onPreviewDraftChange(
+            previewDraft.copy(
+                textStyle = PreviewTextStyleDraft(size, weight, italic, alignment, color)
+            )
+        )
+    }
+
     fun syncHsv(nextColor: Long) {
         val hsv = FloatArray(3)
         android.graphics.Color.colorToHSV(nextColor.toInt(), hsv)
@@ -529,6 +556,7 @@ private fun TextStylePanel(
         color = nextColor and 0xFFFFFFFFL
         hex = argbToHex(color)
         syncHsv(color)
+        publishStyle()
     }
 
     fun selectHsv(
@@ -545,20 +573,21 @@ private fun TextStylePanel(
             floatArrayOf(hue, saturation, brightness)
         ).toLong() and 0xFFFFFFFFL
         hex = argbToHex(color)
+        publishStyle()
     }
 
     ToolHeader("Text Style", "Only properties supported by the real text backend are shown")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        LabeledSlider("Font size", size, 6f..128f, "${size.roundToInt()} sp") { size = it }
+        LabeledSlider("Font size", size, 6f..128f, "${size.roundToInt()} sp") { size = it; publishStyle() }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(400 to "Regular", 500 to "Medium", 700 to "Bold").forEach { (value, label) ->
-                OutlinedButton(onClick = { weight = value }) { Text(if (weight == value) "✓ $label" else label) }
+                OutlinedButton(onClick = { weight = value; publishStyle() }) { Text(if (weight == value) "✓ $label" else label) }
             }
-            OutlinedButton(onClick = { italic = !italic }) { Text(if (italic) "✓ Italic" else "Italic") }
+            OutlinedButton(onClick = { italic = !italic; publishStyle() }) { Text(if (italic) "✓ Italic" else "Italic") }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("START" to "Left", "CENTER" to "Center", "END" to "Right").forEach { (value, label) ->
-                OutlinedButton(onClick = { alignment = value }) { Text(if (alignment == value) "✓ $label" else label) }
+                OutlinedButton(onClick = { alignment = value; publishStyle() }) { Text(if (alignment == value) "✓ $label" else label) }
             }
         }
         Text("Color")
@@ -582,6 +611,7 @@ private fun TextStylePanel(
                 parseArgb(hex)?.let { parsed ->
                     color = parsed
                     syncHsv(parsed)
+                    publishStyle()
                 }
             },
             label = { Text("Hex color") },
@@ -692,7 +722,10 @@ private fun KeyframePanel(
                 Text(label, modifier = Modifier.weight(1f))
                 OutlinedButton(
                     onClick = {
-                        if (current == null) {
+                        if (property == KeyframeProperty.SCALE_X) {
+                            if (current == null) contextualVm.addUniformScaleKeyframe(projectId, tool.ownerId, ownerType, playheadUs, interpolation) { refresh() }
+                            else contextualVm.removeUniformScaleKeyframes(projectId, tool.ownerId, localUs) { refresh() }
+                        } else if (current == null) {
                             contextualVm.addKeyframe(projectId, tool.ownerId, ownerType, property, playheadUs, interpolation) { refresh() }
                         } else {
                             contextualVm.removeKeyframe(projectId, tool.ownerId, current.id) { refresh() }
@@ -723,7 +756,10 @@ private fun KeyframePanel(
             }
         }
     }
-    ActionRow(onCancel = onDismiss, onDone = onDismiss)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("Keyframe changes apply immediately and are undoable", modifier = Modifier.weight(1f))
+        Button(onClick = onDismiss) { Text("Close") }
+    }
 }
 
 @Composable
