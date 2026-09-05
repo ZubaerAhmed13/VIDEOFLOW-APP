@@ -2,7 +2,7 @@
 
 ## Overall Status
 
-**PARTIAL — IMPLEMENTATION CANDIDATE READY FOR AUTOMATED CERTIFICATION AND PHYSICAL REVIEW**
+**PARTIAL — IMPLEMENTATION READY FOR FINAL AUTOMATED CERTIFICATION AND PHYSICAL REVIEW**
 
 This report intentionally does not use the Step 2 success label. The specification requires a real-phone hard gate and final export-parity review; those remain `NOT VERIFIED` until the exact final Review APK is tested.
 
@@ -28,7 +28,7 @@ Editor-shell architecture is preserved:
 - adaptive portrait/landscape structure
 - VideoFlow editor design language
 
-Pre-documentation candidate regression: **PASS** (`./gradlew test`). Final branch-head status must be taken from the latest Step 2 workflow.
+Pre-final predecessor evidence includes successful JVM regression, lint, and AndroidTest compilation. Final branch-head status must be taken from the latest Step 2 workflow.
 
 ## Video tools
 
@@ -36,7 +36,8 @@ Pre-documentation candidate regression: **PASS** (`./gradlew test`). Final branc
 |---|---|
 | Split | IMPLEMENTED / existing direct action preserved |
 | Visual Trim | IMPLEMENTED |
-| Thumbnail trim context | IMPLEMENTED |
+| Thumbnail/waveform trim context | IMPLEMENTED |
+| Trim boundary preview seeking | IMPLEMENTED — throttled while dragging, exact seek on release |
 | Speed presets + slider | IMPLEMENTED |
 | Speed duration preview | IMPLEMENTED |
 | Visual Crop | IMPLEMENTED |
@@ -54,6 +55,7 @@ Pre-documentation candidate regression: **PASS** (`./gradlew test`). Final branc
 | Capability | Candidate status |
 |---|---|
 | Audio Trim | IMPLEMENTED with waveform |
+| Trim boundary preview seeking | IMPLEMENTED through shared Trim path |
 | Clip Volume | IMPLEMENTED |
 | Mute-equivalent minimum gain | IMPLEMENTED via existing safe gain range |
 | Fade In | IMPLEMENTED |
@@ -74,7 +76,8 @@ No claim of professional pitch preservation is made; no unsupported pitch-correc
 | Italic | IMPLEMENTED |
 | Alignment | IMPLEMENTED |
 | Quick color | IMPLEMENTED |
-| Hex custom color | IMPLEMENTED |
+| HSV custom color | IMPLEMENTED |
+| Hex custom color | IMPLEMENTED and synchronized with HSV |
 | Transform | IMPLEMENTED via shared architecture |
 | Direct manipulation | IMPLEMENTED |
 | Opacity | IMPLEMENTED |
@@ -116,7 +119,7 @@ Auto-Keyframe and advanced easing remain intentionally absent.
 
 - Undo/redo architecture preserved.
 - Crop/Transform use existing coalesced semantic history.
-- Trim commits one semantic history operation.
+- Trim commits one semantic history operation; preview seeking does not persist trim state or create history entries.
 - Back hierarchy is active tool → passive panel → selection → editor exit.
 - Preview-then-commit tools discard draft state on Cancel.
 - Live tools restore captured pre-tool values on Cancel where applicable.
@@ -128,6 +131,7 @@ Auto-Keyframe and advanced easing remain intentionally absent.
 - letterbox rejection added/tested;
 - crop edge/corner/move gestures added;
 - transform pan/pinch/rotation added;
+- Trim handle movement seeks the selected boundary on the fixed main preview through the existing playhead;
 - center guides added;
 - persistent values remain normalized project/domain values rather than screen pixels;
 - precise non-gesture controls remain available.
@@ -140,6 +144,7 @@ Implemented structurally:
 - slider descriptions;
 - keyframe semantics;
 - non-gesture alternatives for visual edits;
+- HSV and other precision edits use labeled sliders/fields;
 - IME-aware text tool;
 - Step 1 150% font-scale emulator path retained.
 
@@ -155,6 +160,8 @@ Step 2 does not change the existing large-media architecture. It does not:
 - add WebView/INTERNET dependencies;
 - replace proxy/thumbnail/waveform caches;
 - change project format for presentation state.
+
+Trim preview seeking is throttled rather than issuing an uncontrolled seek for every raw pointer delta.
 
 ## PreviewPlan / RenderPlan parity
 
@@ -204,10 +211,9 @@ Expected from final successful CI artifact `VideoFlow-Android-UI-Step2-APKs`:
 1. Real-phone Review APK installation/update and touch behavior are not yet physically verified.
 2. Physical TalkBack is not yet verified.
 3. Physical final native-export parity is not yet verified.
-4. Trim uses cached thumbnail/waveform visual context; per-pointer decoder boundary seeking is not implemented.
-5. Timeline-edge trim/move auto-scroll is not newly certified in this Step 2 candidate.
-6. Font-family storage does not exist in the current backend, so a font-family picker is not faked.
-7. Advanced easing, transitions, effects, AI, text stroke/shadow and pitch correction remain out of scope/unsupported.
+4. Timeline-edge trim/move auto-scroll is not newly certified in this Step 2 candidate; it is a recommended enhancement rather than an identified hard blocker.
+5. Font-family storage does not exist in the current backend, so a font-family picker is not faked.
+6. Advanced easing, transitions, effects, AI, text stroke/shadow and pitch correction remain out of scope/unsupported.
 
 ## UI Step 3 readiness
 
