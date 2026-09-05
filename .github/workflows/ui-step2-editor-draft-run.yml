@@ -1,0 +1,30 @@
+name: UI Step 2 editor draft runner
+
+on:
+  push:
+    branches: [ui-step2-contextual-tools]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui-step2-contextual-tools
+          fetch-depth: 0
+      - name: Apply only on runner trigger commit
+        shell: bash
+        run: |
+          if [ "$(git log -1 --pretty=%s)" != "Run temporary editor draft integration script" ]; then
+            exit 0
+          fi
+          python3 .github/scripts/ui_step2_editor_draft_patch.py
+          git diff --check
+          git config user.name "Zubaer Ahmed"
+          git config user.email "zubaerknight@gmail.com"
+          git add app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt
+          git commit -m "Integrate transient preview drafts into editor workspace"
+          git push origin ui-step2-contextual-tools
