@@ -7,13 +7,13 @@
 - Approved UI Step 1 base: `bb5cd19bdffe1f6fe156b7eb9a7db9d7dc2c8b9e`
 - Dedicated workflow: `.github/workflows/android-ui-step2-ci.yml`
 
-The latest branch-head workflow is the source of truth for final automated status because this report itself is version-controlled and therefore changes the candidate SHA.
+The latest successful branch-head workflow is the source of truth for final automated status because this report is version-controlled and therefore changes the candidate SHA when synchronized.
 
-## Pre-final automated evidence
+## Completed implementation evidence
 
-Before the final documentation synchronization, the Step 2 architecture audit, the complete existing JVM regression task (`./gradlew test`), Android lint, and AndroidTest/Compose compilation had all been observed passing on the immediate predecessor implementation. Earlier compiler failures were isolated to contextual-test callback compatibility and were corrected without weakening the production requirements.
+The completed interaction implementation at predecessor SHA `7575852dbfebad6e16adb7eee39a40309bad2266` passed the full `VideoFlow Android UI Step 2 Certification` workflow in run `33990902558`, including both build/package and API-35 runtime jobs. This report synchronization creates a newer documentation-inclusive candidate, which must pass the same workflow before its APKs are distributed.
 
-## Final automated certification gates
+## Automated certification gates
 
 The branch-head workflow must pass all of the following:
 
@@ -37,6 +37,7 @@ The branch-head workflow must pass all of the following:
 | Review cold launch on API 35 emulator | PASS |
 | Review in-place `adb install -r` | PASS |
 | APK SHA-256 generation | PASS |
+| Runtime-bundle integrity verification | PASS |
 
 ## Step 2-specific automated/static coverage
 
@@ -59,11 +60,25 @@ The branch-head workflow must pass all of the following:
 
 ### Existing regression coverage
 
-The existing repository regression suite remains authoritative for core editor/domain behavior including timeline operations, project persistence, media/source handling, render planning, keyframe evaluation/history and native export architecture.
+The repository regression suite remains authoritative for core editor/domain behavior including timeline operations, project persistence, media/source handling, render planning, keyframe evaluation/history and native export architecture.
+
+## Completed interaction-model verification
+
+The finished Step 2 source uses transient preview state for high-frequency editing rather than persisting each pointer delta:
+
+- direct Crop and Transform gestures update transient draft values;
+- preview rendering consumes the current draft immediately;
+- one continuous direct gesture commits once at gesture end;
+- Cancel discards the transient tool draft rather than writing a compensating edit;
+- precision controls and direct manipulation share the same project-space/domain values;
+- text, opacity, volume and fade editing use the same preview-first architecture where applicable;
+- persisted geometry remains project/domain-normalized rather than screen-pixel based.
+
+This removes the previous risk of one pointer gesture producing many durable Room/history records.
 
 ## Feature verification matrix
 
-The following status means “implemented and routed to the existing real domain”; physical usability/export comparisons are intentionally separated.
+The status below means “implemented and routed to the existing real domain”; physical usability/export comparisons are intentionally separated.
 
 | Area | Automated/static status |
 |---|---|
@@ -73,6 +88,7 @@ The following status means “implemented and routed to the existing real domain
 | Trim boundary preview seeking | Implemented; throttled playhead seek + final exact seek |
 | Speed presets/slider/duration | Implemented |
 | Visual crop handles | Implemented |
+| Free Crop | Implemented |
 | Crop ratios and precise edges | Implemented |
 | Direct transform pan/pinch/rotation | Implemented |
 | Transform precise values | Implemented |
@@ -80,7 +96,7 @@ The following status means “implemented and routed to the existing real domain
 | Opacity | Implemented |
 | Clip volume/mute-equivalent gain | Implemented using existing gain backend |
 | Fade in/out | Implemented |
-| Add/edit text | Implemented |
+| Add/edit text with live preview | Implemented |
 | Text size/weight/italic/alignment | Implemented |
 | Text quick colors | Implemented |
 | Text custom color — HSV | Implemented |
@@ -89,21 +105,41 @@ The following status means “implemented and routed to the existing real domain
 | Text/image transform | Implemented using shared transform architecture |
 | Text/image timing | Implemented |
 | Text/image duplicate/delete | Implemented using real project semantics |
-| Keyframe add/remove | Implemented |
+| Keyframe add/remove exact point | Implemented |
 | Keyframe Hold/Linear | Implemented |
 | Keyframe Previous/Next | Implemented |
+| Uniform Scale keyframes | Implemented |
+| Owner-duration keyframe marker positioning | Implemented for clip/text/image owners |
 | Preview keyframe evaluation | Existing backend preserved |
 | Undo/redo | Existing semantic history preserved |
-| Coalesced live gesture history | Implemented through existing coalesced history |
+| Transient direct-gesture preview | Implemented |
+| One durable commit per direct gesture | Implemented |
 | Back hierarchy | Implemented |
 | Preview project-space coordinates | Implemented/tested |
+| Separate timeline move/trim-edge zones | Implemented |
+| Timeline-edge auto-scroll during move/trim | Implemented |
+| Adaptive/non-modal contextual tool panels | Implemented |
+
+## Runtime certification
+
+The API-35 job uses the exact runtime bundle produced by the build job and verifies its integrity before instrumentation. It then performs the repository’s Step 1 visual/large-font checks, long-timeline smoke coverage and Step 2 contextual toolbar tests, followed by Review APK installation checks.
+
+The completed predecessor run `33990902558` passed:
+
+- API-35 instrumentation;
+- Review fresh install;
+- Review cold launch;
+- Review in-place update;
+- evidence packaging.
+
+The documentation-inclusive branch head must repeat these passes before final APK distribution.
 
 ## Known automated limitations
 
-- Timeline-edge auto-scroll during trim/move is not newly certified by this Step 2 implementation; it is a recommended enhancement rather than an identified hard blocker.
+- Timeline edge auto-scroll is implemented, but natural finger feel at the extreme viewport edge remains part of the physical-device touch review rather than an emulator-only usability claim.
 - Unsupported backend capabilities such as font-family persistence, text stroke/shadow, advanced easing, pitch correction, transitions and effects are not faked.
 - Release APK packaging follows the repository’s existing test/release signing policy; the Review key is not represented as a production Play Store key.
 
 ## Physical gate
 
-Physical phone status is deliberately **NOT VERIFIED** in this report. The exact branch-head Review APK must still pass `UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md`, including touch usability, TalkBack where specified, and final export parity. Until then, the overall Step 2 status must remain `PARTIAL` rather than `COMPLETE`.
+Physical phone status remains deliberately **NOT VERIFIED**. The exact final branch-head Review APK must pass `UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md`, including touch usability, TalkBack and final native-export parity. Until then, automated implementation can be complete but the overall Step 2 success label must not be issued.
