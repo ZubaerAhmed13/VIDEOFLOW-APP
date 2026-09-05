@@ -9,9 +9,9 @@
 
 The latest branch-head workflow is the source of truth for final automated status because this report itself is version-controlled and therefore changes the candidate SHA.
 
-## Pre-documentation automated evidence
+## Pre-final automated evidence
 
-Candidate `11d792efe0de6d6ac614cee0e022a0ac3ac9f138` completed the Step 2 architecture audit and the full existing JVM regression task (`./gradlew test`) successfully before the final documentation/certification changes were added. A prior compile failure in `ContextualToolPanels.kt` was isolated to one incorrectly passed Slider callback and fixed before that successful regression run.
+Before the final documentation synchronization, the Step 2 architecture audit, the complete existing JVM regression task (`./gradlew test`), Android lint, and AndroidTest/Compose compilation had all been observed passing on the immediate predecessor implementation. Earlier compiler failures were isolated to contextual-test callback compatibility and were corrected without weakening the production requirements.
 
 ## Final automated certification gates
 
@@ -38,7 +38,7 @@ The branch-head workflow must pass all of the following:
 | Review in-place `adb install -r` | PASS |
 | APK SHA-256 generation | PASS |
 
-## Step 2-specific automated coverage
+## Step 2-specific automated/static coverage
 
 ### Contextual toolbar
 
@@ -70,6 +70,7 @@ The following status means “implemented and routed to the existing real domain
 | Split direct action | Implemented; existing regression path |
 | Visual video trim | Implemented; thumbnails + range handles |
 | Audio trim | Implemented; waveform + range handles |
+| Trim boundary preview seeking | Implemented; throttled playhead seek + final exact seek |
 | Speed presets/slider/duration | Implemented |
 | Visual crop handles | Implemented |
 | Crop ratios and precise edges | Implemented |
@@ -80,7 +81,10 @@ The following status means “implemented and routed to the existing real domain
 | Clip volume/mute-equivalent gain | Implemented using existing gain backend |
 | Fade in/out | Implemented |
 | Add/edit text | Implemented |
-| Text size/weight/italic/alignment/color/hex | Implemented |
+| Text size/weight/italic/alignment | Implemented |
+| Text quick colors | Implemented |
+| Text custom color — HSV | Implemented |
+| Text custom color — hex | Implemented and synchronized with HSV |
 | Unsupported font-family picker | Not exposed; backend has no font-family field |
 | Text/image transform | Implemented using shared transform architecture |
 | Text/image timing | Implemented |
@@ -96,11 +100,10 @@ The following status means “implemented and routed to the existing real domain
 
 ## Known automated limitations
 
-- The contextual Trim panel uses cached thumbnails/waveforms as its visual boundary preview; per-pointer decoder boundary seeking is not implemented.
-- Timeline-edge auto-scroll during trim/move is not newly certified by this Step 2 implementation.
+- Timeline-edge auto-scroll during trim/move is not newly certified by this Step 2 implementation; it is a recommended enhancement rather than an identified hard blocker.
 - Unsupported backend capabilities such as font-family persistence, text stroke/shadow, advanced easing, pitch correction, transitions and effects are not faked.
 - Release APK packaging follows the repository’s existing test/release signing policy; the Review key is not represented as a production Play Store key.
 
 ## Physical gate
 
-Physical phone status is deliberately **NOT VERIFIED** in this report. The exact branch-head Review APK must still pass `UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md`, including final export parity. Until then, the overall Step 2 status must remain `PARTIAL` rather than `COMPLETE`.
+Physical phone status is deliberately **NOT VERIFIED** in this report. The exact branch-head Review APK must still pass `UI_STEP_2_PHYSICAL_DEVICE_REVIEW.md`, including touch usability, TalkBack where specified, and final export parity. Until then, the overall Step 2 status must remain `PARTIAL` rather than `COMPLETE`.
