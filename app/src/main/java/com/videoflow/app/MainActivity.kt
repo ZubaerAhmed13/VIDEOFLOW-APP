@@ -60,9 +60,11 @@ private fun VideoFlowNavigation() {
             route = "editor/{id}",
             arguments = listOf(navArgument("id") { type = NavType.StringType })
         ) { entry ->
+            val id = requireNotNull(entry.arguments?.getString("id"))
             EditorScreen(
-                id = requireNotNull(entry.arguments?.getString("id")),
+                id = id,
                 onBack = { nav.popBackStack() },
+                onExport = { nav.navigate("export/$id") },
                 vm = hiltViewModel()
             )
         }
