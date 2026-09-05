@@ -54,12 +54,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.videoflow.app.util.formatDurationUs
 import kotlinx.coroutines.delay
 
@@ -280,6 +282,8 @@ private fun ToolRow(content: @Composable () -> Unit) {
 
 @Composable
 private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val fontScale = LocalDensity.current.fontScale
+    val compactLabelSize = if (fontScale >= 1.3f) 9.sp else MaterialTheme.typography.labelSmall.fontSize
     Column(
         modifier = Modifier
             .width(52.dp)
@@ -292,7 +296,13 @@ private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     ) {
         Icon(icon, contentDescription = null, tint = VideoFlowEditorColors.PrimaryText)
         Spacer(Modifier.height(2.dp))
-        Text(label, color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        Text(
+            label,
+            color = VideoFlowEditorColors.PrimaryText,
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = compactLabelSize,
+            maxLines = 1
+        )
     }
 }
 
