@@ -7,8 +7,8 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.videoflow.app.ui.editor.EditorBottomToolbar
 import com.videoflow.app.ui.editor.EditorPanel
-import com.videoflow.app.ui.editor.EditorPanelKind
 import com.videoflow.app.ui.editor.EditorSelection
+import com.videoflow.app.ui.editor.EditorTool
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -28,6 +28,7 @@ class EditorWorkspaceComposeTest {
                     selection = EditorSelection.None,
                     selectedClipMime = null,
                     onPanel = {},
+                    onTool = {},
                     onSplit = {}
                 )
             }
@@ -46,6 +47,7 @@ class EditorWorkspaceComposeTest {
                     selection = EditorSelection.Clip("clip-1"),
                     selectedClipMime = "video/mp4",
                     onPanel = {},
+                    onTool = {},
                     onSplit = {}
                 )
             }
@@ -64,12 +66,13 @@ class EditorWorkspaceComposeTest {
                     selection = EditorSelection.Clip("audio-1"),
                     selectedClipMime = "audio/mpeg",
                     onPanel = {},
+                    onTool = {},
                     onSplit = {}
                 )
             }
         }
 
-        listOf("Split", "Volume", "Fade", "Speed", "More").forEach { label ->
+        listOf("Split", "Trim", "Volume", "Fade", "Speed", "More").forEach { label ->
             rule.onNodeWithContentDescription(label).fetchSemanticsNode()
         }
     }
@@ -83,6 +86,7 @@ class EditorWorkspaceComposeTest {
                     selection = EditorSelection.None,
                     selectedClipMime = null,
                     onPanel = { opened = it },
+                    onTool = {},
                     onSplit = {}
                 )
             }
@@ -101,6 +105,7 @@ class EditorWorkspaceComposeTest {
                     selection = EditorSelection.Clip("clip-1"),
                     selectedClipMime = "video/mp4",
                     onPanel = {},
+                    onTool = {},
                     onSplit = { splitInvoked = true }
                 )
             }
@@ -111,14 +116,15 @@ class EditorWorkspaceComposeTest {
     }
 
     @Test
-    fun trimTapCarriesSelectedClipIdentity() {
-        var opened: EditorPanel? = null
+    fun trimTapCarriesSelectedClipIdentityToContextualTool() {
+        var openedTool: EditorTool? = null
         rule.setContent {
             MaterialTheme {
                 EditorBottomToolbar(
                     selection = EditorSelection.Clip("clip-42"),
                     selectedClipMime = "video/mp4",
-                    onPanel = { opened = it },
+                    onPanel = {},
+                    onTool = { openedTool = it },
                     onSplit = {}
                 )
             }
@@ -126,10 +132,7 @@ class EditorWorkspaceComposeTest {
 
         rule.onNodeWithContentDescription("Trim").performClick()
         rule.runOnIdle {
-            assertEquals(
-                EditorPanel.ClipTool(EditorPanelKind.CLIP_TRIM, "clip-42"),
-                opened
-            )
+            assertEquals(EditorTool.Trim("clip-42"), openedTool)
         }
     }
 }
