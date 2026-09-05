@@ -1,0 +1,258 @@
+name: VideoFlow Android UI Step 1 Certification
+
+on:
+  push:
+    branches:
+      - ui-step1-professional-editor
+  pull_request:
+    branches:
+      - step3-native-rendering
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-step1-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui-step1-certification:
+    name: UI Step 1 build, regression and packaging
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install Android API 37.0 platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM_URL='https://dl.google.com/android/repository/platform-37.0_r02.zip'
+          PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
+          curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
+          echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          mkdir -p "$ANDROID_HOME/platforms"
+          unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          sdkmanager 'build-tools;36.0.0'
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+          rm -f /tmp/platform-37.0_r02.zip
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: UI architecture contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          EDITOR="app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt"
+          SHEETS="app/src/main/java/com/videoflow/app/ui/editor/EditorSheets.kt"
+          TIMELINE="app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt"
+          CHROME="app/src/main/java/com/videoflow/app/ui/editor/EditorChrome.kt"
+          VISUAL_TEST="app/src/androidTest/java/com/videoflow/app/ui/EditorWorkspaceVisualCertificationTest.kt"
+
+          test -s "$EDITOR"
+          test -s "$SHEETS"
+          test -s "$TIMELINE"
+          test -s "$CHROME"
+          test -s "$VISUAL_TEST"
+          test -s EDITOR_UX_ARCHITECTURE.md
+          test -s UI_STEP_1_TEST_REPORT.md
+          test -s UI_STEP_1_COMPLETION_REPORT.md
+
+          if grep -q "LazyColumn" "$EDITOR"; then
+            echo "EditorScreen still contains a parent LazyColumn"
+            exit 1
+          fi
+
+          grep -q "PreviewWorkspace" "$EDITOR"
+          grep -q "TransportBar" "$EDITOR"
+          grep -q "TimelineWorkspace" "$EDITOR"
+          grep -q "EditorBottomToolbar" "$EDITOR"
+          grep -q "ModalBottomSheet" "$SHEETS"
+          grep -q "OpenDocument" "$EDITOR"
+          grep -q "onExport" "$EDITOR"
+          grep -q "Start your video" "$TIMELINE"
+          grep -q "Open .* settings" "$TIMELINE"
+          grep -q "editor-portrait.png" "$VISUAL_TEST"
+          grep -q "editor-landscape.png" "$VISUAL_TEST"
+          grep -q "editor-font-scale-150.png" "$VISUAL_TEST"
+          grep -q "48dp" "$VISUAL_TEST"
+          grep -q "180_000_000L" "$VISUAL_TEST"
+
+          if grep -E -q "Proxy 540p|Proxy 720p|Proxy 1080p" "$EDITOR"; then
+            echo "Engineering proxy resolution controls remain in the primary editor"
+            exit 1
+          fi
+
+      - name: JVM regression tests
+        run: ./gradlew test --stacktrace
+
+      - name: Android lint
+        run: ./gradlew lint --stacktrace
+
+      - name: Compile instrumentation and Compose tests
+        run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
+
+      - name: Assemble debug, instrumentation and release
+        run: ./gradlew assembleDebug assembleDebugAndroidTest assembleRelease --stacktrace
+
+      - name: Package UI Step 1 debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ui-step1-artifact
+          cp app/build/outputs/apk/debug/app-debug.apk ui-step1-artifact/VideoFlow_Android_UI_Step1_Debug.apk
+          sha256sum ui-step1-artifact/VideoFlow_Android_UI_Step1_Debug.apk > ui-step1-artifact/SHA256SUMS.txt
+          cp EDITOR_UX_ARCHITECTURE.md UI_STEP_1_TEST_REPORT.md UI_STEP_1_COMPLETION_REPORT.md ui-step1-artifact/
+
+      - name: Upload UI Step 1 APK and reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step1-Debug
+          path: ui-step1-artifact/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare UI Step 1 emulator runtime bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_APK='app/build/outputs/apk/debug/app-debug.apk'
+          TEST_APK='app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'
+          test -f "$APP_APK"
+          test -f "$TEST_APK"
+          mkdir -p ui-step1-runtime
+          cp "$APP_APK" ui-step1-runtime/VideoFlow_Android_UI_Step1_Debug.apk
+          cp "$TEST_APK" ui-step1-runtime/VideoFlow_Android_UI_Step1_Debug-androidTest.apk
+          (
+            cd ui-step1-runtime
+            sha256sum *.apk | tee SHA256SUMS.txt
+          )
+
+      - name: Upload UI Step 1 emulator runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step1-Runtime-Bundle
+          path: ui-step1-runtime
+          if-no-files-found: error
+          retention-days: 14
+
+  ui-step1-emulator-visual-certification:
+    name: API 35 portrait, landscape, accessibility and long-timeline certification
+    needs: ui-step1-certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Reclaim hosted-runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake" "$ANDROID_HOME/system-images" "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/sources" "$ANDROID_HOME/extras" || true
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* /tmp/* || true
+          df -h /
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Download exact UI Step 1 APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step1-Runtime-Bundle
+          path: ui-step1-runtime
+
+      - name: Verify runtime bundle integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f ui-step1-runtime/VideoFlow_Android_UI_Step1_Debug.apk
+          test -f ui-step1-runtime/VideoFlow_Android_UI_Step1_Debug-androidTest.apk
+          (cd ui-step1-runtime && sha256sum -c SHA256SUMS.txt)
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: API 35 visual and accessibility instrumentation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 600
+          disk-size: 1536M
+          script: |
+            set -e
+            mkdir -p ui-step1-emulator-reports/screenshots
+            adb install -r ui-step1-runtime/VideoFlow_Android_UI_Step1_Debug.apk
+            adb install -r ui-step1-runtime/VideoFlow_Android_UI_Step1_Debug-androidTest.apk
+            adb shell am instrument -w -r -e class com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ui-step1-emulator-reports/instrumentation-output.txt 2>&1
+            cat ui-step1-emulator-reports/instrumentation-output.txt
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' ui-step1-emulator-reports/instrumentation-output.txt
+            grep -E -q 'OK \([0-9]+ tests?\)' ui-step1-emulator-reports/instrumentation-output.txt
+            COUNT=$(grep -Eo 'OK \([0-9]+ tests?\)' ui-step1-emulator-reports/instrumentation-output.txt | tail -n 1 | grep -Eo '[0-9]+'); test -n "$COUNT"; printf 'UI visual/accessibility instrumentation: %s PASS / 0 FAIL / 0 SKIP\n' "$COUNT" | tee ui-step1-emulator-reports/UI_STEP_1_VISUAL_TEST_COUNTS.txt
+            adb exec-out run-as com.videoflow.app.debug cat files/ui-step1-visual/editor-portrait.png > ui-step1-emulator-reports/screenshots/editor-portrait.png && test -s ui-step1-emulator-reports/screenshots/editor-portrait.png
+            adb exec-out run-as com.videoflow.app.debug cat files/ui-step1-visual/editor-landscape.png > ui-step1-emulator-reports/screenshots/editor-landscape.png && test -s ui-step1-emulator-reports/screenshots/editor-landscape.png
+            adb exec-out run-as com.videoflow.app.debug cat files/ui-step1-visual/editor-font-scale-150.png > ui-step1-emulator-reports/screenshots/editor-font-scale-150.png && test -s ui-step1-emulator-reports/screenshots/editor-font-scale-150.png
+            sha256sum ui-step1-emulator-reports/screenshots/*.png > ui-step1-emulator-reports/SCREENSHOT_SHA256SUMS.txt
+
+      - name: Package emulator visual evidence
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p ui-step1-emulator-reports
+          adb devices -l > ui-step1-emulator-reports/adb-devices.txt 2>/dev/null || true
+          df -h / > ui-step1-emulator-reports/final-disk-usage.txt || true
+
+      - name: Upload UI Step 1 emulator visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-UI-Step1-Emulator-Visual-Certification
+          path: ui-step1-emulator-reports
+          if-no-files-found: error
+          retention-days: 30
