@@ -164,15 +164,14 @@ jobs:
           disk-size: 1536M
           script: |
             set -e
-            APK='review-artifact/VideoFlow_Android_UI_Step1_Review.apk'
             mkdir -p review-install-reports
-            adb install "$APK" | tee review-install-reports/first-install.txt
+            adb install review-artifact/VideoFlow_Android_UI_Step1_Review.apk | tee review-install-reports/first-install.txt
             adb shell pm path com.videoflow.app.review | tee review-install-reports/package-path.txt
             grep -q 'package:' review-install-reports/package-path.txt
             adb shell am start -W -n com.videoflow.app.review/com.videoflow.app.MainActivity | tee review-install-reports/launch.txt
             adb shell pidof com.videoflow.app.review | tee review-install-reports/pid.txt
             test -s review-install-reports/pid.txt
-            adb install -r "$APK" | tee review-install-reports/reinstall-update.txt
+            adb install -r review-artifact/VideoFlow_Android_UI_Step1_Review.apk | tee review-install-reports/reinstall-update.txt
             grep -q 'Success' review-install-reports/reinstall-update.txt
             adb shell pm path com.videoflow.app.review | grep -q 'package:'
 
