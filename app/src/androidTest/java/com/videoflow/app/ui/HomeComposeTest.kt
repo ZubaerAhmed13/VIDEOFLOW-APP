@@ -1,6 +1,5 @@
 package com.videoflow.app.ui
 
-import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -74,11 +73,11 @@ class HomeComposeTest {
         rule.onNodeWithText("Recommended export").fetchSemanticsNode()
 
         // The export content is a LazyColumn. On the API-35 certification device (320x640),
-        // Advanced Settings is intentionally below the fold, so certify it by scrolling the
-        // main vertical export list to the required control instead of assuming a tall viewport.
-        rule.onNode(
-            hasScrollAction() and hasAnyDescendant(hasText("Recommended export"))
-        ).performScrollToNode(hasText("Advanced Settings"))
+        // Advanced Settings is intentionally below the fold. The first scrollable semantics
+        // node is the parent vertical export list; selecting it without a transient-descendant
+        // predicate keeps the interaction valid while LazyColumn items enter/leave composition.
+        rule.onAllNodes(hasScrollAction())[0]
+            .performScrollToNode(hasText("Advanced Settings"))
         rule.onNodeWithText("Advanced Settings").fetchSemanticsNode()
     }
 
