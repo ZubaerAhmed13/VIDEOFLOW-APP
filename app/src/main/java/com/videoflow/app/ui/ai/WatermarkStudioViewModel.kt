@@ -7,6 +7,8 @@ import com.videoflow.app.ai.watermark.AiModelPackManager
 import com.videoflow.app.ai.watermark.LocalRoiTracker
 import com.videoflow.app.ai.watermark.LocalWatermarkPreviewEngine
 import com.videoflow.app.data.ai.AiWatermarkRepository
+import com.videoflow.app.data.history.AiWatermarkHistoryEntry
+import com.videoflow.app.data.history.EditHistoryService
 import com.videoflow.app.domain.ai.AiWatermarkEffect
 import com.videoflow.app.domain.ai.NormalizedRoi
 import com.videoflow.app.domain.ai.RoiMotionAnchor
@@ -17,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
@@ -50,7 +53,8 @@ class WatermarkStudioViewModel @Inject constructor(
     private val repository: AiWatermarkRepository,
     private val modelPackManager: AiModelPackManager,
     private val previewEngine: LocalWatermarkPreviewEngine,
-    private val tracker: LocalRoiTracker
+    private val tracker: LocalRoiTracker,
+    private val historyService: EditHistoryService
 ) : ViewModel() {
     private val _state = MutableStateFlow(WatermarkStudioState())
     val state: StateFlow<WatermarkStudioState> = _state.asStateFlow()
@@ -61,7 +65,22 @@ class WatermarkStudioViewModel @Inject constructor(
     private var boundProjectId: String? = null
     private var boundClipId: String? = null
 
+    init {
+        // AI effects are stored in a sidecar, not a Room Flow. Observe successful atomic sidecar
+        // replacements so editor Undo/Redo immediately refreshes an already-open Watermark Studio.
+        viewModelScope.launch {
+            repository.changes.collectLatest { changedProjectId ->
+                val projectId = boundProjectId
+                val clipId = boundClipId
+                if (projectId != null && clipId != null && changedProjectId == projectId) {
+                    refreshEffects(projectId, clipId)
+                }
+            }
+        }
+    }
+
     fun bind(projectId: String, clipId: String) {
+        historyService.activateProject(projectId)
         if (boundProjectId == projectId && boundClipId == clipId && modelJob?.isActive == true) return
         boundProjectId = projectId
         boundClipId = clipId
@@ -249,40 +268,71 @@ class WatermarkStudioViewModel @Inject constructor(
         workJob?.cancel()
         workJob = viewModelScope.launch {
             _state.value = _state.value.copy(busy = WatermarkStudioBusy.APPLYING, progress = 0.5f, error = null)
-            runCatching { repository.upsert(effect) }
-                .onSuccess {
-                    val effects = repository.effectsForClip(effect.projectId, effect.clipId)
-                    _state.value = _state.value.copy(
-                        busy = WatermarkStudioBusy.IDLE,
-                        progress = 1f,
-                        existingEffects = effects,
-                        error = null
+            runCatching {
+                val before = repository.load(effect.projectId)
+                val existed = before.any { it.id == effect.id }
+                repository.upsert(effect)
+                val after = repository.load(effect.projectId)
+                historyService.record(
+                    AiWatermarkHistoryEntry(
+                        projectId = effect.projectId,
+                        label = if (existed) "Update AI Watermark" else "Apply AI Watermark",
+                        before = before,
+                        after = after
                     )
-                    onApplied()
-                }
-                .onFailure { error ->
-                    _state.value = _state.value.copy(
-                        busy = WatermarkStudioBusy.IDLE,
-                        progress = 0f,
-                        error = "Apply: ${error.message ?: error::class.java.simpleName}"
-                    )
-                }
+                )
+                after.filter { it.clipId == effect.clipId }
+            }.onSuccess { effects ->
+                _state.value = _state.value.copy(
+                    busy = WatermarkStudioBusy.IDLE,
+                    progress = 1f,
+                    existingEffects = effects,
+                    error = null
+                )
+                onApplied()
+            }.onFailure { error ->
+                _state.value = _state.value.copy(
+                    busy = WatermarkStudioBusy.IDLE,
+                    progress = 0f,
+                    error = "Apply: ${error.message ?: error::class.java.simpleName}"
+                )
+            }
         }
     }
 
     fun setEnabled(effect: AiWatermarkEffect, enabled: Boolean) {
         viewModelScope.launch {
-            runCatching { repository.upsert(effect.copy(enabled = enabled)) }
-                .onSuccess { refreshEffects(effect.projectId, effect.clipId) }
-                .onFailure { error -> _state.value = _state.value.copy(error = error.message) }
+            runCatching {
+                val before = repository.load(effect.projectId)
+                repository.upsert(effect.copy(enabled = enabled))
+                val after = repository.load(effect.projectId)
+                historyService.record(
+                    AiWatermarkHistoryEntry(
+                        projectId = effect.projectId,
+                        label = if (enabled) "Enable AI Watermark" else "Disable AI Watermark",
+                        before = before,
+                        after = after
+                    )
+                )
+            }.onFailure { error -> _state.value = _state.value.copy(error = error.message) }
         }
     }
 
     fun remove(effect: AiWatermarkEffect) {
         viewModelScope.launch {
-            runCatching { repository.remove(effect.projectId, effect.id) }
-                .onSuccess { refreshEffects(effect.projectId, effect.clipId) }
-                .onFailure { error -> _state.value = _state.value.copy(error = error.message) }
+            runCatching {
+                val before = repository.load(effect.projectId)
+                repository.remove(effect.projectId, effect.id)
+                val after = repository.load(effect.projectId)
+                historyService.record(
+                    AiWatermarkHistoryEntry(
+                        projectId = effect.projectId,
+                        label = "Remove AI Watermark",
+                        before = before,
+                        after = after
+                    )
+                )
+            }.onFailure { error -> _state.value = _state.value.copy(error = error.message) }
         }
     }
 
