@@ -35,6 +35,18 @@ enum class BitrateMode { AUTO, CQ, VBR, CBR }
 enum class AudioCodec(val mimeType: String) { AAC_LC("audio/mp4a-latm") }
 enum class HdrPolicy { PRESERVE_WHEN_COMPATIBLE, REQUIRE_PRESERVE, CONVERT_TO_SDR }
 
+/**
+ * User-facing export intent. SMART_COPY is a genuine packet-copy path and must never be treated as
+ * a synonym for high-quality rendering.
+ */
+enum class ExportMode {
+    RECOMMENDED,
+    MATCH_SOURCE,
+    SMART_COPY,
+    SMALLER_FILE,
+    HIGH_QUALITY
+}
+
 enum class ExportJobStatus {
     QUEUED,
     PREPARING,
@@ -78,7 +90,8 @@ data class ExportSettings(
     val audioBitrate: Int = 256_000,
     val audioSampleRate: Int = 48_000,
     val audioChannels: Int = 2,
-    val hdrPolicy: HdrPolicy = HdrPolicy.PRESERVE_WHEN_COMPATIBLE
+    val hdrPolicy: HdrPolicy = HdrPolicy.PRESERVE_WHEN_COMPATIBLE,
+    val mode: ExportMode = ExportMode.RECOMMENDED
 ) {
     init {
         require(customWidth == null || customWidth > 0)

@@ -17,6 +17,13 @@ object VideoFlowEditorColors {
     val WarningColor = Color(0xFFF0B35A)
     val ErrorColor = Color(0xFFFF7B7B)
     val SuccessColor = Color(0xFF6FD39A)
+
+    // Explicit editor foreground tokens. Custom dark editor surfaces must never depend on an
+    // unrelated Material LocalContentColor inherited from outside the workspace.
     val PrimaryText = Color(0xFFF4F7FA)
-    val SecondaryText = Color(0xFFB4BEC8)
+    val SecondaryText = Color(0xFFC0CAD4)
+    val DisabledText = Color(0xFF8D98A4)
+    val TextOnAccent = Color(0xFF08131D)
+    val InputText = Color(0xFFF4F7FA)
+    val InputHint = Color(0xFFA9B4BF)
 }

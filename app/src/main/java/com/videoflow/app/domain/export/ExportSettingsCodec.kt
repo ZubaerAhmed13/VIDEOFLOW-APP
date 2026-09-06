@@ -23,6 +23,7 @@ object ExportSettingsCodec {
         append(",\"audioSampleRate\":").append(value.audioSampleRate)
         append(",\"audioChannels\":").append(value.audioChannels)
         append(",\"hdrPolicy\":\"").append(value.hdrPolicy.name).append('"')
+        append(",\"mode\":\"").append(value.mode.name).append('"')
         append('}')
     }
 
@@ -48,7 +49,8 @@ object ExportSettingsCodec {
             audioBitrate = requireNotNull(int("audioBitrate")),
             audioSampleRate = requireNotNull(int("audioSampleRate")),
             audioChannels = requireNotNull(int("audioChannels")),
-            hdrPolicy = HdrPolicy.valueOf(requireNotNull(string("hdrPolicy")))
+            hdrPolicy = HdrPolicy.valueOf(requireNotNull(string("hdrPolicy"))),
+            mode = string("mode")?.let { runCatching { ExportMode.valueOf(it) }.getOrNull() } ?: ExportMode.RECOMMENDED
         )
     }
 }

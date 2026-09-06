@@ -15,15 +15,17 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.videoflow.app.ui.EditorViewModel
 import com.videoflow.app.ui.product.PreferencesViewModel
 import com.videoflow.app.ui.screens.AboutScreen
 import com.videoflow.app.ui.screens.DeviceCapabilityScreen
 import com.videoflow.app.ui.screens.DiagnosticsScreen
-import com.videoflow.app.ui.screens.EditorScreen
+import com.videoflow.app.ui.screens.FinalQualityEditorRoute
+import com.videoflow.app.ui.screens.FinalQualityExportRoute
+import com.videoflow.app.ui.screens.FinalQualityHomeRoute
+import com.videoflow.app.ui.screens.MergeVideosScreen
 import com.videoflow.app.ui.screens.PrivacyScreen
-import com.videoflow.app.ui.screens.ProductHomeScreen
 import com.videoflow.app.ui.screens.ProductOnboardingScreen
-import com.videoflow.app.ui.screens.ProfessionalExportRoute
 import com.videoflow.app.ui.screens.ProfessionalSettingsScreen
 import com.videoflow.app.ui.screens.Step2ProjectScreen
 import com.videoflow.app.ui.theme.VideoFlowTheme
@@ -66,10 +68,20 @@ private fun VideoFlowNavigation(preferencesViewModel: PreferencesViewModel) {
             }
         }
         composable("home") {
-            ProductHomeScreen(
+            FinalQualityHomeRoute(
                 onOpen = { nav.navigate("editor/$it") },
                 onProjectDetails = { nav.navigate("project/$it") },
                 onSettings = { nav.navigate("settings") },
+                onMerge = { nav.navigate("merge") },
+                vm = hiltViewModel()
+            )
+        }
+        composable("merge") {
+            MergeVideosScreen(
+                onBack = { nav.popBackStack() },
+                onProjectReady = { id ->
+                    nav.navigate("editor/$id") { popUpTo("merge") { inclusive = true } }
+                },
                 vm = hiltViewModel()
             )
         }
@@ -91,11 +103,12 @@ private fun VideoFlowNavigation(preferencesViewModel: PreferencesViewModel) {
             arguments = listOf(navArgument("id") { type = NavType.StringType })
         ) { entry ->
             val id = requireNotNull(entry.arguments?.getString("id"))
-            EditorScreen(
+            val editorVm: EditorViewModel = hiltViewModel()
+            FinalQualityEditorRoute(
                 id = id,
                 onBack = { nav.popBackStack() },
                 onExport = { nav.navigate("export/$id") },
-                vm = hiltViewModel()
+                editorVm = editorVm
             )
         }
         composable(
@@ -103,7 +116,7 @@ private fun VideoFlowNavigation(preferencesViewModel: PreferencesViewModel) {
             arguments = listOf(navArgument("id") { type = NavType.StringType })
         ) { entry ->
             val id = requireNotNull(entry.arguments?.getString("id"))
-            ProfessionalExportRoute(
+            FinalQualityExportRoute(
                 id = id,
                 onBack = { nav.popBackStack() },
                 onDone = { nav.popBackStack() },

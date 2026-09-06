@@ -27,6 +27,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.videoflow.app.domain.editor.PreviewPlaybackPolicy
 import java.io.File
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -46,6 +47,8 @@ fun NativeVideoPlayer(
     val mediaUri = remember(uri) {
         if (uri.startsWith("/")) Uri.fromFile(File(uri)) else Uri.parse(uri)
     }
+    // Player identity follows the actual preview source only. Playhead/UI recomposition must not
+    // recreate the decoder/surface lifecycle.
     val player = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(mediaUri))
@@ -58,9 +61,13 @@ fun NativeVideoPlayer(
         }
     }
 
-    LaunchedEffect(player, startPositionMs) {
-        val delta = kotlin.math.abs(player.currentPosition - startPositionMs.coerceAtLeast(0L))
-        if (!playWhenReady || delta > 250L) player.seekTo(startPositionMs.coerceAtLeast(0L))
+    // Do not chase every high-frequency UI playhead tick with a decoder seek. While playing, only
+    // correct a meaningful discontinuity/drift; while paused/scrubbing keep precise seek response.
+    LaunchedEffect(player, startPositionMs, playWhenReady) {
+        val requested = startPositionMs.coerceAtLeast(0L)
+        if (PreviewPlaybackPolicy.shouldSeek(playWhenReady, player.currentPosition, requested)) {
+            player.seekTo(requested)
+        }
     }
     LaunchedEffect(player, playWhenReady, speed, volume) {
         player.playbackParameters = PlaybackParameters(speed.coerceIn(0.25f, 4f))
@@ -94,7 +101,7 @@ fun NativeVideoPlayer(
                 }
             },
             update = {
-                it.player = player
+                if (it.player !== player) it.player = player
                 it.useController = showControls
             },
             modifier = modifier.heightIn(min = 220.dp, max = 420.dp)
@@ -122,9 +129,11 @@ fun NativeAudioPreview(
             prepare()
         }
     }
-    LaunchedEffect(player, startPositionMs) {
-        val delta = kotlin.math.abs(player.currentPosition - startPositionMs.coerceAtLeast(0L))
-        if (!playWhenReady || delta > 250L) player.seekTo(startPositionMs.coerceAtLeast(0L))
+    LaunchedEffect(player, startPositionMs, playWhenReady) {
+        val requested = startPositionMs.coerceAtLeast(0L)
+        if (PreviewPlaybackPolicy.shouldSeek(playWhenReady, player.currentPosition, requested)) {
+            player.seekTo(requested)
+        }
     }
     LaunchedEffect(player, playWhenReady, speed, volume) {
         player.playbackParameters = PlaybackParameters(speed.coerceIn(0.25f, 4f))

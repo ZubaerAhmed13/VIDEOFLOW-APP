@@ -16,6 +16,7 @@ import com.videoflow.app.domain.export.ExportFailureCode
 import com.videoflow.app.domain.export.ExportJob
 import com.videoflow.app.domain.export.ExportJobStatus
 import com.videoflow.app.domain.export.ExportMath
+import com.videoflow.app.domain.export.ExportMode
 import com.videoflow.app.domain.export.ExportProblem
 import com.videoflow.app.domain.export.ExportQuality
 import com.videoflow.app.domain.export.ExportResolutionPreset
@@ -25,11 +26,13 @@ import com.videoflow.app.domain.export.ExportWarning
 import com.videoflow.app.domain.export.FinalRenderPlan
 import com.videoflow.app.domain.export.HdrPolicy
 import com.videoflow.app.domain.export.ResolvedExportSettings
+import com.videoflow.app.domain.export.SourcePreservationPolicy
 import com.videoflow.app.domain.export.VideoCodec
 import com.videoflow.app.export.ExportCoordinator
 import com.videoflow.app.export.ExportForegroundService
 import com.videoflow.app.render.AndroidEncoderCapabilitySource
 import com.videoflow.app.render.ExportCapabilityValidator
+import com.videoflow.app.render.SmartCopyEngine
 import com.videoflow.app.ui.product.sanitizeExportFileName
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -42,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.max
 
 
 data class ExportUiState(
@@ -54,10 +58,14 @@ data class ExportUiState(
     val warnings: List<ExportWarning> = emptyList(),
     val problems: List<ExportProblem> = emptyList(),
     val jobs: List<ExportJob> = emptyList(),
+    val smartCopyAvailable: Boolean = false,
+    val smartCopyReason: String? = null,
+    val sourcePreservationNotes: List<String> = emptyList(),
     val message: String? = null
 ) {
     val canStart: Boolean
         get() = !loading && resolved != null && destinationUri != null && problems.isEmpty() &&
+            (requested.mode != ExportMode.SMART_COPY || smartCopyAvailable) &&
             jobs.none { it.status in ACTIVE_STATUSES }
 
     val activeJob: ExportJob?
@@ -78,7 +86,8 @@ data class ExportUiState(
 class ExportViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: ExportRepository,
-    private val coordinator: ExportCoordinator
+    private val coordinator: ExportCoordinator,
+    private val smartCopyEngine: SmartCopyEngine
 ) : ViewModel() {
     private val _state = MutableStateFlow(ExportUiState())
     val state: StateFlow<ExportUiState> = _state.asStateFlow()
@@ -112,25 +121,32 @@ class ExportViewModel @Inject constructor(
         }
     }
 
-    fun setResolution(preset: ExportResolutionPreset) {
-        updateRequested { current ->
-            if (preset == ExportResolutionPreset.CUSTOM) {
-                current.copy(resolutionPreset = preset, customWidth = current.customWidth ?: 1920, customHeight = current.customHeight ?: 1080)
-            } else current.copy(resolutionPreset = preset)
+    fun setExportMode(mode: ExportMode) {
+        val renderPlan = plan ?: return
+        if (mode == ExportMode.SMART_COPY && !_state.value.smartCopyAvailable) {
+            _state.value = _state.value.copy(message = _state.value.smartCopyReason ?: "Smart Copy is unavailable for this edit.")
+            return
         }
+        updateRequested { current -> SourcePreservationPolicy.settingsForMode(renderPlan, current, mode) }
     }
 
-    fun setCustomWidth(value: Int) = updateRequested { it.copy(customWidth = value.coerceAtLeast(2)) }
-    fun setCustomHeight(value: Int) = updateRequested { it.copy(customHeight = value.coerceAtLeast(2)) }
-    fun setFrameRate(value: FrameRate?) = updateRequested { it.copy(frameRate = value) }
-    fun setVideoCodec(value: VideoCodec) = updateRequested { it.copy(videoCodec = value) }
-    fun setQuality(value: ExportQuality) = updateRequested { it.copy(quality = value) }
-    fun setBitrateMode(value: BitrateMode) = updateRequested { it.copy(bitrateMode = value) }
-    fun setAudioBitrate(value: Int) = updateRequested { it.copy(audioBitrate = value.coerceIn(64_000, 512_000)) }
-    fun setHdrPolicy(value: HdrPolicy) = updateRequested { it.copy(hdrPolicy = value) }
+    fun setResolution(preset: ExportResolutionPreset) = manualUpdate { current ->
+        if (preset == ExportResolutionPreset.CUSTOM) {
+            current.copy(resolutionPreset = preset, customWidth = current.customWidth ?: 1920, customHeight = current.customHeight ?: 1080)
+        } else current.copy(resolutionPreset = preset)
+    }
+
+    fun setCustomWidth(value: Int) = manualUpdate { it.copy(customWidth = value.coerceAtLeast(2)) }
+    fun setCustomHeight(value: Int) = manualUpdate { it.copy(customHeight = value.coerceAtLeast(2)) }
+    fun setFrameRate(value: FrameRate?) = manualUpdate { it.copy(frameRate = value) }
+    fun setVideoCodec(value: VideoCodec) = manualUpdate { it.copy(videoCodec = value) }
+    fun setQuality(value: ExportQuality) = manualUpdate { it.copy(quality = value) }
+    fun setBitrateMode(value: BitrateMode) = manualUpdate { it.copy(bitrateMode = value) }
+    fun setAudioBitrate(value: Int) = manualUpdate { it.copy(audioBitrate = value.coerceIn(64_000, 512_000)) }
+    fun setHdrPolicy(value: HdrPolicy) = manualUpdate { it.copy(hdrPolicy = value) }
 
     fun resetRecommended() {
-        _state.value = _state.value.copy(requested = ExportSettings(), message = null)
+        _state.value = _state.value.copy(requested = ExportSettings(mode = ExportMode.RECOMMENDED), message = null)
         recompute()
     }
 
@@ -146,9 +162,7 @@ class ExportViewModel @Inject constructor(
         _state.value = _state.value.copy(destinationUri = uri)
     }
 
-    fun startExport() {
-        startExport("VideoFlow_${System.currentTimeMillis()}.mp4")
-    }
+    fun startExport() = startExport("VideoFlow_${System.currentTimeMillis()}.mp4")
 
     fun startExport(displayName: String) {
         val id = projectId ?: return
@@ -168,6 +182,7 @@ class ExportViewModel @Inject constructor(
     }
 
     fun cancelActiveExport() {
+        smartCopyEngine.cancel()
         viewModelScope.launch { coordinator.cancel() }
     }
 
@@ -175,10 +190,14 @@ class ExportViewModel @Inject constructor(
         _state.value = _state.value.copy(message = null)
     }
 
+    private fun manualUpdate(block: (ExportSettings) -> ExportSettings) {
+        updateRequested { current -> block(current).copy(mode = ExportMode.RECOMMENDED) }
+    }
+
     private fun updateRequested(block: (ExportSettings) -> ExportSettings) {
         runCatching { block(_state.value.requested) }
             .onSuccess {
-                _state.value = _state.value.copy(requested = it)
+                _state.value = _state.value.copy(requested = it, message = null)
                 recompute()
             }
             .onFailure { _state.value = _state.value.copy(message = "That export setting is not valid.") }
@@ -186,24 +205,42 @@ class ExportViewModel @Inject constructor(
 
     private fun recompute() {
         val renderPlan = plan ?: return
-        val requested = _state.value.requested
+        val requestedSnapshot = _state.value.requested
         recomputeJob?.cancel()
         recomputeJob = viewModelScope.launch {
+            val analysis = withContext(Dispatchers.IO) {
+                val policy = SourcePreservationPolicy.analyze(renderPlan)
+                val preflight = smartCopyEngine.preflight(renderPlan)
+                policy to preflight
+            }
+            val policy = analysis.first
+            val smartPreflight = analysis.second
+            val normalizedRequested = if (requestedSnapshot.mode == ExportMode.MATCH_SOURCE || requestedSnapshot.mode == ExportMode.SMART_COPY) {
+                SourcePreservationPolicy.settingsForMode(renderPlan, requestedSnapshot, requestedSnapshot.mode)
+            } else requestedSnapshot
+
             val computed = withContext(Dispatchers.Default) {
                 runCatching {
                     val resolved = ExportMath.resolve(
                         ExportSize(renderPlan.editorPlan.width, renderPlan.editorPlan.height),
                         renderPlan.editorPlan.frameRate,
-                        requested
+                        normalizedRequested
                     )
                     val hasHdr = renderPlan.originalSources.values.any {
                         it.hdrStaticInfoPresent || it.colorTransfer == C.COLOR_TRANSFER_HLG || it.colorTransfer == C.COLOR_TRANSFER_ST2084
                     }
-                    val capability = ExportCapabilityValidator.validate(resolved, hasHdr, AndroidEncoderCapabilitySource())
+                    val capability = if (normalizedRequested.mode == ExportMode.SMART_COPY) {
+                        com.videoflow.app.render.ExportCapabilityResult(emptyList(), emptyList())
+                    } else ExportCapabilityValidator.validate(resolved, hasHdr, AndroidEncoderCapabilitySource())
                     val expectsAudio = renderPlan.editorPlan.clips.any { clip ->
                         clip.enabled && renderPlan.originalSources[clip.assetId]?.audioCodecMime != null
                     }
-                    val estimate = ExportMath.estimateOutputSize(
+                    val estimate = if (normalizedRequested.mode == ExportMode.SMART_COPY) {
+                        SourcePreservationPolicy.estimateSmartCopyPayloadBytes(renderPlan)?.let { payload ->
+                            val margin = max(65_536L, payload / 50L)
+                            ExportEstimate(payload, margin, Math.addExact(payload, margin), margin.toDouble() / payload.coerceAtLeast(1L))
+                        }
+                    } else ExportMath.estimateOutputSize(
                         renderPlan.durationUs,
                         resolved.videoBitrate,
                         if (expectsAudio) resolved.audioBitrate else 0
@@ -215,20 +252,32 @@ class ExportViewModel @Inject constructor(
                 val mappingProblem = if (renderPlan.originalSources.isEmpty() && renderPlan.editorPlan.clips.isNotEmpty()) {
                     listOf(ExportProblem(ExportFailureCode.SOURCE_MISSING, "Original source mapping is unavailable."))
                 } else emptyList()
+                val smartModeProblem = if (normalizedRequested.mode == ExportMode.SMART_COPY && !smartPreflight.eligible) {
+                    listOf(ExportProblem(ExportFailureCode.VALIDATION_FAILED, "Smart Copy cannot be used for this exact edit. ${smartPreflight.reasons.joinToString(" ")}"))
+                } else emptyList()
                 val warnings = buildList {
                     addAll(capability.warnings)
-                    if (resolved.isUpscale) add(ExportWarning("UPSCALE", "This will enlarge the video but cannot create additional source detail."))
+                    if (resolved.isUpscale && normalizedRequested.mode != ExportMode.SMART_COPY) {
+                        add(ExportWarning("UPSCALE", "This will enlarge the video but cannot create additional source detail."))
+                    }
+                    policy.matchSourceWarnings.forEachIndexed { index, note -> add(ExportWarning("SOURCE_$index", note)) }
                 }
                 _state.value = _state.value.copy(
+                    requested = normalizedRequested,
                     resolved = resolved,
                     estimate = estimate,
                     warnings = warnings,
-                    problems = (baseProblems + mappingProblem + capability.problems).distinctBy { it.code to it.message }
+                    smartCopyAvailable = smartPreflight.eligible,
+                    smartCopyReason = if (smartPreflight.eligible) "Available because this edit can be completed without video re-encoding." else smartPreflight.reasons.firstOrNull(),
+                    sourcePreservationNotes = policy.matchSourceWarnings,
+                    problems = (baseProblems + mappingProblem + smartModeProblem + capability.problems).distinctBy { it.code to it.message }
                 )
             }.onFailure {
                 _state.value = _state.value.copy(
                     resolved = null,
                     estimate = null,
+                    smartCopyAvailable = smartPreflight.eligible,
+                    smartCopyReason = smartPreflight.reasons.firstOrNull(),
                     problems = (baseProblems + ExportProblem(ExportFailureCode.UNKNOWN, "The selected export settings are not valid.")).distinctBy { it.code to it.message }
                 )
             }

@@ -10,18 +10,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.videoflow.app.data.db.VideoFlowDatabase
 import com.videoflow.app.data.editor.EditorRepository
+import com.videoflow.app.data.media.MediaAnalyzer
 import com.videoflow.app.data.project.AddMediaResult
 import com.videoflow.app.data.project.ProjectRepository
 import com.videoflow.app.domain.editor.FrameRate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
 import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -91,14 +96,31 @@ enum class ProjectAspectPreset(val label: String, val supporting: String, val wi
 
 data class ProjectCreationResult(val projectId: String, val importedMedia: Boolean)
 
+data class MergeCandidate(
+    val selectionId: String = UUID.randomUUID().toString(),
+    val uri: Uri,
+    val displayName: String,
+    val durationUs: Long?,
+    val width: Int?,
+    val height: Int?,
+    val frameRate: Double?,
+    val videoCodecMime: String?
+)
+
 @HiltViewModel
 class ProductHomeViewModel @Inject constructor(
     private val projectRepository: ProjectRepository,
     private val editorRepository: EditorRepository,
-    private val database: VideoFlowDatabase
+    private val database: VideoFlowDatabase,
+    private val mediaAnalyzer: MediaAnalyzer
 ) : ViewModel() {
     val projects = projectRepository.observeProjects()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _mergeCandidates = MutableStateFlow<List<MergeCandidate>>(emptyList())
+    val mergeCandidates: StateFlow<List<MergeCandidate>> = _mergeCandidates.asStateFlow()
+    private val _mergeBusy = MutableStateFlow(false)
+    val mergeBusy: StateFlow<Boolean> = _mergeBusy.asStateFlow()
 
     fun createProject(
         name: String,
@@ -152,6 +174,105 @@ class ProductHomeViewModel @Inject constructor(
             }.onSuccess(onDone).onFailure {
                 createdId?.let { id -> runCatching { projectRepository.deleteProject(id) } }
                 onError("VideoFlow could not create a project from this media. The original file was not changed.")
+            }
+        }
+    }
+
+    fun prepareMergeSelection(uris: List<Uri>, append: Boolean, onError: (String) -> Unit) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            _mergeBusy.value = true
+            try {
+                val analyzed = mutableListOf<MergeCandidate>()
+                for (uri in uris) {
+                    val info = runCatching { mediaAnalyzer.analyze(uri) }.getOrElse {
+                        onError("VideoFlow could not read one of the selected videos.")
+                        continue
+                    }
+                    val metadata = info.metadata
+                    if (metadata.videoCodecMime == null || metadata.durationUs == null || metadata.durationUs <= 0L) {
+                        onError("${info.displayName} is not a supported video for Merge Videos.")
+                        continue
+                    }
+                    analyzed += MergeCandidate(
+                        uri = uri,
+                        displayName = info.displayName,
+                        durationUs = metadata.durationUs,
+                        width = metadata.width,
+                        height = metadata.height,
+                        frameRate = metadata.frameRate,
+                        videoCodecMime = metadata.videoCodecMime
+                    )
+                }
+                _mergeCandidates.value = if (append) _mergeCandidates.value + analyzed else analyzed
+            } finally {
+                _mergeBusy.value = false
+            }
+        }
+    }
+
+    fun moveMergeCandidate(index: Int, delta: Int) {
+        val list = _mergeCandidates.value.toMutableList()
+        val target = index + delta
+        if (index !in list.indices || target !in list.indices) return
+        val item = list.removeAt(index)
+        list.add(target, item)
+        _mergeCandidates.value = list
+    }
+
+    fun removeMergeCandidate(index: Int) {
+        val list = _mergeCandidates.value.toMutableList()
+        if (index !in list.indices) return
+        list.removeAt(index)
+        _mergeCandidates.value = list
+    }
+
+    fun clearMergeSelection() {
+        _mergeCandidates.value = emptyList()
+    }
+
+    fun createMergeProject(
+        name: String,
+        onDone: (ProjectCreationResult) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val safeName = validatedName(name) ?: return onError("Enter a merge project name.")
+        val ordered = _mergeCandidates.value
+        if (ordered.size < 2) return onError("Select at least two videos to merge.")
+        viewModelScope.launch {
+            if (_mergeBusy.value) return@launch
+            _mergeBusy.value = true
+            var createdId: String? = null
+            try {
+                val id = projectRepository.createProject(safeName)
+                createdId = id
+                editorRepository.ensureProjectInitialized(id)
+
+                // Explicit project authority: the first ordered video seeds project canvas/FPS.
+                // This is a project setting only; Smart Copy still verifies every encoded source.
+                val first = ordered.first()
+                val canvas = sourceAwareCanvas(first.width, first.height) ?: (1920 to 1080)
+                setCanvas(id, canvas.first, canvas.second, sourceFrameRate(first.frameRate))
+
+                var timelineCursorUs = 0L
+                for (candidate in ordered) {
+                    val asset = when (val imported = projectRepository.addMedia(id, candidate.uri)) {
+                        is AddMediaResult.Added -> imported.asset
+                        is AddMediaResult.DuplicateCandidate -> projectRepository.confirmAddDuplicate(imported.candidate)
+                    }
+                    require(asset.mimeType?.startsWith("video/") == true || asset.videoCodecMime != null) {
+                        "Merge selection is not a video"
+                    }
+                    val clip = editorRepository.addClip(id, asset.id, timelineCursorUs)
+                    timelineCursorUs = clip.timelineEndUs
+                }
+                _mergeCandidates.value = emptyList()
+                onDone(ProjectCreationResult(id, importedMedia = true))
+            } catch (_: Throwable) {
+                createdId?.let { id -> runCatching { projectRepository.deleteProject(id) } }
+                onError("VideoFlow could not build this merge project. The original videos were not changed.")
+            } finally {
+                _mergeBusy.value = false
             }
         }
     }
