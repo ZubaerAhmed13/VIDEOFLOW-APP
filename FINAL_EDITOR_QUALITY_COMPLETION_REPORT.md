@@ -2,9 +2,9 @@
 
 ## Overall Status
 
-**PARTIAL — automated exact-head certification and physical same-phone certification are required before COMPLETE.**
+**PARTIAL — automated certification is green; physical same-phone certification remains required before COMPLETE.**
 
-This report is intentionally conservative. The correction implementation is in place, but the task definition makes the user's real-device experience authoritative and forbids a COMPLETE label while physical hard blockers remain unverified.
+The correction implementation and automated certification gates are now passing. This report remains intentionally conservative because the task definition makes the user's real-device experience authoritative and forbids a COMPLETE label while physical hard blockers remain unverified.
 
 ## Source
 
@@ -13,10 +13,13 @@ This report is intentionally conservative. The correction implementation is in p
 - Base SHA: `3146ab565b322cb48641fcb7e564cb8ad9819796`
 - Correction branch: `editor-final-quality-source-preservation`
 - First integration checkpoint: `97939d6ad069c8d5bbd2c88ec7a1aae1a84cd709`
-- First checkpoint CI run: `34030168932` (build/regression/package job PASS, later superseded)
-- Final documentation HEAD: assigned by the documentation commit containing this report; use the exact subsequent CI run as final automated evidence.
+- First checkpoint CI run: `34030168932` (build/regression/package job PASS, superseded)
+- Green automated candidate SHA: `87449f132a7daa69c28ccab3e42011b37547f755`
+- Green automated candidate CI run: `34033095077`
 
-The approved branch was not modified or automatically merged.
+Run `34033095077` passed both the full build/regression/package job and the API-35 editor/Review install-and-update certification job. Because editing this report advances branch HEAD, the authoritative final automated evidence is the subsequent dedicated workflow run on the exact report-containing HEAD; it must remain green and its artifacts/hashes must be used for final delivery.
+
+The approved base branch was not modified or automatically merged.
 
 ## Playback
 
@@ -25,7 +28,7 @@ Root cause addressed: high-frequency editor playhead changes are no longer allow
 - Player reuse architecture: IMPLEMENTED
 - Decoder seek decoupling: IMPLEMENTED
 - Existing proxy/original workflow preserved: IMPLEMENTED
-- Automated policy/regression tests: INCLUDED IN FINAL CI
+- Automated policy/regression tests: **PASS in run `34033095077`**
 - Same-phone playback result: **NOT VERIFIED**
 
 The editor still publishes UI playhead state at high frequency. This report does not claim the entire Compose tree is fully performance-profiled until physical review confirms the practical result.
@@ -36,6 +39,7 @@ The editor still publishes UI playhead state at high frequency. This report does
 - Precise Trim Material fields/error/duration colours: IMPLEMENTED
 - Existing editor tool functionality preserved: IMPLEMENTED
 - Product light/dark appearance outside editor preserved: IMPLEMENTED
+- Automated editor/UI certification: **PASS in run `34033095077`**
 - Same-phone visual contrast result: **NOT VERIFIED**
 
 ## Precise Trim
@@ -49,6 +53,7 @@ The editor still publishes UI playhead state at high frequency. This report does
 - VFR/real sample timestamp normalization: IMPLEMENTED
 - single Undo/Redo history entry: IMPLEMENTED
 - Smart Copy sync-boundary rule: IMPLEMENTED
+- automated regression/build gate: **PASS in run `34033095077`**
 - physical field/handle/output agreement: **NOT VERIFIED**
 
 ## Merge
@@ -61,6 +66,7 @@ The editor still publishes UI playhead state at high frequency. This report does
 - intentional duplicate source handling: IMPLEMENTED
 - editor preview + existing Trim/export reuse: IMPLEMENTED
 - exact first-source project resolution/FPS authority: IMPLEMENTED
+- API-35 Home -> Merge -> Back product-flow certification: **PASS in run `34033095077`**
 - physical three-video workflow: **NOT VERIFIED**
 
 ## Source Preservation
@@ -73,6 +79,7 @@ The editor still publishes UI playhead state at high frequency. This report does
 - exact trim-start sync-sample check: IMPLEMENTED
 - timestamp rebasing: IMPLEMENTED
 - no silent rendered fallback: IMPLEMENTED
+- automated policy/regression/build gate: **PASS in run `34033095077`**
 - physical output/A-V sync/quality: **NOT VERIFIED**
 
 ### Match Source / Source Fidelity
@@ -86,6 +93,7 @@ The editor still publishes UI playhead state at high frequency. This report does
 - colour/HDR metadata/policy integration: IMPLEMENTED
 - heterogeneous source project-authority warning: IMPLEMENTED
 - no exact-file-size/lossless promise: IMPLEMENTED
+- automated source-authority/API-35 export gate: **PASS in run `34033095077`**
 - physical rendered metadata/visual comparison: **NOT VERIFIED**
 
 ## AI Handoff
@@ -109,27 +117,33 @@ Name:
 
 The workflow preserves and exercises the existing Step 1/2/3 and UI regression suite, final-quality unit tests, lint, instrumentation compilation, Debug/Review/Release assembly, Review signing, SHA-256 packaging and API-35 exact-artifact install/update certification.
 
-An earlier integration run (`34030168932`) proved the first checkpoint could pass the full build/regression/package job. Because later correctness/test/documentation commits change HEAD, that run is not final evidence. The workflow must pass again on the exact documentation HEAD.
+Successful candidate evidence:
+
+- SHA: `87449f132a7daa69c28ccab3e42011b37547f755`
+- Run: `34033095077`
+- Job 1: **PASS**
+- API-35 Job 2: **PASS**
+- Review fresh install/cold launch/in-place update: **PASS**
+
+The report-containing HEAD must also pass the same workflow. That subsequent exact-head run is the authoritative final automated artifact source; no earlier APK or hash should be substituted.
 
 ## APK Artifacts
 
-Final exact-head CI is required to produce:
+The authoritative exact-head CI produces:
 
 - `VideoFlow_Android_FinalEditorQuality_Debug.apk`
 - `VideoFlow_Android_FinalEditorQuality_Review.apk`
 - `VideoFlow_Android_FinalEditorQuality_Release.apk`
 - `SHA256SUMS.txt`
 
-Review identity requirements remain:
+Review identity requirements:
 
 - application ID `com.videoflow.app.review`;
-- stable Review signing identity already enforced by CI.
+- stable Review signing identity enforced by CI.
 
-Exact final SHA-256 values must be taken from the exact-head workflow artifact after this documentation commit.
+Exact final SHA-256 values must be taken from the final report-containing exact-head workflow artifact, not copied from a superseded run.
 
 ## Required Documentation
-
-Created as part of the final documentation commit:
 
 - `PLAYBACK_PERFORMANCE_ARCHITECTURE.md`
 - `PRECISE_TRIM_ARCHITECTURE.md`
@@ -153,8 +167,8 @@ Created as part of the final documentation commit:
 
 **NOT READY** until:
 
-1. final exact-head Job 1 PASS;
-2. exact-artifact API-35 Job 2 PASS including Review fresh install/update;
+1. final report-containing exact-head Job 1 remains PASS;
+2. exact-artifact API-35 Job 2 remains PASS including Review fresh install/update;
 3. exact Review APK is installed on the same physical phone;
 4. physical playback, contrast, Precise Trim, Merge, Smart Copy and Match Source all pass;
 5. independent review approves this correction branch.
@@ -163,4 +177,4 @@ Created as part of the final documentation commit:
 
 Do **not** apply the final `COMPLETE / READY FOR INDEPENDENT REVIEW BEFORE STEP 4 AI` label yet.
 
-Once the automated exact-head run and required physical review both pass, update the physical/completion evidence and stop for independent review. Do not begin Step 4 automatically.
+Automated certification has reached a green candidate. Once the final report-containing exact-head workflow is also green, the only remaining hard gate is the required same-phone physical review plus independent approval. Do not begin Step 4 automatically.
