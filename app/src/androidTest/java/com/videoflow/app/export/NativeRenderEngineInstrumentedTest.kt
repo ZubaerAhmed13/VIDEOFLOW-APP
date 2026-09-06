@@ -6,11 +6,14 @@ import android.content.ContentValues
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.videoflow.app.ai.watermark.AiModelPackManager
+import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.domain.editor.FrameRate
 import com.videoflow.app.domain.editor.RenderPlan
 import com.videoflow.app.domain.editor.TimelineClip
 import com.videoflow.app.domain.editor.TimelineTrack
 import com.videoflow.app.domain.editor.TrackType
+import com.videoflow.app.domain.export.AudioCodec
 import com.videoflow.app.domain.export.BitrateMode
 import com.videoflow.app.domain.export.ExportQuality
 import com.videoflow.app.domain.export.ExportSize
@@ -19,7 +22,6 @@ import com.videoflow.app.domain.export.HdrPolicy
 import com.videoflow.app.domain.export.OriginalRenderSource
 import com.videoflow.app.domain.export.ResolvedExportSettings
 import com.videoflow.app.domain.export.VideoCodec
-import com.videoflow.app.domain.export.AudioCodec
 import com.videoflow.app.render.Media3RenderEngine
 import com.videoflow.app.render.OutputDestination
 import kotlinx.coroutines.runBlocking
@@ -107,7 +109,15 @@ class NativeRenderEngineInstrumentedTest {
                 isUpscale = false
             )
 
-            val engine = Media3RenderEngine(context)
+            // Step 4 extends the native renderer with local-AI dependencies. This fixture has no
+            // AI sidecar edits, so the model pack is not opened during this render; nevertheless
+            // the test deliberately uses the real local repository/manager to exercise the exact
+            // production constructor and keep the pre-AI native-render regression intact.
+            val engine = Media3RenderEngine(
+                context = context,
+                aiRepository = AiWatermarkRepository(context),
+                aiModelPackManager = AiModelPackManager(context)
+            )
             val prepared = engine.prepare(plan, OutputDestination(outputUri, "render-test.mp4"), settings)
             assertTrue("Preflight problems: ${prepared.problems}", prepared.ready)
             assertEquals(false, prepared.preparation!!.usesTemporaryLocalOutput)
