@@ -14,6 +14,11 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.TransformationRequest
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
+import com.videoflow.app.ai.watermark.AiModelPackManager
+import com.videoflow.app.ai.watermark.SharedLamaRenderRuntime
+import com.videoflow.app.data.ai.AiWatermarkRepository
+import com.videoflow.app.domain.ai.AiModelRole
+import com.videoflow.app.domain.ai.AiReconstructionExportPolicy
 import com.videoflow.app.domain.editor.TrackType
 import com.videoflow.app.domain.export.BitrateMode
 import com.videoflow.app.domain.export.ExportFailureCode
@@ -48,20 +53,23 @@ class RenderPipelineException(
 ) : Exception(message, cause)
 
 /**
- * Native Step 3 renderer. Source media remains SAF/reference based. Encoded MP4 samples are muxed
- * directly into the user-selected SAF file descriptor; app-private storage is used only for small,
- * bounded raster assets required by text/background composition, never for a second full-size MP4.
+ * Native renderer with Step-4 local AI integration. Source media stays SAF/reference based. AI
+ * reconstruction is applied to bounded original-resolution ROIs before crop/transform and encoded
+ * samples are still muxed directly to the user-selected SAF destination.
  */
 @Singleton
 @UnstableApi
 class Media3RenderEngine @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val aiRepository: AiWatermarkRepository,
+    private val aiModelPackManager: AiModelPackManager
 ) : RenderEngine {
     private val renderMutex = Mutex()
     private val validator = OutputValidator(context.contentResolver)
     private val exportRoot = File(context.cacheDir, "render-raster")
     @Volatile private var activeTransformer: Transformer? = null
     @Volatile private var activeCompletion: CompletableDeferred<ExportResult>? = null
+    @Volatile private var activeAiRuntime: SharedLamaRenderRuntime? = null
 
     override suspend fun prepare(
         plan: FinalRenderPlan,
@@ -76,6 +84,47 @@ class Media3RenderEngine @Inject constructor(
         if (plan.durationUs <= 0L) {
             problems += ExportProblem(ExportFailureCode.VALIDATION_FAILED, "Timeline is empty and has no frames to export.")
         }
+
+        val allAiEffects = runCatching { aiRepository.load(plan.editorPlan.projectId) }
+            .getOrElse {
+                problems += ExportProblem(ExportFailureCode.VALIDATION_FAILED, "Could not read local AI edit state: ${it.message ?: "unknown error"}.")
+                emptyList()
+            }
+        val aiEffects = AiReconstructionExportPolicy.activeForProject(allAiEffects, plan.editorPlan.clips)
+        AiReconstructionExportPolicy.validationProblems(allAiEffects, plan.editorPlan.clips).forEach { message ->
+            problems += ExportProblem(ExportFailureCode.VALIDATION_FAILED, message)
+        }
+        if (aiEffects.isNotEmpty()) {
+            val clipsById = plan.editorPlan.clips.associateBy { it.id }
+            aiEffects.forEach { effect ->
+                val clip = clipsById[effect.clipId] ?: return@forEach
+                val source = plan.originalSources[clip.assetId]
+                if (source?.width == null || source.height == null || source.width <= 0 || source.height <= 0) {
+                    problems += ExportProblem(
+                        ExportFailureCode.VALIDATION_FAILED,
+                        "Local AI reconstruction needs known original source dimensions for clip ${clip.id}. Relink/re-analyze the source before export."
+                    )
+                }
+            }
+            if (sourceHasHdr && settings.hdrPolicy != HdrPolicy.CONVERT_TO_SDR) {
+                problems += ExportProblem(
+                    ExportFailureCode.VALIDATION_FAILED,
+                    "Local AI reconstruction currently processes SDR pixel buffers. This project contains HDR media; choose explicit HDR-to-SDR conversion or remove the AI reconstruction edit. HDR is never silently downgraded."
+                )
+            }
+            runCatching { aiModelPackManager.ensureInstalled(AiModelRole.FINAL) }
+                .onFailure { error ->
+                    problems += ExportProblem(
+                        ExportFailureCode.VALIDATION_FAILED,
+                        "Final local LaMa model pack is unavailable or failed integrity validation: ${error.message ?: error::class.java.simpleName}."
+                    )
+                }
+            warnings += ExportWarning(
+                "LOCAL_AI_RENDER_REQUIRED",
+                "Local AI reconstruction is active. Video will be rendered at the selected source-fidelity settings; Smart Copy cannot be used for pixel-changing AI edits."
+            )
+        }
+
         val estimate = runCatching {
             ExportMath.estimateOutputSize(plan.durationUs, settings.videoBitrate, if (expectsAudio(plan)) settings.audioBitrate else 0)
         }.getOrElse {
@@ -141,11 +190,23 @@ class Media3RenderEngine @Inject constructor(
         jobRoot.mkdirs()
         val fallbackDetected = AtomicBoolean(false)
         var transformerForCleanup: Transformer? = null
+        var aiRuntimeForCleanup: SharedLamaRenderRuntime? = null
         var completedSuccessfully = false
         try {
             listener.onProgress(0.01f)
+            val allAiEffects = withContext(Dispatchers.IO) { aiRepository.load(preparation.plan.editorPlan.projectId) }
+            val aiEffects = AiReconstructionExportPolicy.activeForProject(allAiEffects, preparation.plan.editorPlan.clips)
+            if (aiEffects.isNotEmpty()) {
+                aiRuntimeForCleanup = SharedLamaRenderRuntime.create(aiModelPackManager)
+                activeAiRuntime = aiRuntimeForCleanup
+            }
             val bundle = withContext(Dispatchers.IO) {
-                Media3CompositionBuilder(RenderRasterAssets(rasterRoot)).build(preparation.plan, preparation.settings)
+                Media3CompositionBuilder(RenderRasterAssets(rasterRoot)).build(
+                    plan = preparation.plan,
+                    settings = preparation.settings,
+                    aiEffects = aiEffects,
+                    aiRuntime = aiRuntimeForCleanup
+                )
             }
             listener.onProgress(0.04f)
 
@@ -216,6 +277,7 @@ class Media3RenderEngine @Inject constructor(
                 )
             )
         } catch (cancelled: CancellationException) {
+            aiRuntimeForCleanup?.cancel()
             withContext(NonCancellable + Dispatchers.Main.immediate) { transformerForCleanup?.cancel() }
             Result.failure(RenderPipelineException(ExportFailureCode.CANCELLED, "Export was cancelled.", cancelled))
         } catch (t: Throwable) {
@@ -224,6 +286,8 @@ class Media3RenderEngine @Inject constructor(
         } finally {
             activeTransformer = null
             activeCompletion = null
+            activeAiRuntime = null
+            runCatching { aiRuntimeForCleanup?.close() }
             if (!completedSuccessfully) {
                 withContext(NonCancellable + Dispatchers.IO) { truncateDestination(preparation.destination) }
             }
@@ -234,6 +298,7 @@ class Media3RenderEngine @Inject constructor(
     override suspend fun cancel() {
         val cancellation = RenderPipelineException(ExportFailureCode.CANCELLED, "Export cancelled by user.")
         activeCompletion?.completeExceptionally(cancellation)
+        activeAiRuntime?.cancel()
         withContext(NonCancellable + Dispatchers.Main.immediate) {
             activeTransformer?.cancel()
         }
@@ -258,7 +323,7 @@ class Media3RenderEngine @Inject constructor(
             .setRequestedVideoEncoderSettings(videoSettings)
             .setRequestedAudioEncoderSettings(audioSettings)
             .build()
-        val listener = object : Transformer.Listener {
+        val transformerListener = object : Transformer.Listener {
             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                 completion.complete(exportResult)
             }
@@ -280,7 +345,7 @@ class Media3RenderEngine @Inject constructor(
             .setAudioMimeType(preparation.settings.audioCodec.mimeType)
             .setEncoderFactory(encoderFactory)
             .setMuxerFactory(SafMediaMuxerFactory(context.contentResolver, preparation.destination.uri))
-            .addListener(listener)
+            .addListener(transformerListener)
             .build()
     }
 
@@ -318,9 +383,7 @@ class Media3RenderEngine @Inject constructor(
     }.getOrDefault(DestinationProbe(false, null))
 
     private fun truncateDestination(destination: OutputDestination) {
-        runCatching {
-            context.contentResolver.openFileDescriptor(destination.uri, "rwt")?.close()
-        }
+        runCatching { context.contentResolver.openFileDescriptor(destination.uri, "rwt")?.close() }
     }
 
     private fun expectsAudio(plan: FinalRenderPlan): Boolean {
@@ -347,8 +410,7 @@ class Media3RenderEngine @Inject constructor(
     }
 
     private fun hasMixedColourMetadata(sources: List<OriginalRenderSource>): Boolean {
-        fun <T> mixed(selector: (OriginalRenderSource) -> T?): Boolean =
-            sources.mapNotNull(selector).distinct().size > 1
+        fun <T> mixed(selector: (OriginalRenderSource) -> T?): Boolean = sources.mapNotNull(selector).distinct().size > 1
         return mixed { it.colorStandard } || mixed { it.colorRange } || mixed { it.colorTransfer }
     }
 
