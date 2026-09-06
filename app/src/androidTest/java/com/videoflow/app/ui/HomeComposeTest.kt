@@ -89,7 +89,7 @@ class HomeComposeTest {
         // empty/render-ineligible project, while Match Source remains available for rendered work.
         rule.onNodeWithText("Export Mode: Recommended").performClick()
         rule.waitUntil(10_000) {
-            nodeExistsWithText("Match Source") && nodeExistsWithText("Smart Copy is not available for this edit")
+            nodeExistsWithText("Match Source") && nodeExistsWithTextSubstring("Smart Copy is not available for this edit")
         }
         rule.onNodeWithText("Match Source").fetchSemanticsNode()
         rule.onNodeWithText("Smart Copy is not available for this edit", substring = true).fetchSemanticsNode()
@@ -116,6 +116,9 @@ class HomeComposeTest {
 
     private fun nodeExistsWithText(text: String): Boolean =
         rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+
+    private fun nodeExistsWithTextSubstring(text: String): Boolean =
+        rule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
 
     private fun nodeExistsWithDescription(description: String): Boolean =
         rule.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty()
