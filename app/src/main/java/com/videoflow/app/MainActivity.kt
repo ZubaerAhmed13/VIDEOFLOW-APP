@@ -21,7 +21,6 @@ import com.videoflow.app.ui.product.PreferencesViewModel
 import com.videoflow.app.ui.screens.AboutScreen
 import com.videoflow.app.ui.screens.DeviceCapabilityScreen
 import com.videoflow.app.ui.screens.DiagnosticsScreen
-import com.videoflow.app.ui.screens.FinalQualityEditorRoute
 import com.videoflow.app.ui.screens.FinalQualityExportRoute
 import com.videoflow.app.ui.screens.FinalQualityHomeRoute
 import com.videoflow.app.ui.screens.MergeVideosScreen
@@ -29,6 +28,7 @@ import com.videoflow.app.ui.screens.PrivacyScreen
 import com.videoflow.app.ui.screens.ProductOnboardingScreen
 import com.videoflow.app.ui.screens.ProfessionalSettingsScreen
 import com.videoflow.app.ui.screens.Step2ProjectScreen
+import com.videoflow.app.ui.screens.Step4WatermarkEditorRoute
 import com.videoflow.app.ui.theme.VideoFlowTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -106,11 +106,11 @@ private fun VideoFlowNavigation(preferencesViewModel: PreferencesViewModel) {
             val id = requireNotNull(entry.arguments?.getString("id"))
             val editorVm: EditorViewModel = hiltViewModel()
             // The professional editor intentionally owns a dark workspace independent of the
-            // user's shell appearance. This keeps every Material control, dialog and sheet inside
-            // the editor on a matching dark colour scheme and prevents light-theme content colours
+            // user's shell appearance. This keeps every Material control, dialog and Step-4 AI
+            // surface on a matching dark colour scheme and prevents light-theme content colours
             // from leaking onto the custom dark editor surfaces.
             VideoFlowTheme(appearance = AppAppearance.DARK) {
-                FinalQualityEditorRoute(
+                Step4WatermarkEditorRoute(
                     id = id,
                     onBack = { nav.popBackStack() },
                     onExport = { nav.navigate("export/$id") },
