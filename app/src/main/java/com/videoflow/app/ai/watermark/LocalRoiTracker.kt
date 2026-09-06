@@ -63,8 +63,12 @@ class LocalRoiTracker @Inject constructor(
             val bitmap = previewEngine.decodeFrame(sourceUri, boundedSourceUs, maxDimensionPx = 360)
             try {
                 val gray = GrayFrame.from(bitmap)
-                val roiWidthPx = (roi.width * gray.width).roundToInt().coerceAtLeast(12)
-                val roiHeightPx = (roi.height * gray.height).roundToInt().coerceAtLeast(12)
+                // Keep one-pixel headroom on both sides so center clamping remains valid even for
+                // a user-selected edge-to-edge ROI.
+                val maxPatchWidth = (gray.width - 2).coerceAtLeast(12)
+                val maxPatchHeight = (gray.height - 2).coerceAtLeast(12)
+                val roiWidthPx = (roi.width * gray.width).roundToInt().coerceIn(12, maxPatchWidth)
+                val roiHeightPx = (roi.height * gray.height).roundToInt().coerceIn(12, maxPatchHeight)
                 val referenceSamples = reference ?: samplePatch(
                     gray,
                     previousCenterX,
@@ -132,15 +136,19 @@ class LocalRoiTracker @Inject constructor(
         val step = max(2, min(roiWidthPx, roiHeightPx) / 12)
         val halfW = roiWidthPx / 2
         val halfH = roiHeightPx / 2
+        val minCenterX = halfW.coerceAtLeast(0)
+        val maxCenterX = (frame.width - 1 - halfW).coerceAtLeast(minCenterX)
+        val minCenterY = halfH.coerceAtLeast(0)
+        val maxCenterY = (frame.height - 1 - halfH).coerceAtLeast(minCenterY)
         var bestError = Float.MAX_VALUE
-        var bestX = previousX.coerceIn(halfW, frame.width - 1 - halfW)
-        var bestY = previousY.coerceIn(halfH, frame.height - 1 - halfH)
+        var bestX = previousX.coerceIn(minCenterX, maxCenterX)
+        var bestY = previousY.coerceIn(minCenterY, maxCenterY)
 
-        var y = (previousY - radiusY).coerceAtLeast(halfH)
-        val maxY = (previousY + radiusY).coerceAtMost(frame.height - 1 - halfH)
+        var y = (previousY - radiusY).coerceAtLeast(minCenterY)
+        val maxY = (previousY + radiusY).coerceAtMost(maxCenterY)
         while (y <= maxY) {
-            var x = (previousX - radiusX).coerceAtLeast(halfW)
-            val maxX = (previousX + radiusX).coerceAtMost(frame.width - 1 - halfW)
+            var x = (previousX - radiusX).coerceAtLeast(minCenterX)
+            val maxX = (previousX + radiusX).coerceAtMost(maxCenterX)
             while (x <= maxX) {
                 val candidate = samplePatchPixels(frame, x, y, roiWidthPx, roiHeightPx)
                 var error = 0f
