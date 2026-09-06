@@ -14,6 +14,8 @@ The product explains that timeline snapping, track controls and contextual editi
 
 Proxy editing is explained in user language. The Settings screen reads actual proxy rows and `sizeBytes` values from the existing proxy database through `ProductSettingsViewModel`.
 
+**UI Step 3 product decision:** VideoFlow does not expose a global proxy on/off or proxy-quality preference because the current backend has no global policy that consumes such a setting. Adding that switch would be a placebo control. The product therefore exposes a clear read-only `Proxy policy`, actual stored proxy usage, and real derived-data cleanup only. Per-asset/project proxy generation continues to use the existing proxy backend, while final export resolves original source media.
+
 `Clear Editing Proxies` is a real destructive derived-data action:
 
 1. enumerate current project media assets;
@@ -67,6 +69,8 @@ Current Step 3 keys:
 
 - `onboarding_complete`
 - `appearance`
+
+No proxy preference key exists by design because no global backend proxy policy consumes one.
 
 No Room migration or project-format increment is introduced solely for these UI preferences.
 
