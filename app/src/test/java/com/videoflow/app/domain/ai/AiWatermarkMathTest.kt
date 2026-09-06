@@ -24,6 +24,28 @@ class AiWatermarkMathTest {
     }
 
     @Test
+    fun movingRoiFeather_usesCurrentFrameTargetNotStartTarget() {
+        val effect = AiWatermarkEffect(
+            id = "moving", projectId = "p", clipId = "c",
+            clipLocalStartUs = 0L, clipLocalEndUs = 2_000_000L,
+            roi = NormalizedRoi(0.10f, 0.20f, 0.30f, 0.40f),
+            motionAnchors = listOf(
+                RoiMotionAnchor(0L, 0.20f, 0.30f),
+                RoiMotionAnchor(1_500_000L, 0.75f, 0.65f)
+            ),
+            featherPx = 4
+        )
+        val startTarget = AiWatermarkMath.toPixelRect(effect.roiAt(0L), 100, 100)
+        val movedTarget = AiWatermarkMath.toPixelRect(effect.roiAt(1_500_000L), 100, 100)
+        val movedCenterX = (movedTarget.left + movedTarget.right) / 2
+        val movedCenterY = (movedTarget.top + movedTarget.bottom) / 2
+
+        assertEquals(0f, AiWatermarkMath.featherWeight(movedCenterX, movedCenterY, startTarget, 4), 0.0001f)
+        assertEquals(1f, AiWatermarkMath.featherWeight(movedCenterX, movedCenterY, movedTarget, 4), 0.0001f)
+        assertEquals(0f, AiWatermarkMath.featherWeight(movedTarget.left, movedCenterY, movedTarget, 4), 0.0001f)
+    }
+
+    @Test
     fun pixelAndOpenGlMapping_flipsOnlyVerticalAxis() {
         val pixel = AiWatermarkMath.toPixelRect(NormalizedRoi(0.25f, 0.25f, 0.75f, 0.75f), 1920, 1080)
         assertEquals(PixelRect(480, 270, 1440, 810), pixel)
