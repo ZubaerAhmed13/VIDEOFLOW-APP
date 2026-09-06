@@ -13,8 +13,10 @@ This report is intentionally separate from the physical-phone review. Automated 
 - Approved base SHA: `3146ab565b322cb48641fcb7e564cb8ad9819796`
 - Correction branch: `editor-final-quality-source-preservation`
 - First integration checkpoint: `97939d6ad069c8d5bbd2c88ec7a1aae1a84cd709`
+- Green automated candidate SHA: `87449f132a7daa69c28ccab3e42011b37547f755`
+- Green automated candidate run: `34033095077`
 
-The first checkpoint workflow run `34030168932` passed its full build/regression/package job: architecture/privacy audit, unit regression, lint, Android-test compilation, Debug/Review/Release assembly, Review package/signature verification, packaging and artifact upload. That run is **superseded** because later source-authority/test/documentation changes advance branch HEAD.
+Run `34033095077` passed both certification jobs: the full build/regression/package gate and the API-35 exact-runtime editor/Review install-and-update gate. Because this report edit advances branch HEAD, the subsequent dedicated workflow run on the exact report-containing HEAD is the authoritative final automated artifact source and must also remain green.
 
 ## Playback Tests
 
@@ -25,7 +27,7 @@ Automated coverage:
 - editor workspace and long-timeline tests remain enabled.
 - player identity is source-URI based rather than playhead based.
 
-Automated status: **must PASS on exact documentation HEAD CI**.
+Automated candidate status: **PASS — run `34033095077`**.
 Physical status: **NOT VERIFIED**.
 
 ## Precise Trim Tests
@@ -40,7 +42,7 @@ Automated coverage:
 - production commit path uses actual `MediaExtractor` video sample timestamps for VFR/boundary normalization;
 - instrumentation/Compose compilation covers final-quality editor route.
 
-Automated status: **must PASS on exact documentation HEAD CI**.
+Automated candidate status: **PASS — run `34033095077`**.
 Physical exact From/To status: **NOT VERIFIED**.
 
 ## Merge Tests
@@ -50,9 +52,11 @@ Automated coverage:
 - `MergeOrderingTest` verifies up/down ordering and intentional duplicate entries;
 - source/project authority tests prevent silent 4K -> 1080p reduction;
 - first-class Home -> Merge Videos product flow is exercised by `HomeComposeTest` on API 35;
+- the API-35 test uses the production Extended FAB's actual visible `Merge Videos` semantics from the unmerged tree rather than inventing a content description;
+- return from Merge to Home is verified using the same real visible-label semantics;
 - Merge screen requires multi-select semantics and creates a normal persisted project/timeline.
 
-Automated status: **must PASS on exact documentation HEAD CI**.
+Automated candidate status: **PASS — run `34033095077`**.
 Physical three-video workflow: **NOT VERIFIED**.
 
 ## Smart Copy Tests
@@ -66,7 +70,7 @@ Physical three-video workflow: **NOT VERIFIED**.
 
 Runtime `SmartCopyEngine` additionally checks actual track/CSD signatures and sync-sample trim starts. Android compilation/build validates integration; same-phone real media packet-copy behavior remains physical certification work.
 
-Automated status: **must PASS on exact documentation HEAD CI**.
+Automated candidate status: **PASS — run `34033095077`**.
 Physical status: **NOT VERIFIED**.
 
 ## Match Source / Source Fidelity Tests
@@ -82,7 +86,7 @@ Automated coverage:
 - source file-size arithmetic is not used as a false exact-output promise;
 - API-35 product flow opens Export Mode and verifies Match Source availability while Smart Copy is not falsely advertised on an ineligible empty project.
 
-Automated status: **must PASS on exact documentation HEAD CI**.
+Automated candidate status: **PASS — run `34033095077`**.
 Physical rendered metadata/quality comparison: **NOT VERIFIED**.
 
 ## Source Authority Regression
@@ -95,9 +99,13 @@ Physical rendered metadata/quality comparison: **NOT VERIFIED**.
 - 23.976 / 29.97 / 59.94 rational rates are preserved;
 - valid 48 fps and nonpreset 47.952 are not silently changed to 30 fps.
 
+Automated candidate status: **PASS — run `34033095077`**.
+
 ## Existing Regression
 
 The dedicated workflow runs the full Gradle test suite, so Android Step 1, Step 2, Step 3 and UI Step 1/2/3 unit regressions remain part of the final gate. It also runs Android lint, compiles instrumentation/Compose tests and assembles all requested APK variants.
+
+Run `34033095077` passed these gates on candidate SHA `87449f132a7daa69c28ccab3e42011b37547f755`.
 
 No existing editor/export function is intentionally removed by this correction.
 
@@ -113,26 +121,36 @@ The workflow checks:
 - presence of Trim, playback policy, source preservation, Smart Copy, Merge and final-quality route implementations;
 - explicit Smart Copy no-rendered-fallback language in export coordinator.
 
+Candidate status: **PASS — run `34033095077`**.
+
 ## Review Signing / APK Gate
 
-Job 1 must verify:
+Job 1 verifies:
 
 - Review application ID: `com.videoflow.app.review`;
 - stable Review signing certificate SHA-256 fingerprint configured by the project;
 - Debug, Review, Release and instrumentation APK assembly;
 - SHA-256 generation for packaged APKs.
 
+Candidate status: **PASS — run `34033095077`**.
+
 ## API 35 Gate
 
-Job 2 must consume the exact runtime bundle from Job 1, verify its SHA-256 file, then run the selected product/editor instrumentation suite and verify Review fresh install, cold launch and in-place update.
+Job 2 consumes the exact runtime bundle from Job 1, verifies its SHA-256 file, runs the selected product/editor instrumentation suite, and verifies Review fresh install, cold launch and in-place update.
+
+Candidate status: **PASS — run `34033095077`**.
+
+The run passed all 8 selected API-35 instrumentation tests, including `HomeComposeTest`, and completed the Review install/update path successfully.
 
 ## Exact-Head Rule
 
-This documentation changes branch HEAD. Therefore this report does **not** treat run `34030168932` as final certification. The final result is the dedicated workflow run triggered by the single documentation commit containing all required reports. Its exact SHA/run/artifact hashes must be recorded in the final completion response.
+Documentation changes branch HEAD. Therefore the immutable final automated result is the dedicated workflow run triggered by the final report-containing commit. That run must pass both jobs and its exact artifacts/hashes must be used for final delivery.
 
-## Result At Documentation Authoring Time
+The already-green candidate run `34033095077` is strong evidence that the source/test candidate is clean; it is not used as a substitute for the report-containing exact-head artifacts.
 
-Automated implementation checkpoint: **PASS (superseded by later changes)**.
-Final exact-head automated certification: **PENDING**.
+## Result
+
+Automated source/test candidate certification: **PASS — SHA `87449f132a7daa69c28ccab3e42011b37547f755`, run `34033095077`**.
+Final report-containing exact-head certification: **use the subsequent dedicated workflow run as authoritative evidence; it must be green**.
 Physical same-phone certification: **NOT VERIFIED**.
-Overall completion: **PARTIAL until both final automated and required physical gates are satisfied**.
+Overall completion: **PARTIAL because physical same-phone certification remains a hard gate even after automated certification is green**.
