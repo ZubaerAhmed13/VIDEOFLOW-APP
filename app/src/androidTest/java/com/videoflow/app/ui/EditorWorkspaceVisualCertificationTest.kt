@@ -65,12 +65,39 @@ class EditorWorkspaceVisualCertificationTest {
     }
 
     private fun openEmptyEditor() {
-        rule.onNodeWithContentDescription("New Project").performClick()
-        rule.onNodeWithText("Create").performClick()
-        rule.waitUntil(timeoutMillis = 10_000) {
-            rule.onAllNodesWithText("Open Editor").fetchSemanticsNodes().isNotEmpty()
+        rule.waitForIdle()
+
+        // UI Step 3 introduces first-run onboarding. A fresh certification install must
+        // traverse that real product flow before asserting the Home screen.
+        if (rule.onAllNodesWithText("Skip").fetchSemanticsNodes().isNotEmpty()) {
+            rule.onNodeWithText("Skip").performClick()
+            rule.waitForIdle()
         }
-        rule.onNodeWithText("Open Editor").performClick()
+
+        rule.waitUntil(timeoutMillis = 10_000) {
+            rule.onAllNodesWithContentDescription("New Project").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithContentDescription("New Project").performClick()
+
+        rule.waitUntil(timeoutMillis = 10_000) {
+            rule.onAllNodesWithText("Create Project").fetchSemanticsNodes().isNotEmpty() ||
+                rule.onAllNodesWithText("Create").fetchSemanticsNodes().isNotEmpty()
+        }
+        if (rule.onAllNodesWithText("Create Project").fetchSemanticsNodes().isNotEmpty()) {
+            rule.onNodeWithText("Create Project").performClick()
+        } else {
+            rule.onNodeWithText("Create").performClick()
+        }
+
+        // Step 3 opens the editor directly after project creation. Keep the legacy
+        // Open Editor fallback so the regression test also remains useful on older UI states.
+        rule.waitUntil(timeoutMillis = 10_000) {
+            rule.onAllNodesWithText("Start your video").fetchSemanticsNodes().isNotEmpty() ||
+                rule.onAllNodesWithText("Open Editor").fetchSemanticsNodes().isNotEmpty()
+        }
+        if (rule.onAllNodesWithText("Open Editor").fetchSemanticsNodes().isNotEmpty()) {
+            rule.onNodeWithText("Open Editor").performClick()
+        }
         waitForEditor()
     }
 
