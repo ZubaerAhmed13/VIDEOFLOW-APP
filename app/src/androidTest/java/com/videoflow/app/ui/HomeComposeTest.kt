@@ -31,15 +31,21 @@ class HomeComposeTest {
         rule.onNodeWithContentDescription("New Project").fetchSemanticsNode()
 
         // Final editor quality: Merge Videos is a real first-class workflow. The product control
-        // now exposes its own stable accessibility action, so exercise the actual clickable FAB
-        // rather than injecting a click through a child Text node in the unmerged semantics tree.
+        // exposes its own stable accessibility action, so exercise the actual clickable FAB.
         rule.onNodeWithContentDescription("Merge Videos").performClick()
         rule.waitUntil(10_000) {
-            nodeExistsWithText("Merge Videos") && nodeExistsWithText("Select Videos") &&
-                nodeExistsWithText("Create & Preview Merge")
+            nodeExistsWithText("Merge Videos") && nodeExistsWithText("Select Videos")
         }
         rule.onNodeWithText("Select Videos").fetchSemanticsNode()
+
+        // Merge content is a LazyColumn. On the API-35 certification device (320x640), the final
+        // Create & Preview Merge action is intentionally below the fold and therefore may not be
+        // composed until scrolled into view. Verify the visible route first, then scroll to the
+        // actual bottom action instead of treating lazy composition as a navigation failure.
+        rule.onAllNodes(hasScrollAction())[0]
+            .performScrollToNode(hasText("Create & Preview Merge"))
         rule.onNodeWithText("Create & Preview Merge").fetchSemanticsNode()
+
         rule.onNodeWithContentDescription("Back").performClick()
         rule.waitUntil(10_000) {
             nodeExistsWithDescription("New Project") && nodeExistsWithDescription("Merge Videos")
