@@ -86,7 +86,8 @@ class LocalRoiTracker @Inject constructor(
                         previousCenterX = previousCenterX,
                         previousCenterY = previousCenterY,
                         roiWidthPx = roiWidthPx,
-                        roiHeightPx = roiHeightPx
+                        roiHeightPx = roiHeightPx,
+                        roi = roi
                     )
                 }
                 previousCenterX = match.centerX
@@ -127,7 +128,8 @@ class LocalRoiTracker @Inject constructor(
         previousCenterX: Float,
         previousCenterY: Float,
         roiWidthPx: Int,
-        roiHeightPx: Int
+        roiHeightPx: Int,
+        roi: NormalizedRoi
     ): Match {
         val previousX = (previousCenterX * frame.width).roundToInt()
         val previousY = (previousCenterY * frame.height).roundToInt()
