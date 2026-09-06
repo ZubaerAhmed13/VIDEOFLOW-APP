@@ -82,8 +82,13 @@ jobs:
           test -s app/src/main/java/com/videoflow/app/ui/screens/ProductExportScreen.kt
           test -s app/src/main/java/com/videoflow/app/ui/product/ProductViewModels.kt
           test -s app/src/main/java/com/videoflow/app/ui/product/ExportPresentation.kt
+          test -s app/src/main/java/com/videoflow/app/ui/ProjectThumbnailPreview.kt
+          test -s app/src/androidTest/java/com/videoflow/app/ui/HomeComposeTest.kt
           grep -q 'datastore-preferences:1.2.1' app/build.gradle.kts
           grep -q 'Start from Media' app/src/main/java/com/videoflow/app/ui/screens/ProductScreens.kt
+          grep -q 'ProjectThumbnailPreview' app/src/main/java/com/videoflow/app/ui/screens/ProductScreens.kt
+          grep -q 'Proxy policy' app/src/main/java/com/videoflow/app/ui/screens/ProfessionalSettingsScreen.kt
+          grep -q 'uiStep3ProductFlow_homeSettingsCreateAndExport' app/src/androidTest/java/com/videoflow/app/ui/HomeComposeTest.kt
           grep -q 'Advanced Settings' app/src/main/java/com/videoflow/app/ui/screens/ProductExportScreen.kt
           grep -q 'Export Video' app/src/main/java/com/videoflow/app/ui/screens/ProductExportScreen.kt
           grep -q 'Final export resolves original media' app/src/main/java/com/videoflow/app/ui/screens/ProductExportScreen.kt
@@ -199,7 +204,7 @@ jobs:
           test -r /dev/kvm
           test -w /dev/kvm
 
-      - name: API 35 editor regression and Review install/update
+      - name: API 35 product flow, editor regression and Review install/update
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -214,7 +219,7 @@ jobs:
             mkdir -p ui-step3-emulator-reports
             adb install -r ui-step3-runtime/VideoFlow_Android_UI_Step3_Debug.apk
             adb install -r ui-step3-runtime/VideoFlow_Android_UI_Step3_Debug-androidTest.apk
-            adb shell am instrument -w -r -e class com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ui-step3-emulator-reports/instrumentation-output.txt 2>&1
+            adb shell am instrument -w -r -e class com.videoflow.app.ui.HomeComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ui-step3-emulator-reports/instrumentation-output.txt 2>&1
             cat ui-step3-emulator-reports/instrumentation-output.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' ui-step3-emulator-reports/instrumentation-output.txt
             grep -E -q 'OK \([0-9]+ tests?\)' ui-step3-emulator-reports/instrumentation-output.txt
@@ -240,7 +245,7 @@ jobs:
           set -u
           mkdir -p ui-step3-emulator-reports
           adb devices -l > ui-step3-emulator-reports/adb-devices.txt 2>/dev/null || true
-          printf 'API 35 editor regression: see instrumentation-output.txt\nReview fresh install: see review-fresh-install.txt\nReview cold launch: see review-cold-launch.txt\nReview in-place update: see review-in-place-update.txt\n' > ui-step3-emulator-reports/UI_STEP_3_EMULATOR_SUMMARY.txt
+          printf 'API 35 product-flow and editor regression: see instrumentation-output.txt\nReview fresh install: see review-fresh-install.txt\nReview cold launch: see review-cold-launch.txt\nReview in-place update: see review-in-place-update.txt\n' > ui-step3-emulator-reports/UI_STEP_3_EMULATOR_SUMMARY.txt
 
       - name: Upload API 35 certification evidence
         if: always()
