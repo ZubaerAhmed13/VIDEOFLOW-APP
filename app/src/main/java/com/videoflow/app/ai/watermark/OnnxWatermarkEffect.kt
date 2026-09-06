@@ -162,6 +162,7 @@ private class LamaTileProcessor(
         presentationTimeUs: Long
     ): ListenableFuture<LamaPatch> {
         if (!effect.activeAt(presentationTimeUs)) return Futures.immediateFuture(LamaPatch.NO_OP)
+        val logicalTarget = AiWatermarkMath.toPixelRect(effect.roiAt(presentationTimeUs), frameWidth, frameHeight)
         val tile = tileAt(presentationTimeUs)
         return runtime.submit {
             if (image.width != tile.read.width || image.height != tile.read.height) {
@@ -169,7 +170,7 @@ private class LamaTileProcessor(
                     "AI ROI readback changed size (${image.width}x${image.height} vs ${tile.read.width}x${tile.read.height}); motion anchors must preserve ROI size."
                 )
             }
-            inpaint(image.pixelBuffer, image.width, image.height, tile)
+            inpaint(image.pixelBuffer, image.width, image.height, tile, logicalTarget)
         }
     }
 
@@ -213,7 +214,13 @@ private class LamaTileProcessor(
         return tiles[tileIndex.coerceAtMost(tiles.lastIndex)]
     }
 
-    private fun inpaint(inputGl: ByteBuffer, readWidth: Int, readHeight: Int, tile: AiTile): LamaPatch {
+    private fun inpaint(
+        inputGl: ByteBuffer,
+        readWidth: Int,
+        readHeight: Int,
+        tile: AiTile,
+        logicalTarget: PixelRect
+    ): LamaPatch {
         val modelSize = 512
         val pixels = modelSize * modelSize
         val packed = FloatArray(4 * pixels)
@@ -264,12 +271,7 @@ private class LamaTileProcessor(
                 )
                 val globalX = tile.core.left + cx
                 val globalY = tile.core.top + cy
-                val logical = AiWatermarkMath.toPixelRect(effect.roiAt(effect.clipLocalStartUs), frameWidth, frameHeight)
-                val edgeDistance = min(
-                    min(globalX - logical.left, logical.right - 1 - globalX),
-                    min(globalY - logical.top, logical.bottom - 1 - globalY)
-                ).coerceAtLeast(0)
-                val feather = if (effect.featherPx <= 0) 1f else (edgeDistance.toFloat() / effect.featherPx).coerceIn(0f, 1f)
+                val feather = AiWatermarkMath.featherWeight(globalX, globalY, logicalTarget, effect.featherPx)
                 for (channel in 0..2) {
                     val original = rgbaAtTopLeft(srcX, srcY, channel)
                     var ai = generated[channel].toFloat()
