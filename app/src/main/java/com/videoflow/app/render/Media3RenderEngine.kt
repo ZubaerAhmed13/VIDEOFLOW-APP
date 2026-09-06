@@ -213,7 +213,12 @@ class Media3RenderEngine @Inject constructor(
             val completion = CompletableDeferred<ExportResult>()
             activeCompletion = completion
             val transformer = withContext(Dispatchers.Main.immediate) {
-                buildTransformer(preparation, completion, fallbackDetected).also {
+                buildTransformer(
+                    preparation = preparation,
+                    completion = completion,
+                    fallbackDetected = fallbackDetected,
+                    aiActive = aiEffects.isNotEmpty()
+                ).also {
                     activeTransformer = it
                     transformerForCleanup = it
                     it.start(bundle.composition, File(jobRoot, "direct-saf-output.mp4").absolutePath)
@@ -307,7 +312,8 @@ class Media3RenderEngine @Inject constructor(
     private fun buildTransformer(
         preparation: RenderPreparation,
         completion: CompletableDeferred<ExportResult>,
-        fallbackDetected: AtomicBoolean
+        fallbackDetected: AtomicBoolean,
+        aiActive: Boolean
     ): Transformer {
         val selectedMode = chooseBitrateMode(preparation)
         val videoSettings = VideoEncoderSettings.Builder()
@@ -340,11 +346,21 @@ class Media3RenderEngine @Inject constructor(
                 fallbackDetected.set(true)
             }
         }
-        return Transformer.Builder(context)
+        val builder = Transformer.Builder(context)
             .setVideoMimeType(preparation.settings.videoCodec.mimeType)
             .setAudioMimeType(preparation.settings.audioCodec.mimeType)
             .setEncoderFactory(encoderFactory)
             .setMuxerFactory(SafMediaMuxerFactory(context.contentResolver, preparation.destination.uri))
+
+        if (aiActive) {
+            // FINAL LaMa inference is intentionally synchronous per bounded ROI tile so a frame can
+            // exceed Media3's normal 25 s no-sample watchdog on CPU fallback or low-end hardware.
+            // Keep a finite watchdog for real codec/muxer deadlocks, but give legitimate local AI
+            // work enough time to finish. Non-AI exports retain Media3's stricter default timeout.
+            builder.setMaxDelayBetweenMuxerSamplesMs(AI_MUXER_WATCHDOG_MS)
+        }
+
+        return builder
             .addListener(transformerListener)
             .build()
     }
@@ -452,5 +468,9 @@ class Media3RenderEngine @Inject constructor(
             else -> ExportFailureCode.UNKNOWN
         }
         return RenderPipelineException(code, t.message ?: t::class.java.simpleName, t)
+    }
+
+    companion object {
+        private const val AI_MUXER_WATCHDOG_MS = 300_000L
     }
 }
