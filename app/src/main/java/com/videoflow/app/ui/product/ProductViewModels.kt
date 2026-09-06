@@ -14,6 +14,7 @@ import com.videoflow.app.data.media.MediaAnalyzer
 import com.videoflow.app.data.project.AddMediaResult
 import com.videoflow.app.data.project.ProjectRepository
 import com.videoflow.app.domain.editor.FrameRate
+import com.videoflow.app.domain.editor.MergeOrdering
 import com.videoflow.app.domain.editor.SourceMediaAuthority
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -211,12 +212,7 @@ class ProductHomeViewModel @Inject constructor(
     }
 
     fun moveMergeCandidate(index: Int, delta: Int) {
-        val list = _mergeCandidates.value.toMutableList()
-        val target = index + delta
-        if (index !in list.indices || target !in list.indices) return
-        val item = list.removeAt(index)
-        list.add(target, item)
-        _mergeCandidates.value = list
+        _mergeCandidates.value = MergeOrdering.move(_mergeCandidates.value, index, delta)
     }
 
     fun removeMergeCandidate(index: Int) {
