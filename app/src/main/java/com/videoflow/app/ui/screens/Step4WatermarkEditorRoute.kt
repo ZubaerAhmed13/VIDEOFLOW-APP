@@ -22,7 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +47,7 @@ fun Step4WatermarkEditorRoute(
     val editor by editorVm.editor.collectAsState()
     val project by editorVm.project.collectAsState()
     val selectedId by editorVm.selectedClipId.collectAsState()
+    val playheadUs by editorVm.playheadUs.collectAsState()
     val selected = editor?.timeline?.clips?.firstOrNull { it.id == selectedId }
     val asset = project?.mediaAssets?.firstOrNull { it.id == selected?.assetId }
     val isVideoSelection = selected != null && asset != null &&
@@ -56,7 +57,6 @@ fun Step4WatermarkEditorRoute(
     LaunchedEffect(selectedId, isVideoSelection) {
         if (!isVideoSelection) studioOpen = false
     }
-    BackHandler(enabled = studioOpen) { studioOpen = false }
 
     Box(Modifier.fillMaxSize()) {
         FinalQualityEditorRoute(
@@ -81,6 +81,8 @@ fun Step4WatermarkEditorRoute(
         }
 
         if (studioOpen && selected != null && editor != null) {
+            // Registered after the base editor's BackHandler so Back closes the AI surface first.
+            BackHandler { studioOpen = false }
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val wide = maxWidth > maxHeight || maxWidth.value >= 700f
                 val panelModifier = if (wide) {
@@ -104,8 +106,8 @@ fun Step4WatermarkEditorRoute(
                             projectId = id,
                             clipId = selected.id,
                             project = project,
-                            editor = editor!!,
-                            playheadUs = editorVm.playheadUs.collectAsState().value,
+                            editor = editor,
+                            playheadUs = playheadUs,
                             onDismiss = { studioOpen = false },
                             refreshEditor = { editorVm.load(id) }
                         )
