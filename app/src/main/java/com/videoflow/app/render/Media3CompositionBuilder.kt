@@ -12,6 +12,9 @@ import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
+import com.videoflow.app.ai.watermark.OnnxWatermarkEffectFactory
+import com.videoflow.app.ai.watermark.SharedLamaRenderRuntime
+import com.videoflow.app.domain.ai.AiWatermarkEffect
 import com.videoflow.app.domain.editor.ImageOverlay
 import com.videoflow.app.domain.editor.KeyframeProperty
 import com.videoflow.app.domain.editor.TextOverlay
@@ -21,6 +24,7 @@ import com.videoflow.app.domain.editor.TrackType
 import com.videoflow.app.domain.export.ExportSize
 import com.videoflow.app.domain.export.FinalRenderPlan
 import com.videoflow.app.domain.export.HdrPolicy
+import com.videoflow.app.domain.export.OriginalRenderSource
 import com.videoflow.app.domain.export.ResolvedExportSettings
 import java.io.File
 
@@ -30,16 +34,23 @@ data class Media3CompositionBundle(
     val visualLayers: List<RenderVisualLayer>
 )
 
-/** Builds a Media3 Composition directly from the immutable Step 2 RenderPlan. */
+/** Builds a Media3 Composition directly from the immutable editor RenderPlan. */
 @UnstableApi
 class Media3CompositionBuilder(
     private val rasterAssets: RenderRasterAssets
 ) {
-    fun build(plan: FinalRenderPlan, settings: ResolvedExportSettings): Media3CompositionBundle {
+    fun build(
+        plan: FinalRenderPlan,
+        settings: ResolvedExportSettings,
+        aiEffects: List<AiWatermarkEffect> = emptyList(),
+        aiRuntime: SharedLamaRenderRuntime? = null
+    ): Media3CompositionBundle {
         require(plan.durationUs > 0) { "Cannot export an empty timeline" }
+        if (aiEffects.isNotEmpty()) requireNotNull(aiRuntime) { "Local AI effects require an active LaMa render runtime." }
         val outputSize = settings.size
         val tracksById = plan.editorPlan.tracks.associateBy { it.id }
         val visualItems = mutableListOf<VisualItem>()
+        val aiByClip = aiEffects.filter { it.enabled }.groupBy { it.clipId }
 
         plan.editorPlan.clips
             .filter { it.enabled }
@@ -71,7 +82,13 @@ class Media3CompositionBuilder(
             when (item) {
                 is VisualItem.Video -> {
                     val source = plan.originalSources.getValue(item.clip.assetId)
-                    videoSequences += singleVideoSequence(item.clip, source.sourceUri, settings)
+                    videoSequences += singleVideoSequence(
+                        clip = item.clip,
+                        source = source,
+                        settings = settings,
+                        aiEffects = aiByClip[item.clip.id].orEmpty(),
+                        aiRuntime = aiRuntime
+                    )
                     val croppedWidth = (source.width ?: plan.editorPlan.width) * item.clip.transform.crop.run { right - left }
                     val croppedHeight = (source.height ?: plan.editorPlan.height) * item.clip.transform.crop.run { bottom - top }
                     val (sx, sy) = aspectFitScale(croppedWidth, croppedHeight, outputSize)
@@ -176,11 +193,27 @@ class Media3CompositionBuilder(
 
     private fun singleVideoSequence(
         clip: TimelineClip,
-        sourceUri: String,
-        settings: ResolvedExportSettings
+        source: OriginalRenderSource,
+        settings: ResolvedExportSettings,
+        aiEffects: List<AiWatermarkEffect>,
+        aiRuntime: SharedLamaRenderRuntime?
     ): EditedMediaItemSequence {
-        val crop = clip.transform.crop
         val effects = mutableListOf<Effect>()
+
+        // AI reconstruction runs in original source pixel coordinates before crop/transform. This
+        // is the critical proxy->original fidelity rule: proxy editing never reduces final AI ROI resolution.
+        if (aiEffects.isNotEmpty()) {
+            val runtime = requireNotNull(aiRuntime)
+            val sourceWidth = source.width?.takeIf { it > 0 }
+                ?: error("AI reconstruction requires known original source width for clip ${clip.id}.")
+            val sourceHeight = source.height?.takeIf { it > 0 }
+                ?: error("AI reconstruction requires known original source height for clip ${clip.id}.")
+            aiEffects.sortedWith(compareBy<AiWatermarkEffect> { it.clipLocalStartUs }.thenBy { it.id }).forEach { ai ->
+                effects += OnnxWatermarkEffectFactory.createEffects(ai, sourceWidth, sourceHeight, runtime)
+            }
+        }
+
+        val crop = clip.transform.crop
         if (crop.left > 0f || crop.top > 0f || crop.right < 1f || crop.bottom < 1f) {
             effects += Crop(
                 crop.left * 2f - 1f,
@@ -189,12 +222,9 @@ class Media3CompositionBuilder(
                 1f - crop.top * 2f
             )
         }
-        val item = EditedMediaItem.Builder(clippedMediaItem(sourceUri, clip.sourceStartUs, clip.sourceEndUs))
+        val item = EditedMediaItem.Builder(clippedMediaItem(source.sourceUri, clip.sourceStartUs, clip.sourceEndUs))
             .setRemoveAudio(true)
             .setSpeed(ConstantSpeedProvider(clip.speed.toFloat()))
-            // Media3 exposes an integer max-frame-rate here. Using the ceiling preserves an
-            // intrinsic fractional cadence such as 30000/1001 or 60000/1001 instead of forcing
-            // it down to 29/59. The encoded sample timestamps are certified after rendering.
             .setFrameRate(kotlin.math.ceil(settings.frameRate.fps).toInt().coerceAtLeast(1))
             .setEffects(Effects(emptyList(), effects))
             .build()
@@ -217,8 +247,6 @@ class Media3CompositionBuilder(
             .build()
         val item = EditedMediaItem.Builder(media)
             .setDurationUs(durationUs.coerceAtLeast(1L))
-            // Static layers are reused by the compositor. Keep their generated cadence at or
-            // below the requested rational rate so they cannot round a 29.97/59.94 video up.
             .setFrameRate(settings.frameRate.fps.toInt().coerceAtLeast(1))
             .setRemoveAudio(true)
             .build()
