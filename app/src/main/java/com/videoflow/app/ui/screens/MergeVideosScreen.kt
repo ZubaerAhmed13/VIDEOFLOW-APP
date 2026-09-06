@@ -2,7 +2,9 @@ package com.videoflow.app.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,12 +41,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.videoflow.app.ui.product.ProductHomeViewModel
 import com.videoflow.app.util.formatDurationUs
+import kotlin.math.abs
 
 /** First-class consumer merge workflow backed by the normal VideoFlow project/timeline. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +74,7 @@ fun MergeVideosScreen(
     var name by rememberSaveable { mutableStateOf("Merged Video") }
     var error by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
+    val reorderThresholdPx = with(LocalDensity.current) { 52.dp.toPx() }
 
     LaunchedEffect(error) {
         error?.let { snackbar.showSnackbar(it); error = null }
@@ -89,7 +100,7 @@ fun MergeVideosScreen(
         ) {
             item {
                 Text(
-                    "Select videos, arrange their order, then create a normal VideoFlow project for preview, precise per-clip Trim, and export.",
+                    "Select videos, drag to arrange their order, then create a normal VideoFlow project for preview, precise per-clip Trim, and export.",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -124,17 +135,75 @@ fun MergeVideosScreen(
                 }
             } else {
                 itemsIndexed(candidates, key = { _, item -> item.selectionId }) { index, item ->
+                    var dragging by remember(item.selectionId) { mutableStateOf(false) }
+                    var dragAccumulatedY by remember(item.selectionId) { mutableFloatStateOf(0f) }
+                    var dragIndex by remember(item.selectionId) { mutableIntStateOf(index) }
+
+                    LaunchedEffect(index, dragging) {
+                        if (!dragging) dragIndex = index
+                    }
+
                     Card(
-                        Modifier.fillMaxWidth().semantics {
-                            contentDescription = "Video ${index + 1} of ${candidates.size}, ${item.displayName}"
-                        }
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                alpha = if (dragging) 0.92f else 1f
+                                scaleX = if (dragging) 1.01f else 1f
+                                scaleY = if (dragging) 1.01f else 1f
+                            }
+                            .semantics {
+                                contentDescription = "Video ${index + 1} of ${candidates.size}, ${item.displayName}"
+                            },
+                        elevation = CardDefaults.cardElevation(defaultElevation = if (dragging) 8.dp else 1.dp)
                     ) {
                         Row(
                             Modifier.fillMaxWidth().padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.DragHandle, contentDescription = "Reorder video ${index + 1}")
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .semantics {
+                                        contentDescription = "Drag video ${index + 1} to reorder. Long press, then drag up or down."
+                                    }
+                                    .pointerInput(item.selectionId, busy, candidates.size) {
+                                        if (!busy) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = {
+                                                    dragging = true
+                                                    dragAccumulatedY = 0f
+                                                    dragIndex = index
+                                                },
+                                                onDragCancel = {
+                                                    dragging = false
+                                                    dragAccumulatedY = 0f
+                                                },
+                                                onDragEnd = {
+                                                    dragging = false
+                                                    dragAccumulatedY = 0f
+                                                },
+                                                onDrag = { _, dragAmount ->
+                                                    dragAccumulatedY += dragAmount.y
+                                                    while (abs(dragAccumulatedY) >= reorderThresholdPx) {
+                                                        val direction = if (dragAccumulatedY > 0f) 1 else -1
+                                                        val nextIndex = dragIndex + direction
+                                                        if (nextIndex !in candidates.indices) {
+                                                            dragAccumulatedY = 0f
+                                                            break
+                                                        }
+                                                        vm.moveMergeCandidate(dragIndex, direction)
+                                                        dragIndex = nextIndex
+                                                        dragAccumulatedY -= reorderThresholdPx * direction
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.DragHandle, contentDescription = null)
+                            }
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text(item.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                                 val details = buildList {
@@ -165,7 +234,7 @@ fun MergeVideosScreen(
             }
             item {
                 Text(
-                    "After creation, preview the complete order in the editor. Tap any clip and use Trim for visual handles plus exact From/To time entry. Compatible projects can use Smart Copy at export; otherwise Match Source renders at high fidelity.",
+                    "Drag the handle to reorder quickly. Up/down controls remain available for keyboard, accessibility and one-step precision. After creation, preview the complete order in the editor. Tap any clip and use Trim for visual handles plus exact From/To time entry. Compatible projects can use Smart Copy at export; otherwise Match Source renders at high fidelity.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
