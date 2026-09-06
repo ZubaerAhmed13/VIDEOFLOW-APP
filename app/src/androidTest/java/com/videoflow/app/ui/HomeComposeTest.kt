@@ -1,11 +1,16 @@
 package com.videoflow.app.ui
 
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -68,6 +73,13 @@ class HomeComposeTest {
         }
         rule.onNodeWithText("Export Video").fetchSemanticsNode()
         rule.onNodeWithText("Recommended export").fetchSemanticsNode()
+
+        // The export content is a LazyColumn. On the API-35 certification device (320x640),
+        // Advanced Settings is intentionally below the fold, so certify it by scrolling the
+        // main vertical export list to the required control instead of assuming a tall viewport.
+        rule.onNode(
+            hasScrollAction() and hasAnyDescendant(hasText("Recommended export"))
+        ).performScrollToNode(hasText("Advanced Settings"))
         rule.onNodeWithText("Advanced Settings").fetchSemanticsNode()
     }
 
