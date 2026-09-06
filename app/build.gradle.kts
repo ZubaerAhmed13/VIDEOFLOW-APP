@@ -13,8 +13,8 @@ android {
         applicationId = "com.videoflow.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.0.0-ui-step3"
+        versionCode = 4
+        versionName = "1.1.0-step4-ai"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         manifestPlaceholders["appLabel"] = "VideoFlow"
@@ -104,6 +104,10 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.11.0")
     implementation("androidx.media3:media3-transformer:1.11.0")
     implementation("androidx.media3:media3-effect:1.11.0")
+
+    // Step 4: local-only ONNX inference. Model binaries are staged into Android assets by CI;
+    // the application has no runtime download path and retains the no-INTERNET architecture.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
 
     implementation("com.google.dagger:hilt-android:2.60.1")
     ksp("com.google.dagger:hilt-android-compiler:2.60.1")
