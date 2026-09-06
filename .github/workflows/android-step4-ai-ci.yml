@@ -74,6 +74,29 @@ jobs:
           test "$(stat -c '%s' app/src/main/assets/models/lama-512-int8.onnx)" = "$FIXED_SIZE"
           test "$(stat -c '%s' app/src/main/assets/models/lama-dynamic-int8.onnx)" = "$DYNAMIC_SIZE"
 
+      - name: Generate deterministic androidTest video fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          mkdir -p app/src/androidTest/assets
+          ffmpeg -hide_banner -loglevel error \
+            -f lavfi -i testsrc2=size=320x240:rate=30 \
+            -f lavfi -i sine=frequency=880:sample_rate=48000 \
+            -t 2 -shortest \
+            -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -c:a aac -b:a 96k -movflags +faststart \
+            app/src/androidTest/assets/sample_av.mp4
+          test -s app/src/androidTest/assets/sample_av.mp4
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height \
+            -of default=noprint_wrappers=1 app/src/androidTest/assets/sample_av.mp4 | tee androidtest-video-fixture.txt
+          grep -q 'codec_name=h264' androidtest-video-fixture.txt
+          grep -q 'width=320' androidtest-video-fixture.txt
+          grep -q 'height=240' androidtest-video-fixture.txt
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -128,12 +151,14 @@ jobs:
         run: |
           set -euo pipefail
           APK='app/build/outputs/apk/review/app-review.apk'
+          TEST_APK='app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee review-badging.txt
           grep -q "package: name='com.videoflow.app.review'" review-badging.txt
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee review-signature.txt
           grep -qi 'Signer #1 certificate SHA-256 digest: f3d4e66b350800bca739b2c5f6f4d2c7f15c7dc89b1b8763bd51468ab7150cc7' review-signature.txt
           unzip -l "$APK" | grep -q 'assets/models/lama-512-int8.onnx'
           unzip -l "$APK" | grep -q 'assets/models/lama-dynamic-int8.onnx'
+          unzip -l "$TEST_APK" | grep -q 'assets/sample_av.mp4'
 
       - name: Package Step 4 Review and exact runtime artifacts
         shell: bash
@@ -142,7 +167,7 @@ jobs:
           mkdir -p step4-artifacts step4-runtime
           cp app/build/outputs/apk/review/app-review.apk step4-artifacts/VideoFlow_Android_Step4_AI_Review.apk
           cp app/build/outputs/apk/debug/app-debug.apk step4-artifacts/VideoFlow_Android_Step4_AI_Debug.apk
-          cp review-badging.txt review-signature.txt step4-artifacts/
+          cp review-badging.txt review-signature.txt androidtest-video-fixture.txt step4-artifacts/
           for DOC in STEP_4_AI_WATERMARK_STUDIO_HANDOFF.md STEP_4_AI_WATERMARK_STUDIO_COMPLETION_REPORT.md; do
             test -f "$DOC" && cp "$DOC" step4-artifacts/
           done
