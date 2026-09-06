@@ -12,6 +12,7 @@ import com.videoflow.app.data.export.ExportRepository
 import com.videoflow.app.domain.editor.FrameRate
 import com.videoflow.app.domain.export.BitrateMode
 import com.videoflow.app.domain.export.ExportEstimate
+import com.videoflow.app.domain.export.ExportFailureCode
 import com.videoflow.app.domain.export.ExportJob
 import com.videoflow.app.domain.export.ExportJobStatus
 import com.videoflow.app.domain.export.ExportMath
@@ -29,6 +30,7 @@ import com.videoflow.app.export.ExportCoordinator
 import com.videoflow.app.export.ExportForegroundService
 import com.videoflow.app.render.AndroidEncoderCapabilitySource
 import com.videoflow.app.render.ExportCapabilityValidator
+import com.videoflow.app.ui.product.sanitizeExportFileName
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -47,6 +49,7 @@ data class ExportUiState(
     val requested: ExportSettings = ExportSettings(),
     val resolved: ResolvedExportSettings? = null,
     val estimate: ExportEstimate? = null,
+    val durationUs: Long = 0L,
     val destinationUri: Uri? = null,
     val warnings: List<ExportWarning> = emptyList(),
     val problems: List<ExportProblem> = emptyList(),
@@ -56,6 +59,9 @@ data class ExportUiState(
     val canStart: Boolean
         get() = !loading && resolved != null && destinationUri != null && problems.isEmpty() &&
             jobs.none { it.status in ACTIVE_STATUSES }
+
+    val activeJob: ExportJob?
+        get() = jobs.firstOrNull { it.status in ACTIVE_STATUSES }
 
     companion object {
         val ACTIVE_STATUSES = setOf(
@@ -78,6 +84,7 @@ class ExportViewModel @Inject constructor(
     val state: StateFlow<ExportUiState> = _state.asStateFlow()
     private var projectId: String? = null
     private var plan: FinalRenderPlan? = null
+    private var baseProblems: List<ExportProblem> = emptyList()
     private var jobsCollection: Job? = null
     private var recomputeJob: Job? = null
 
@@ -94,10 +101,12 @@ class ExportViewModel @Inject constructor(
             _state.value = _state.value.copy(loading = true)
             val compiled = repository.compileFinalPlan(id)
             plan = compiled.plan
+            baseProblems = compiled.problems
             _state.value = _state.value.copy(
                 loading = false,
+                durationUs = compiled.plan?.durationUs ?: 0L,
                 problems = compiled.problems,
-                message = if (compiled.problems.isEmpty()) null else "Fix source issues before exporting."
+                message = if (compiled.problems.isEmpty()) null else "Review the source issues before exporting."
             )
             recompute()
         }
@@ -120,6 +129,11 @@ class ExportViewModel @Inject constructor(
     fun setAudioBitrate(value: Int) = updateRequested { it.copy(audioBitrate = value.coerceIn(64_000, 512_000)) }
     fun setHdrPolicy(value: HdrPolicy) = updateRequested { it.copy(hdrPolicy = value) }
 
+    fun resetRecommended() {
+        _state.value = _state.value.copy(requested = ExportSettings(), message = null)
+        recompute()
+    }
+
     fun setDestination(uri: Uri?) {
         if (uri != null) {
             runCatching {
@@ -133,18 +147,22 @@ class ExportViewModel @Inject constructor(
     }
 
     fun startExport() {
+        startExport("VideoFlow_${System.currentTimeMillis()}.mp4")
+    }
+
+    fun startExport(displayName: String) {
         val id = projectId ?: return
         val snapshot = _state.value
         val destination = snapshot.destinationUri ?: return
         if (!snapshot.canStart) return
+        val safeName = sanitizeExportFileName(displayName)
         viewModelScope.launch {
             runCatching {
-                val name = "VideoFlow_${System.currentTimeMillis()}.mp4"
-                val job = repository.createJob(id, destination.toString(), name, snapshot.requested)
+                val job = repository.createJob(id, destination.toString(), safeName, snapshot.requested)
                 ExportForegroundService.start(context, job.id)
-                _state.value = _state.value.copy(message = "Native export started. You can leave this screen while it renders.")
+                _state.value = _state.value.copy(message = "Export started. You can leave this screen while Android allows the active export service to run.")
             }.onFailure {
-                _state.value = _state.value.copy(message = it.message ?: "Could not start export.")
+                _state.value = _state.value.copy(message = "VideoFlow could not start the export.")
             }
         }
     }
@@ -163,7 +181,7 @@ class ExportViewModel @Inject constructor(
                 _state.value = _state.value.copy(requested = it)
                 recompute()
             }
-            .onFailure { _state.value = _state.value.copy(message = it.message) }
+            .onFailure { _state.value = _state.value.copy(message = "That export setting is not valid.") }
     }
 
     private fun recompute() {
@@ -194,24 +212,24 @@ class ExportViewModel @Inject constructor(
                 }
             }
             computed.onSuccess { (resolved, estimate, capability) ->
-                val compileProblems = if (renderPlan.originalSources.isEmpty() && renderPlan.editorPlan.clips.isNotEmpty()) {
-                    listOf(ExportProblem(com.videoflow.app.domain.export.ExportFailureCode.SOURCE_MISSING, "Original source mapping is unavailable."))
+                val mappingProblem = if (renderPlan.originalSources.isEmpty() && renderPlan.editorPlan.clips.isNotEmpty()) {
+                    listOf(ExportProblem(ExportFailureCode.SOURCE_MISSING, "Original source mapping is unavailable."))
                 } else emptyList()
                 val warnings = buildList {
                     addAll(capability.warnings)
-                    if (resolved.isUpscale) add(ExportWarning("UPSCALE", "Requested resolution is larger than the project canvas; export will upscale the composed frame."))
+                    if (resolved.isUpscale) add(ExportWarning("UPSCALE", "This will enlarge the video but cannot create additional source detail."))
                 }
                 _state.value = _state.value.copy(
                     resolved = resolved,
                     estimate = estimate,
                     warnings = warnings,
-                    problems = compileProblems + capability.problems
+                    problems = (baseProblems + mappingProblem + capability.problems).distinctBy { it.code to it.message }
                 )
             }.onFailure {
                 _state.value = _state.value.copy(
                     resolved = null,
                     estimate = null,
-                    problems = listOf(ExportProblem(com.videoflow.app.domain.export.ExportFailureCode.UNKNOWN, it.message ?: "Export settings are invalid."))
+                    problems = (baseProblems + ExportProblem(ExportFailureCode.UNKNOWN, "The selected export settings are not valid.")).distinctBy { it.code to it.message }
                 )
             }
         }

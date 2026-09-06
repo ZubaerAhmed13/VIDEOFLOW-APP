@@ -22,8 +22,6 @@ android {
 
     signingConfigs {
         create("review") {
-            // Intentionally non-production signing identity for installable review/test APKs only.
-            // The decoded keystore is produced by CI from ci/review-test.keystore.b64.
             storeFile = rootProject.file("ci/review-test.keystore")
             storePassword = "videoflow-review"
             keyAlias = "videoflow-review"
@@ -45,7 +43,6 @@ android {
             matchingFallbacks += listOf("debug")
         }
         release {
-            // Step 2 continues to produce a locally installable test-signed release. No private production key is committed.
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -62,7 +59,6 @@ android {
         buildConfig = true
     }
 
-    // Keep the checked-in Room schema contract available to instrumentation packages and release evidence.
     sourceSets {
         getByName("androidTest").assets.srcDir("$projectDir/schemas")
     }
@@ -89,6 +85,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.navigation:navigation-compose:2.10.0")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
 
     implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     implementation("androidx.compose.ui:ui")
@@ -102,7 +99,6 @@ dependencies {
     implementation("androidx.room:room-ktx:2.8.3")
     ksp("androidx.room:room-compiler:2.8.3")
 
-    // Keep every Media3 module on one version. Transformer/effect are used for local editor proxies only.
     implementation("androidx.media3:media3-common:1.11.0")
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-ui:1.11.0")
