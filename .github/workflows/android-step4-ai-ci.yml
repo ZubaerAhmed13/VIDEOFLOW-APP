@@ -134,7 +134,9 @@ jobs:
           grep -q 'onnxruntime-android:1.29.0' app/build.gradle.kts
           grep -q 'cab19978adc306622fe37ef60d4a52103b99c98141d499c2a2366a7ed1255dbe' app/src/main/java/com/videoflow/app/domain/ai/WatermarkModels.kt
           grep -q '1941214c210399eb815eb2d32570ba91d5e6c4ac3de4c939bd3fb09300454972' app/src/main/java/com/videoflow/app/domain/ai/WatermarkModels.kt
-          ! grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.ACCESS_NETWORK_STATE' app/src/main/AndroidManifest.xml
+          test "$(grep -c 'tools:node="remove"' app/src/main/AndroidManifest.xml)" -ge 2
           ! grep -R -qE 'https?://|HttpURLConnection|OkHttp|Retrofit|DownloadManager' app/src/main/java/com/videoflow/app/ai app/src/main/java/com/videoflow/app/data/ai app/src/main/java/com/videoflow/app/domain/ai app/src/main/java/com/videoflow/app/ui/ai
           ! grep -R -qE 'FirebaseAnalytics|Crashlytics|Sentry|Mixpanel|Amplitude|Segment' app/src/main/java app/build.gradle.kts
           ! grep -R -qE 'readBytes\(\)|readAllBytes\(\)' app/src/main/java/com/videoflow/app/ai app/src/main/java/com/videoflow/app/data/ai
@@ -151,14 +153,17 @@ jobs:
       - name: Assemble Debug, Review and instrumentation APKs with local AI assets
         run: ./gradlew assembleDebug assembleDebugAndroidTest assembleReview --stacktrace
 
-      - name: Verify Review identity, signature and embedded model pack
+      - name: Verify Review identity, signature, offline permissions and embedded model pack
         shell: bash
         run: |
           set -euo pipefail
           APK='app/build/outputs/apk/review/app-review.apk'
           TEST_APK='app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee review-badging.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK" | tee review-permissions.txt
           grep -q "package: name='com.videoflow.app.review'" review-badging.txt
+          ! grep -q "android.permission.INTERNET" review-permissions.txt
+          ! grep -q "android.permission.ACCESS_NETWORK_STATE" review-permissions.txt
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee review-signature.txt
           grep -qi 'Signer #1 certificate SHA-256 digest: f3d4e66b350800bca739b2c5f6f4d2c7f15c7dc89b1b8763bd51468ab7150cc7' review-signature.txt
           unzip -l "$APK" | grep -q 'assets/models/lama-512-int8.onnx'
@@ -172,7 +177,7 @@ jobs:
           mkdir -p step4-artifacts step4-runtime
           cp app/build/outputs/apk/review/app-review.apk step4-artifacts/VideoFlow_Android_Step4_AI_Review.apk
           cp app/build/outputs/apk/debug/app-debug.apk step4-artifacts/VideoFlow_Android_Step4_AI_Debug.apk
-          cp review-badging.txt review-signature.txt androidtest-video-fixture.txt step4-artifacts/
+          cp review-badging.txt review-permissions.txt review-signature.txt androidtest-video-fixture.txt step4-artifacts/
           for DOC in STEP_4_AI_WATERMARK_STUDIO_HANDOFF.md STEP_4_AI_WATERMARK_STUDIO_COMPLETION_REPORT.md STEP_4_AI_WATERMARK_STUDIO_TEST_REPORT.md STEP_4_AI_WATERMARK_STUDIO_PHYSICAL_REVIEW.md; do
             test -f "$DOC" && cp "$DOC" step4-artifacts/
           done
