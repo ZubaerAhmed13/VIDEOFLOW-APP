@@ -6,11 +6,11 @@ import android.opengl.GLES20
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import androidx.media3.common.GlTextureInfo
-import androidx.media3.common.VideoFrameProcessingException
 import androidx.media3.common.util.GlRect
 import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.Size
 import androidx.media3.effect.ByteBufferGlEffect
+import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.ListeningExecutorService
 import com.google.common.util.concurrent.MoreExecutors
@@ -21,7 +21,6 @@ import com.videoflow.app.domain.ai.AiWatermarkMath
 import com.videoflow.app.domain.ai.PixelRect
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.FloatBuffer
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
@@ -38,8 +37,8 @@ class SharedLamaRenderRuntime private constructor(
 
     val provider: String get() = ort.provider
 
-    fun submit(block: () -> LamaPatch?): ListenableFuture<LamaPatch?> = executor.submit<LamaPatch?> {
-        if (cancelled.get()) return@submit null
+    fun submit(block: () -> LamaPatch): ListenableFuture<LamaPatch> = executor.submit<LamaPatch> {
+        if (cancelled.get()) throw InterruptedException("AI export cancelled")
         block()
     }
 
@@ -78,37 +77,47 @@ class SharedLamaRenderRuntime private constructor(
 
     companion object {
         suspend fun create(manager: AiModelPackManager): SharedLamaRenderRuntime {
-            // CPU is the correctness baseline. NNAPI is attempted first and manager falls back to CPU.
+            // NNAPI is attempted first; AiModelPackManager falls back to the CPU correctness path.
             val session = manager.openSession(AiModelRole.FINAL, preferNnapi = true)
             val executor = MoreExecutors.listeningDecorator(
-                Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "VideoFlow-LaMa-Final").apply { priority = Thread.NORM_PRIORITY - 1 } }
+                Executors.newSingleThreadExecutor { runnable ->
+                    Thread(runnable, "VideoFlow-LaMa-Final").apply { priority = Thread.NORM_PRIORITY - 1 }
+                }
             )
             return SharedLamaRenderRuntime(session, executor)
         }
     }
 }
 
+/** Non-null processor result. NO_OP is used outside the effect's selected time range. */
 data class LamaPatch(
-    val glRect: PixelRect,
-    val rgbaGlOrder: ByteBuffer
-)
+    val glRect: PixelRect?,
+    val rgbaGlOrder: ByteBuffer?
+) {
+    val shouldApply: Boolean get() = glRect != null && rgbaGlOrder != null
 
-/** Creates one Media3 ByteBuffer effect per bounded tile of a logical AI Watermark region. */
+    companion object {
+        val NO_OP = LamaPatch(null, null)
+    }
+}
+
+/** Creates one Media3 ByteBuffer effect per bounded tile of a logical AI reconstruction region. */
 object OnnxWatermarkEffectFactory {
     fun createEffects(
         effect: AiWatermarkEffect,
         sourceWidth: Int,
         sourceHeight: Int,
         runtime: SharedLamaRenderRuntime
-    ): List<ByteBufferGlEffect<LamaPatch?>> {
+    ): List<ByteBufferGlEffect<LamaPatch>> {
         require(sourceWidth > 0 && sourceHeight > 0)
+        val modelSize = effectModelSize(effect)
         val baseTarget = AiWatermarkMath.toPixelRect(effect.roi, sourceWidth, sourceHeight)
         val count = AiWatermarkMath.planTiles(
             target = baseTarget,
             frameWidth = sourceWidth,
             frameHeight = sourceHeight,
-            modelSize = effectModelSize(effect),
-            contextPx = effect.contextPaddingPx.coerceAtMost(effectModelSize(effect) / 2 - 1)
+            modelSize = modelSize,
+            contextPx = effect.contextPaddingPx.coerceAtMost(modelSize / 2 - 1)
         ).size
         return (0 until count).map { index ->
             ByteBufferGlEffect(LamaTileProcessor(effect, index, sourceWidth, sourceHeight, runtime))
@@ -126,7 +135,7 @@ private class LamaTileProcessor(
     private val expectedWidth: Int,
     private val expectedHeight: Int,
     private val runtime: SharedLamaRenderRuntime
-) : ByteBufferGlEffect.Processor<LamaPatch?> {
+) : ByteBufferGlEffect.Processor<LamaPatch> {
     private var frameWidth = expectedWidth
     private var frameHeight = expectedHeight
     private var configuredReadWidth = min(512, expectedWidth)
@@ -151,8 +160,8 @@ private class LamaTileProcessor(
     override fun processImage(
         image: ByteBufferGlEffect.Image,
         presentationTimeUs: Long
-    ): ListenableFuture<LamaPatch?> {
-        if (!effect.activeAt(presentationTimeUs)) return runtime.submit { null }
+    ): ListenableFuture<LamaPatch> {
+        if (!effect.activeAt(presentationTimeUs)) return Futures.immediateFuture(LamaPatch.NO_OP)
         val tile = tileAt(presentationTimeUs)
         return runtime.submit {
             if (image.width != tile.read.width || image.height != tile.read.height) {
@@ -167,11 +176,12 @@ private class LamaTileProcessor(
     override fun finishProcessingAndBlend(
         outputFrame: GlTextureInfo,
         presentationTimeUs: Long,
-        result: LamaPatch?
+        result: LamaPatch
     ) {
-        if (result == null) return
-        val rect = result.glRect
-        result.rgbaGlOrder.rewind()
+        if (!result.shouldApply) return
+        val rect = requireNotNull(result.glRect)
+        val buffer = requireNotNull(result.rgbaGlOrder)
+        buffer.rewind()
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, outputFrame.texId)
         GLES20.glTexSubImage2D(
             GLES20.GL_TEXTURE_2D,
@@ -182,7 +192,7 @@ private class LamaTileProcessor(
             rect.height,
             GLES20.GL_RGBA,
             GLES20.GL_UNSIGNED_BYTE,
-            result.rgbaGlOrder
+            buffer
         )
         GlUtil.checkGlError()
     }
@@ -254,7 +264,7 @@ private class LamaTileProcessor(
                 )
                 val globalX = tile.core.left + cx
                 val globalY = tile.core.top + cy
-                val logical = AiWatermarkMath.toPixelRect(effect.roi, frameWidth, frameHeight)
+                val logical = AiWatermarkMath.toPixelRect(effect.roiAt(effect.clipLocalStartUs), frameWidth, frameHeight)
                 val edgeDistance = min(
                     min(globalX - logical.left, logical.right - 1 - globalX),
                     min(globalY - logical.top, logical.bottom - 1 - globalY)
@@ -283,7 +293,6 @@ private class LamaTileProcessor(
         }
         glBuffer.flip()
         val glCoreTopLeft = AiWatermarkMath.toOpenGlRect(tile.core, frameHeight)
-        // PixelRect uses top/bottom names, but after toOpenGlRect its top field is the GL bottom edge.
         return LamaPatch(
             glRect = PixelRect(glCoreTopLeft.left, glCoreTopLeft.top, glCoreTopLeft.right, glCoreTopLeft.bottom),
             rgbaGlOrder = glBuffer
