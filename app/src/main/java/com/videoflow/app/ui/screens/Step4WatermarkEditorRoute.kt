@@ -48,7 +48,8 @@ fun Step4WatermarkEditorRoute(
     val project by editorVm.project.collectAsState()
     val selectedId by editorVm.selectedClipId.collectAsState()
     val playheadUs by editorVm.playheadUs.collectAsState()
-    val selected = editor?.timeline?.clips?.firstOrNull { it.id == selectedId }
+    val currentEditor = editor
+    val selected = currentEditor?.timeline?.clips?.firstOrNull { it.id == selectedId }
     val asset = project?.mediaAssets?.firstOrNull { it.id == selected?.assetId }
     val isVideoSelection = selected != null && asset != null &&
         (asset.videoCodecMime != null || asset.mimeType?.startsWith("video/") == true)
@@ -80,7 +81,7 @@ fun Step4WatermarkEditorRoute(
             )
         }
 
-        if (studioOpen && selected != null && editor != null) {
+        if (studioOpen && selected != null && currentEditor != null) {
             // Registered after the base editor's BackHandler so Back closes the AI surface first.
             BackHandler { studioOpen = false }
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -106,7 +107,7 @@ fun Step4WatermarkEditorRoute(
                             projectId = id,
                             clipId = selected.id,
                             project = project,
-                            editor = editor,
+                            editor = currentEditor,
                             playheadUs = playheadUs,
                             onDismiss = { studioOpen = false },
                             refreshEditor = { editorVm.load(id) }
