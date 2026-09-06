@@ -86,18 +86,28 @@ jobs:
           gradle wrapper --gradle-version 9.6.0
           chmod +x gradlew
 
-      - name: Step 4 architecture and privacy audit
+      - name: Step 4 architecture, product-entry and privacy audit
         shell: bash
         run: |
           set -euo pipefail
           test -s app/src/main/java/com/videoflow/app/domain/ai/WatermarkModels.kt
           test -s app/src/main/java/com/videoflow/app/data/ai/AiWatermarkRepository.kt
           test -s app/src/main/java/com/videoflow/app/ai/watermark/AiModelPackManager.kt
+          test -s app/src/main/java/com/videoflow/app/ai/watermark/LocalWatermarkPreviewEngine.kt
+          test -s app/src/main/java/com/videoflow/app/ai/watermark/LocalRoiTracker.kt
+          test -s app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          test -s app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt
+          test -s app/src/main/java/com/videoflow/app/ui/screens/Step4WatermarkEditorRoute.kt
+          grep -q 'AI Watermark' app/src/main/java/com/videoflow/app/ui/screens/Step4WatermarkEditorRoute.kt
+          grep -q 'Mask and timing' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'Track movement' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'Generate AI Preview' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'Apply non-destructively' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           grep -q 'onnxruntime-android:1.29.0' app/build.gradle.kts
           grep -q 'cab19978adc306622fe37ef60d4a52103b99c98141d499c2a2366a7ed1255dbe' app/src/main/java/com/videoflow/app/domain/ai/WatermarkModels.kt
           grep -q '1941214c210399eb815eb2d32570ba91d5e6c4ac3de4c939bd3fb09300454972' app/src/main/java/com/videoflow/app/domain/ai/WatermarkModels.kt
           ! grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
-          ! grep -R -qE 'https?://|HttpURLConnection|OkHttp|Retrofit|DownloadManager' app/src/main/java/com/videoflow/app/ai app/src/main/java/com/videoflow/app/data/ai app/src/main/java/com/videoflow/app/domain/ai
+          ! grep -R -qE 'https?://|HttpURLConnection|OkHttp|Retrofit|DownloadManager' app/src/main/java/com/videoflow/app/ai app/src/main/java/com/videoflow/app/data/ai app/src/main/java/com/videoflow/app/domain/ai app/src/main/java/com/videoflow/app/ui/ai
           ! grep -R -qE 'FirebaseAnalytics|Crashlytics|Sentry|Mixpanel|Amplitude|Segment' app/src/main/java app/build.gradle.kts
           ! grep -R -qE 'readBytes\(\)|readAllBytes\(\)' app/src/main/java/com/videoflow/app/ai app/src/main/java/com/videoflow/app/data/ai
 
@@ -125,15 +135,22 @@ jobs:
           unzip -l "$APK" | grep -q 'assets/models/lama-512-int8.onnx'
           unzip -l "$APK" | grep -q 'assets/models/lama-dynamic-int8.onnx'
 
-      - name: Package Step 4 Review artifact
+      - name: Package Step 4 Review and exact runtime artifacts
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p step4-artifacts
+          mkdir -p step4-artifacts step4-runtime
           cp app/build/outputs/apk/review/app-review.apk step4-artifacts/VideoFlow_Android_Step4_AI_Review.apk
           cp app/build/outputs/apk/debug/app-debug.apk step4-artifacts/VideoFlow_Android_Step4_AI_Debug.apk
           cp review-badging.txt review-signature.txt step4-artifacts/
+          for DOC in STEP_4_AI_WATERMARK_STUDIO_HANDOFF.md STEP_4_AI_WATERMARK_STUDIO_COMPLETION_REPORT.md; do
+            test -f "$DOC" && cp "$DOC" step4-artifacts/
+          done
           (cd step4-artifacts && sha256sum *.apk | tee SHA256SUMS.txt)
+          cp app/build/outputs/apk/debug/app-debug.apk step4-runtime/VideoFlow_Android_Step4_AI_Debug.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk step4-runtime/VideoFlow_Android_Step4_AI_Debug-androidTest.apk
+          cp app/build/outputs/apk/review/app-review.apk step4-runtime/VideoFlow_Android_Step4_AI_Review.apk
+          (cd step4-runtime && sha256sum *.apk > SHA256SUMS.txt)
 
       - name: Upload Step 4 APKs
         uses: actions/upload-artifact@v4
@@ -141,4 +158,98 @@ jobs:
           name: VideoFlow-Android-Step4-AI-APKs
           path: step4-artifacts/
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload exact API 35 runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-Step4-AI-Runtime-Bundle
+          path: step4-runtime/
+          if-no-files-found: error
+          retention-days: 30
+
+  api35-ai-certification:
+    name: API 35 real AI, editor regression and Review install certification
+    needs: step4-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Reclaim hosted-runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake" "$ANDROID_HOME/system-images" "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/sources" "$ANDROID_HOME/extras" || true
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* /tmp/* || true
+          df -h /
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Download exact runtime bundle from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Android-Step4-AI-Runtime-Bundle
+          path: step4-runtime
+
+      - name: Verify exact runtime bundle integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd step4-runtime && sha256sum -c SHA256SUMS.txt)
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+
+      - name: API 35 Step 4 real local AI and product regression
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 600
+          disk-size: 3072M
+          script: |
+            set -e
+            mkdir -p step4-emulator-reports
+            adb install -r step4-runtime/VideoFlow_Android_Step4_AI_Debug.apk
+            adb install -r step4-runtime/VideoFlow_Android_Step4_AI_Debug-androidTest.apk
+            adb shell am instrument -w -r -e class com.videoflow.app.ai.Step4AiRuntimeInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/ai-runtime.txt 2>&1
+            cat step4-emulator-reports/ai-runtime.txt
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/ai-runtime.txt
+            grep -E -q 'OK \([0-9]+ tests?\)' step4-emulator-reports/ai-runtime.txt
+            adb shell am instrument -w -r -e class com.videoflow.app.ui.HomeComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/editor-regression.txt 2>&1
+            cat step4-emulator-reports/editor-regression.txt
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/editor-regression.txt
+            grep -E -q 'OK \([0-9]+ tests?\)' step4-emulator-reports/editor-regression.txt
+            adb uninstall com.videoflow.app.review >/dev/null 2>&1 || true
+            adb install step4-runtime/VideoFlow_Android_Step4_AI_Review.apk | tee step4-emulator-reports/review-fresh-install.txt
+            grep -q 'Success' step4-emulator-reports/review-fresh-install.txt
+            adb shell monkey -p com.videoflow.app.review -c android.intent.category.LAUNCHER 1 > step4-emulator-reports/review-cold-launch.txt
+            sleep 2
+            adb shell pidof com.videoflow.app.review | tee -a step4-emulator-reports/review-cold-launch.txt
+            adb install -r step4-runtime/VideoFlow_Android_Step4_AI_Review.apk | tee step4-emulator-reports/review-in-place-update.txt
+            grep -q 'Success' step4-emulator-reports/review-in-place-update.txt
+            adb shell monkey -p com.videoflow.app.review -c android.intent.category.LAUNCHER 1 >> step4-emulator-reports/review-in-place-update.txt
+            sleep 2
+            adb shell pidof com.videoflow.app.review | tee -a step4-emulator-reports/review-in-place-update.txt
+
+      - name: Upload API 35 Step 4 certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Android-Step4-AI-API35-Certification
+          path: step4-emulator-reports/
+          if-no-files-found: warn
           retention-days: 30
