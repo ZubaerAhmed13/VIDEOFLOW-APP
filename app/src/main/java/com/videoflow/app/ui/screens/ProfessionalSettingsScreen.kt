@@ -92,8 +92,8 @@ fun ProfessionalSettingsScreen(
             item { SectionHeader("Performance") }
             item {
                 SettingsReadOnly(
-                    "Proxy editing",
-                    "VideoFlow can use smaller editing media for smoother preview performance. Final export continues to resolve original files.",
+                    "Proxy policy",
+                    "There is no global proxy on/off preference. Proxies are derived per project when created, and final export always resolves original files.",
                     Icons.Default.Videocam
                 )
             }
