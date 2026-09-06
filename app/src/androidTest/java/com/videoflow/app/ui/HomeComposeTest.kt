@@ -18,28 +18,64 @@ class HomeComposeTest {
     val rule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun homeNewProjectOpensStep2MediaBinAffordances() {
+    fun uiStep3ProductFlow_homeSettingsCreateAndExport() {
+        reachProductHome()
+
         rule.onNodeWithText("VideoFlow").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Settings").fetchSemanticsNode()
+        rule.onNodeWithText("Recent Projects").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("New Project").fetchSemanticsNode()
+
+        // Settings must expose real product policy rather than a placebo proxy preference.
+        rule.onNodeWithContentDescription("Settings").performClick()
+        rule.waitUntil(10_000) { nodeExistsWithText("Settings") && nodeExistsWithText("Proxy policy") }
+        rule.onNodeWithText("Proxy policy").fetchSemanticsNode()
+        rule.onNodeWithText("Editing proxies").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Back").performClick()
+
+        rule.waitUntil(10_000) { nodeExistsWithDescription("New Project") }
         rule.onNodeWithContentDescription("New Project").performClick()
 
-        val projectNameField = rule.onNodeWithText("Project name")
+        rule.onNodeWithText("New Project").fetchSemanticsNode()
+        rule.onNodeWithText("16:9 Landscape").fetchSemanticsNode()
+        rule.onNodeWithText("Start from Media").fetchSemanticsNode()
+
+        val projectNameField = rule.onNodeWithText("Project Name")
         projectNameField.performTextClearance()
-        projectNameField.performTextInput("Step 2 UI Test")
+        projectNameField.performTextInput("UI Step 3 Product Test")
+        rule.onNodeWithText("Create Project").performClick()
 
-        rule.onNodeWithText("Create", useUnmergedTree = true).performClick()
-
-        // Creating a project must navigate into the Step 2 project media bin. Verify the
-        // current Step 2 affordances instead of the removed Step 1 "Add media" semantic.
         rule.waitUntil(15_000) {
-            runCatching {
-                rule.onNodeWithText("Import Media").fetchSemanticsNode()
-                rule.onNodeWithText("Open Editor").fetchSemanticsNode()
-                true
-            }.getOrDefault(false)
+            nodeExistsWithText("Start your video") && nodeExistsWithText("Export")
         }
-        rule.onNodeWithText("Project Media Bin").fetchSemanticsNode()
-        rule.onNodeWithText("Import Media").fetchSemanticsNode()
-        rule.onNodeWithText("Open Editor").fetchSemanticsNode()
+        rule.onNodeWithText("Start your video").fetchSemanticsNode()
+        rule.onNodeWithText("Media").fetchSemanticsNode()
+        rule.onNodeWithText("Export").performClick()
+
+        rule.waitUntil(15_000) {
+            nodeExistsWithText("Export Video") && nodeExistsWithText("Recommended export")
+        }
+        rule.onNodeWithText("Export Video").fetchSemanticsNode()
+        rule.onNodeWithText("Recommended export").fetchSemanticsNode()
+        rule.onNodeWithText("Advanced Settings").fetchSemanticsNode()
     }
+
+    private fun reachProductHome() {
+        rule.waitUntil(10_000) {
+            nodeExistsWithText("Skip") || nodeExistsWithDescription("New Project")
+        }
+        if (nodeExistsWithText("Skip")) {
+            rule.onNodeWithText("Skip").performClick()
+        }
+        rule.waitUntil(10_000) { nodeExistsWithDescription("New Project") }
+    }
+
+    private fun nodeExistsWithText(text: String): Boolean = runCatching {
+        rule.onNodeWithText(text).fetchSemanticsNode()
+        true
+    }.getOrDefault(false)
+
+    private fun nodeExistsWithDescription(description: String): Boolean = runCatching {
+        rule.onNodeWithContentDescription(description).fetchSemanticsNode()
+        true
+    }.getOrDefault(false)
 }
