@@ -1,0 +1,131 @@
+package com.videoflow.app.ai
+
+import android.content.ContentValues
+import android.content.Context
+import android.provider.MediaStore
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.videoflow.app.ai.watermark.AiModelPackManager
+import com.videoflow.app.ai.watermark.LocalRoiTracker
+import com.videoflow.app.ai.watermark.LocalWatermarkPreviewEngine
+import com.videoflow.app.data.ai.AiWatermarkRepository
+import com.videoflow.app.domain.ai.AiModelRole
+import com.videoflow.app.domain.ai.AiWatermarkEffect
+import com.videoflow.app.domain.ai.NormalizedRoi
+import com.videoflow.app.domain.editor.TimelineClip
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class Step4AiRuntimeInstrumentedTest {
+    @Test
+    fun dualModelPack_installsAndOpensPreviewSessionOffline() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val manager = AiModelPackManager(context)
+        val installed = manager.ensurePackInstalled()
+        assertEquals(2, installed.size)
+        val status = manager.status()
+        assertTrue(status.finalModelReady)
+        assertTrue(status.previewModelReady)
+        manager.openSession(AiModelRole.PREVIEW, preferNnapi = true).use { session ->
+            assertEquals(AiModelRole.PREVIEW, session.model.spec.role)
+            assertTrue(session.model.file.isFile)
+            assertTrue(session.provider.isNotBlank())
+        }
+    }
+
+    @Test
+    fun previewInferenceAndBoundedTracking_runOnRealVideoFrame() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val resolver = context.contentResolver
+        val sourceUri = createVideoRow(context, "videoflow-step4-ai-${System.currentTimeMillis()}.mp4")
+        try {
+            resolver.openOutputStream(sourceUri, "w")!!.use { output ->
+                context.assets.open("sample_av.mp4").use { it.copyTo(output, 64 * 1024) }
+            }
+            val manager = AiModelPackManager(context)
+            manager.ensurePackInstalled()
+            val previewEngine = LocalWatermarkPreviewEngine(context, manager)
+            val roi = NormalizedRoi(0.62f, 0.62f, 0.94f, 0.92f)
+            val preview = previewEngine.render(
+                sourceUri = sourceUri.toString(),
+                sourceTimeUs = 750_000L,
+                roi = roi,
+                sourceWidth = 320,
+                sourceHeight = 240,
+                featherPx = 6
+            )
+            try {
+                assertTrue(preview.bitmap.width > 0)
+                assertTrue(preview.bitmap.height > 0)
+                assertFalse(preview.bitmap.isRecycled)
+                assertTrue(preview.provider.isNotBlank())
+            } finally {
+                preview.bitmap.recycle()
+            }
+
+            val clip = TimelineClip(
+                id = "ai-test-clip",
+                projectId = "ai-test-project",
+                trackId = "video",
+                assetId = "source",
+                timelineStartUs = 0L,
+                sourceStartUs = 0L,
+                sourceEndUs = 2_000_000L
+            )
+            val tracking = LocalRoiTracker(previewEngine).track(
+                sourceUri = sourceUri.toString(),
+                clip = clip,
+                roi = roi,
+                clipLocalStartUs = 0L,
+                clipLocalEndUs = 1_500_000L
+            )
+            assertTrue(tracking.anchors.size in 2..16)
+            assertTrue(tracking.anchors.zipWithNext().all { (a, b) -> b.clipLocalTimeUs > a.clipLocalTimeUs })
+            assertTrue(tracking.anchors.all { it.centerX in 0f..1f && it.centerY in 0f..1f })
+            assertTrue(tracking.averageConfidence in 0f..1f)
+        } finally {
+            resolver.delete(sourceUri, null, null)
+        }
+    }
+
+    @Test
+    fun aiEffectSidecar_isEditableAndNonDestructive() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = AiWatermarkRepository(context)
+        val suffix = System.currentTimeMillis().toString()
+        val projectId = "instrumented-$suffix"
+        val clipId = "clip-$suffix"
+        val effect = AiWatermarkEffect(
+            id = "effect-$suffix",
+            projectId = projectId,
+            clipId = clipId,
+            clipLocalStartUs = 100_000L,
+            clipLocalEndUs = 1_100_000L,
+            roi = NormalizedRoi(0.1f, 0.2f, 0.3f, 0.4f)
+        )
+        repository.upsert(effect)
+        assertEquals(listOf(effect), repository.effectsForClip(projectId, clipId))
+
+        repository.upsert(effect.copy(featherPx = 14, enabled = false))
+        val edited = repository.effectsForClip(projectId, clipId).single()
+        assertEquals(14, edited.featherPx)
+        assertFalse(edited.enabled)
+
+        repository.remove(projectId, effect.id)
+        assertTrue(repository.effectsForClip(projectId, clipId).isEmpty())
+    }
+
+    private fun createVideoRow(context: Context, displayName: String): android.net.Uri {
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/VideoFlowCertification")
+        }
+        return requireNotNull(context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values))
+    }
+}
