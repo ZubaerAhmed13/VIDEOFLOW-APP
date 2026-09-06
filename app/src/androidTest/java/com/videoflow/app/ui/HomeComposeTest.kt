@@ -35,9 +35,16 @@ class HomeComposeTest {
         rule.waitUntil(10_000) { nodeExistsWithDescription("New Project") }
         rule.onNodeWithContentDescription("New Project").performClick()
 
-        rule.onNodeWithText("New Project").fetchSemanticsNode()
+        // Use controls unique to the modal rather than the repeated "New Project" label
+        // that also exists on the Home CTA and empty-state action behind the dialog.
+        rule.waitUntil(10_000) {
+            nodeExistsWithText("16:9 Landscape") &&
+                nodeExistsWithText("Start from Media") &&
+                nodeExistsWithText("Create Project")
+        }
         rule.onNodeWithText("16:9 Landscape").fetchSemanticsNode()
         rule.onNodeWithText("Start from Media").fetchSemanticsNode()
+        rule.onNodeWithText("Create Project").fetchSemanticsNode()
 
         val projectNameField = rule.onNodeWithText("Project Name")
         projectNameField.performTextClearance()
