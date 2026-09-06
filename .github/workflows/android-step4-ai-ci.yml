@@ -118,14 +118,19 @@ jobs:
           test -s app/src/main/java/com/videoflow/app/ai/watermark/AiModelPackManager.kt
           test -s app/src/main/java/com/videoflow/app/ai/watermark/LocalWatermarkPreviewEngine.kt
           test -s app/src/main/java/com/videoflow/app/ai/watermark/LocalRoiTracker.kt
+          test -s app/src/main/java/com/videoflow/app/ai/watermark/OnnxWatermarkEffect.kt
           test -s app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           test -s app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt
           test -s app/src/main/java/com/videoflow/app/ui/screens/Step4WatermarkEditorRoute.kt
+          test -s app/src/androidTest/java/com/videoflow/app/ai/Step4AiFinalExportInstrumentedTest.kt
           grep -q 'AI Watermark' app/src/main/java/com/videoflow/app/ui/screens/Step4WatermarkEditorRoute.kt
           grep -q 'Mask and timing' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           grep -q 'Track movement' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           grep -q 'Generate AI Preview' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           grep -q 'Apply non-destructively' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'AiWatermarkHistoryEntry' app/src/main/java/com/videoflow/app/data/history/EditHistoryService.kt
+          grep -q 'featherWeight(globalX, globalY, logicalTarget' app/src/main/java/com/videoflow/app/ai/watermark/OnnxWatermarkEffect.kt
+          grep -q 'FINAL_AI_EXPORT_CERTIFIED' app/src/androidTest/java/com/videoflow/app/ai/Step4AiFinalExportInstrumentedTest.kt
           grep -q 'onnxruntime-android:1.29.0' app/build.gradle.kts
           grep -q 'cab19978adc306622fe37ef60d4a52103b99c98141d499c2a2366a7ed1255dbe' app/src/main/java/com/videoflow/app/domain/ai/WatermarkModels.kt
           grep -q '1941214c210399eb815eb2d32570ba91d5e6c4ac3de4c939bd3fb09300454972' app/src/main/java/com/videoflow/app/domain/ai/WatermarkModels.kt
@@ -168,7 +173,7 @@ jobs:
           cp app/build/outputs/apk/review/app-review.apk step4-artifacts/VideoFlow_Android_Step4_AI_Review.apk
           cp app/build/outputs/apk/debug/app-debug.apk step4-artifacts/VideoFlow_Android_Step4_AI_Debug.apk
           cp review-badging.txt review-signature.txt androidtest-video-fixture.txt step4-artifacts/
-          for DOC in STEP_4_AI_WATERMARK_STUDIO_HANDOFF.md STEP_4_AI_WATERMARK_STUDIO_COMPLETION_REPORT.md; do
+          for DOC in STEP_4_AI_WATERMARK_STUDIO_HANDOFF.md STEP_4_AI_WATERMARK_STUDIO_COMPLETION_REPORT.md STEP_4_AI_WATERMARK_STUDIO_TEST_REPORT.md STEP_4_AI_WATERMARK_STUDIO_PHYSICAL_REVIEW.md; do
             test -f "$DOC" && cp "$DOC" step4-artifacts/
           done
           (cd step4-artifacts && sha256sum *.apk | tee SHA256SUMS.txt)
@@ -194,10 +199,10 @@ jobs:
           retention-days: 30
 
   api35-ai-certification:
-    name: API 35 real AI, editor regression and Review install certification
+    name: API 35 final AI export, runtime, editor and Review certification
     needs: step4-build
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 90
     steps:
       - name: Reclaim hosted-runner disk space
         shell: bash
@@ -235,7 +240,7 @@ jobs:
           sudo chown "$USER":"$(id -gn)" /dev/kvm
           sudo chmod 660 /dev/kvm
 
-      - name: API 35 Step 4 real local AI and product regression
+      - name: API 35 Step 4 real final AI export and product regression
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -250,14 +255,23 @@ jobs:
             mkdir -p step4-emulator-reports
             adb install -r step4-runtime/VideoFlow_Android_Step4_AI_Debug.apk
             adb install -r step4-runtime/VideoFlow_Android_Step4_AI_Debug-androidTest.apk
+
             adb shell am instrument -w -r -e class com.videoflow.app.ai.Step4AiRuntimeInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/ai-runtime.txt 2>&1
             cat step4-emulator-reports/ai-runtime.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/ai-runtime.txt
             grep -E -q 'OK \([0-9]+ tests?\)' step4-emulator-reports/ai-runtime.txt
+
+            adb shell am instrument -w -r -e class com.videoflow.app.ai.Step4AiFinalExportInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/final-ai-export.txt 2>&1
+            cat step4-emulator-reports/final-ai-export.txt
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/final-ai-export.txt
+            grep -E -q 'OK \(1 test\)' step4-emulator-reports/final-ai-export.txt
+            grep -q 'FINAL_AI_EXPORT_CERTIFIED' step4-emulator-reports/final-ai-export.txt
+
             adb shell am instrument -w -r -e class com.videoflow.app.ui.HomeComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/editor-regression.txt 2>&1
             cat step4-emulator-reports/editor-regression.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/editor-regression.txt
             grep -E -q 'OK \([0-9]+ tests?\)' step4-emulator-reports/editor-regression.txt
+
             adb uninstall com.videoflow.app.review >/dev/null 2>&1 || true
             adb install step4-runtime/VideoFlow_Android_Step4_AI_Review.apk | tee step4-emulator-reports/review-fresh-install.txt
             grep -q 'Success' step4-emulator-reports/review-fresh-install.txt
