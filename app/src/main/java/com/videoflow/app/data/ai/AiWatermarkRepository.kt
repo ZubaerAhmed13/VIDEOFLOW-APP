@@ -9,6 +9,9 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,6 +25,10 @@ class AiWatermarkRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val root = File(context.filesDir, "ai-watermark/projects")
+    private val _changes = MutableSharedFlow<String>(extraBufferCapacity = 32)
+
+    /** Emits the project id after every successful atomic AI-sidecar replacement. */
+    val changes: SharedFlow<String> = _changes.asSharedFlow()
 
     suspend fun load(projectId: String): List<AiWatermarkEffect> = withContext(Dispatchers.IO) {
         requireSafeId(projectId)
@@ -76,6 +83,7 @@ class AiWatermarkRepository @Inject constructor(
             temp.delete()
             error("Could not atomically persist AI Watermark sidecar.")
         }
+        _changes.tryEmit(projectId)
     }
 
     private fun fileFor(projectId: String) = File(root, "$projectId.json")
