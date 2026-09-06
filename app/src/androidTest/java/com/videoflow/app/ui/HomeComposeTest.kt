@@ -31,8 +31,9 @@ class HomeComposeTest {
         rule.onNodeWithContentDescription("New Project").fetchSemanticsNode()
 
         // Final editor quality: Merge Videos is a real first-class workflow, not a note telling
-        // users to place clips manually on V1.
-        rule.onNodeWithText("Merge Videos").performClick()
+        // users to place clips manually on V1. Click its stable accessibility semantics node;
+        // the visible label itself is intentionally merged into the parent semantics tree.
+        rule.onNodeWithContentDescription("Merge Videos").performClick()
         rule.waitUntil(10_000) {
             nodeExistsWithText("Merge Videos") && nodeExistsWithText("Select Videos") &&
                 nodeExistsWithText("Create & Preview Merge")
