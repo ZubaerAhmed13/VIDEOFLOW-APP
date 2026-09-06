@@ -1,6 +1,8 @@
 package com.videoflow.app.ui
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -49,13 +51,16 @@ class HomeComposeTest {
         val projectNameField = rule.onNodeWithText("Project Name")
         projectNameField.performTextClearance()
         projectNameField.performTextInput("UI Step 3 Product Test")
+        rule.waitUntil(5_000) { nodeExistsWithText("UI Step 3 Product Test") }
         rule.onNodeWithText("Create Project").performClick()
 
         rule.waitUntil(15_000) {
             nodeExistsWithText("Start your video") && nodeExistsWithText("Export")
         }
-        rule.onNodeWithText("Start your video").fetchSemanticsNode()
-        rule.onNodeWithText("Media").fetchSemanticsNode()
+        rule.onAllNodesWithText("Start your video").fetchSemanticsNodes().also {
+            check(it.isNotEmpty()) { "Editor empty-state should be visible after project creation" }
+        }
+        rule.onNodeWithContentDescription("Media").fetchSemanticsNode()
         rule.onNodeWithText("Export").performClick()
 
         rule.waitUntil(15_000) {
@@ -76,13 +81,9 @@ class HomeComposeTest {
         rule.waitUntil(10_000) { nodeExistsWithDescription("New Project") }
     }
 
-    private fun nodeExistsWithText(text: String): Boolean = runCatching {
-        rule.onNodeWithText(text).fetchSemanticsNode()
-        true
-    }.getOrDefault(false)
+    private fun nodeExistsWithText(text: String): Boolean =
+        rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
 
-    private fun nodeExistsWithDescription(description: String): Boolean = runCatching {
-        rule.onNodeWithContentDescription(description).fetchSemanticsNode()
-        true
-    }.getOrDefault(false)
+    private fun nodeExistsWithDescription(description: String): Boolean =
+        rule.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty()
 }
