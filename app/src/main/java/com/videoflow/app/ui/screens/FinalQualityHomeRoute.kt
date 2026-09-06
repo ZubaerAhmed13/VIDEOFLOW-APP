@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.videoflow.app.ui.product.ProductHomeViewModel
 
@@ -33,7 +35,10 @@ fun FinalQualityHomeRoute(
             onClick = onMerge,
             icon = { Icon(Icons.Default.VideoLibrary, contentDescription = null) },
             text = { Text("Merge Videos") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+                .semantics { contentDescription = "Merge Videos" }
         )
     }
 }
