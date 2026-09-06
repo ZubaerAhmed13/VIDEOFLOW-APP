@@ -5,7 +5,9 @@ package com.videoflow.app.export
 import android.content.Context
 import android.net.Uri
 import androidx.media3.common.C
+import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.data.export.ExportRepository
+import com.videoflow.app.domain.ai.AiReconstructionExportPolicy
 import com.videoflow.app.domain.export.ExportFailureCode
 import com.videoflow.app.domain.export.ExportJobStatus
 import com.videoflow.app.domain.export.ExportMath
@@ -37,7 +39,8 @@ class ExportCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: ExportRepository,
     private val renderEngine: RenderEngine,
-    private val smartCopyEngine: SmartCopyEngine
+    private val smartCopyEngine: SmartCopyEngine,
+    private val aiRepository: AiWatermarkRepository
 ) {
     private val queueMutex = Mutex()
 
@@ -60,6 +63,20 @@ class ExportCoordinator @Inject constructor(
                 )
             }
 
+            val aiEffects = AiReconstructionExportPolicy.activeForProject(
+                aiRepository.load(plan.editorPlan.projectId),
+                plan.editorPlan.clips
+            )
+            val aiProblems = AiReconstructionExportPolicy.validationProblems(aiEffects, plan.editorPlan.clips)
+            if (aiProblems.isNotEmpty()) {
+                return@withLock fail(
+                    jobId,
+                    ExportFailureCode.VALIDATION_FAILED,
+                    "Local AI reconstruction preflight failed: ${aiProblems.joinToString(" ")}",
+                    onProgress
+                )
+            }
+
             val decoded = ExportSettingsCodec.decode(job.settingsJson)
             val requested = if (decoded.mode == ExportMode.MATCH_SOURCE || decoded.mode == ExportMode.SMART_COPY) {
                 SourcePreservationPolicy.settingsForMode(plan, decoded, decoded.mode)
@@ -71,6 +88,14 @@ class ExportCoordinator @Inject constructor(
             )
 
             if (requested.mode == ExportMode.SMART_COPY) {
+                if (aiEffects.isNotEmpty()) {
+                    return@withLock fail(
+                        jobId,
+                        ExportFailureCode.VALIDATION_FAILED,
+                        "${AiReconstructionExportPolicy.SMART_COPY_BLOCK_REASON} No rendered fallback was started.",
+                        onProgress
+                    )
+                }
                 return@withLock executeSmartCopy(jobId, job.destinationUri, plan, resolved, onProgress)
             }
 
