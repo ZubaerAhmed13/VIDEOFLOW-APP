@@ -40,7 +40,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -52,9 +51,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.videoflow.app.data.editor.EditorProject
 import com.videoflow.app.domain.ai.AiModelCatalog
 import com.videoflow.app.domain.ai.AiWatermarkEffect
-import com.videoflow.app.domain.ai.AiWatermarkMath
 import com.videoflow.app.domain.ai.NormalizedRoi
-import com.videoflow.app.domain.editor.TimelineClip
+import com.videoflow.app.domain.ai.RoiMotionAnchor
 import com.videoflow.app.domain.model.SourceStatus
 import com.videoflow.app.domain.model.VideoFlowProject
 import com.videoflow.app.ui.editor.VideoFlowEditorColors
@@ -65,8 +63,8 @@ import kotlin.math.roundToLong
 
 /**
  * Real product surface for Step 4: Mask -> Track -> AI Preview -> non-destructive Apply.
- * The interactive image is intentionally a bounded preview; saved ROI/timing remains normalized
- * and final export runs against original source pixels through Media3RenderEngine.
+ * The interactive image is intentionally a bounded preview; saved ROI/timing stays normalized and
+ * final export runs against original source pixels through Media3RenderEngine.
  */
 @Composable
 fun WatermarkStudioPanel(
@@ -89,19 +87,23 @@ fun WatermarkStudioPanel(
     }
 
     val durationUs = clip.timelineDurationUs.coerceAtLeast(1L)
-    val localPlayheadUs = (playheadUs - clip.timelineStartUs).coerceIn(0L, durationUs - 1L)
-    val sourceTimeUs = clip.sourceStartUs + (localPlayheadUs.toDouble() * clip.speed).roundToLong()
+    val studioLocalUs = remember(clipId) {
+        (playheadUs - clip.timelineStartUs).coerceIn(0L, durationUs - 1L)
+    }
+    val sourceTimeUs = clip.sourceStartUs + (studioLocalUs.toDouble() * clip.speed).roundToLong()
     var roi by remember(clipId) { mutableStateOf(NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)) }
     var range by remember(clipId) { mutableStateOf(0f..1f) }
     var featherPx by remember(clipId) { mutableFloatStateOf(8f) }
     var contextPx by remember(clipId) { mutableFloatStateOf(48f) }
     var stability by remember(clipId) { mutableFloatStateOf(0.12f) }
-    var hydratedExisting by remember(clipId) { mutableStateOf(false) }
+    var editingEffectId by remember(clipId) { mutableStateOf<String?>(null) }
+    var loadedAnchors by remember(clipId) { mutableStateOf<List<RoiMotionAnchor>>(emptyList()) }
 
     val startUs = (range.start * durationUs.toDouble()).roundToLong().coerceIn(0L, durationUs - 1L)
     val endUs = (range.endInclusive * durationUs.toDouble()).roundToLong().coerceIn(startUs + 1L, durationUs)
-    val previewLocalUs = localPlayheadUs.coerceIn(startUs, endUs - 1L)
-    val draftEffect = remember(projectId, clipId, startUs, endUs, roi, state.trackedAnchors) {
+    val previewLocalUs = studioLocalUs.coerceIn(startUs, endUs - 1L)
+    val activeAnchors = state.trackedAnchors.ifEmpty { loadedAnchors }
+    val draftEffect = remember(projectId, clipId, startUs, endUs, roi, activeAnchors, contextPx, featherPx, stability) {
         AiWatermarkEffect(
             id = "draft",
             projectId = projectId,
@@ -109,31 +111,35 @@ fun WatermarkStudioPanel(
             clipLocalStartUs = startUs,
             clipLocalEndUs = endUs,
             roi = roi,
-            motionAnchors = state.trackedAnchors,
+            motionAnchors = activeAnchors,
             contextPaddingPx = contextPx.roundToInt().coerceIn(0, 256),
             featherPx = featherPx.roundToInt().coerceIn(0, 128),
             temporalStability = stability.coerceIn(0f, 0.5f),
             modelId = AiModelCatalog.FINAL_512.id
         )
     }
-    val shownRoi = if (state.trackedAnchors.isEmpty()) roi else draftEffect.roiAt(previewLocalUs)
+    val shownRoi = if (activeAnchors.isEmpty()) roi else draftEffect.roiAt(previewLocalUs)
     val shownBitmap = state.aiPreview ?: state.sourceFrame
+
+    fun invalidateMotionAndPreview() {
+        loadedAnchors = emptyList()
+        vm.clearDraftResults()
+    }
+
+    fun resetNewDraft() {
+        editingEffectId = null
+        loadedAnchors = emptyList()
+        roi = NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)
+        range = 0f..1f
+        featherPx = 8f
+        contextPx = 48f
+        stability = 0.12f
+        vm.clearDraftResults()
+    }
 
     LaunchedEffect(projectId, clipId) { vm.bind(projectId, clipId) }
     LaunchedEffect(asset.sourceUri, sourceTimeUs) {
         vm.loadSourceFrame(asset.sourceUri, sourceTimeUs.coerceIn(clip.sourceStartUs, clip.sourceEndUs - 1L))
-    }
-    LaunchedEffect(state.existingEffects) {
-        if (!hydratedExisting && state.existingEffects.isNotEmpty()) {
-            val existing = state.existingEffects.last()
-            roi = existing.roi
-            range = (existing.clipLocalStartUs.toFloat() / durationUs.toFloat()).coerceIn(0f, 1f)..
-                (existing.clipLocalEndUs.toFloat() / durationUs.toFloat()).coerceIn(0f, 1f)
-            featherPx = existing.featherPx.toFloat()
-            contextPx = existing.contextPaddingPx.toFloat()
-            stability = existing.temporalStability
-            hydratedExisting = true
-        }
     }
 
     StudioHeader("AI Watermark Studio", "Local • Offline • original-resolution final render")
@@ -167,6 +173,13 @@ fun WatermarkStudioPanel(
             }
         }
 
+        editingEffectId?.let {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Editing an applied AI region", color = VideoFlowEditorColors.SelectionAccent)
+                TextButton(onClick = ::resetNewDraft) { Text("New region") }
+            }
+        }
+
         StepTitle("1", "Mask and timing")
         Text("Drag inside the box to move it. Drag a corner to resize it around the watermark.", color = VideoFlowEditorColors.SecondaryText)
         if (shownBitmap != null) {
@@ -175,7 +188,7 @@ fun WatermarkStudioPanel(
                 roi = shownRoi,
                 onRoiChange = { next ->
                     roi = next
-                    vm.clearDraftResults()
+                    invalidateMotionAndPreview()
                 },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -190,7 +203,7 @@ fun WatermarkStudioPanel(
             onValueChange = { next ->
                 if (next.endInclusive - next.start >= 0.001f) {
                     range = next
-                    vm.clearDraftResults()
+                    invalidateMotionAndPreview()
                 }
             },
             valueRange = 0f..1f,
@@ -205,17 +218,21 @@ fun WatermarkStudioPanel(
         Text("Tracking samples small local frames and creates motion anchors; no video is uploaded.", color = VideoFlowEditorColors.SecondaryText)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
-                onClick = { vm.track(asset.sourceUri, clip, roi, startUs, endUs) },
+                onClick = {
+                    loadedAnchors = emptyList()
+                    vm.track(asset.sourceUri, clip, roi, startUs, endUs)
+                },
                 enabled = state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE
-            ) { Text(if (state.trackedAnchors.isEmpty()) "Track movement" else "Re-track") }
-            if (state.trackedAnchors.isNotEmpty()) {
-                Text("${state.trackedAnchors.size} anchors", color = VideoFlowEditorColors.SuccessColor)
+            ) { Text(if (activeAnchors.isEmpty()) "Track movement" else "Re-track") }
+            if (activeAnchors.isNotEmpty()) {
+                Text("${activeAnchors.size} anchors", color = VideoFlowEditorColors.SuccessColor)
             }
         }
-        state.trackingConfidence?.let { confidence ->
+        val confidence = state.trackingConfidence ?: activeAnchors.takeIf { it.isNotEmpty() }?.map { it.confidence }?.average()?.toFloat()
+        confidence?.let {
             Text(
-                "Average tracking confidence ${(confidence * 100f).roundToInt()}%${if (confidence < 0.45f) " — review ROI before Apply" else ""}",
-                color = if (confidence >= 0.45f) VideoFlowEditorColors.SecondaryText else VideoFlowEditorColors.WarningColor
+                "Average tracking confidence ${(it * 100f).roundToInt()}%${if (it < 0.45f) " — review ROI before Apply" else ""}",
+                color = if (it >= 0.45f) VideoFlowEditorColors.SecondaryText else VideoFlowEditorColors.WarningColor
             )
         }
 
@@ -234,7 +251,7 @@ fun WatermarkStudioPanel(
                         sourceWidth = width,
                         sourceHeight = height,
                         featherPx = featherPx.roundToInt(),
-                        anchors = state.trackedAnchors
+                        anchors = activeAnchors
                     )
                 }
             },
@@ -274,7 +291,8 @@ fun WatermarkStudioPanel(
             Button(
                 onClick = {
                     val effect = draftEffect.copy(
-                        id = UUID.randomUUID().toString(),
+                        id = editingEffectId ?: UUID.randomUUID().toString(),
+                        motionAnchors = activeAnchors,
                         contextPaddingPx = contextPx.roundToInt().coerceIn(0, 256),
                         featherPx = featherPx.roundToInt().coerceIn(0, 128),
                         temporalStability = stability.coerceIn(0f, 0.5f),
@@ -287,7 +305,7 @@ fun WatermarkStudioPanel(
                 },
                 enabled = state.runtimeReady && state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE,
                 modifier = Modifier.weight(1f)
-            ) { Text("Apply") }
+            ) { Text(if (editingEffectId == null) "Apply" else "Update") }
         }
 
         if (state.existingEffects.isNotEmpty()) {
@@ -298,8 +316,12 @@ fun WatermarkStudioPanel(
                     index = index,
                     effect = effect,
                     onEnabled = { vm.setEnabled(effect, it) },
-                    onRemove = { vm.remove(effect) },
+                    onRemove = {
+                        if (editingEffectId == effect.id) resetNewDraft()
+                        vm.remove(effect)
+                    },
                     onEdit = {
+                        editingEffectId = effect.id
                         roi = effect.roi
                         range = (effect.clipLocalStartUs.toFloat() / durationUs.toFloat()).coerceIn(0f, 1f)..
                             (effect.clipLocalEndUs.toFloat() / durationUs.toFloat()).coerceIn(0f, 1f)
@@ -307,6 +329,7 @@ fun WatermarkStudioPanel(
                         contextPx = effect.contextPaddingPx.toFloat()
                         stability = effect.temporalStability
                         vm.clearDraftResults()
+                        loadedAnchors = effect.motionAnchors
                     }
                 )
             }
@@ -355,7 +378,11 @@ private fun AppliedEffectRow(
             )
         }
         TextButton(onClick = onEdit) { Text("Edit") }
-        Switch(checked = effect.enabled, onCheckedChange = onEnabled, modifier = Modifier.semantics { contentDescription = "Enable AI region ${index + 1}" })
+        Switch(
+            checked = effect.enabled,
+            onCheckedChange = onEnabled,
+            modifier = Modifier.semantics { contentDescription = "Enable AI region ${index + 1}" }
+        )
         TextButton(onClick = onRemove) { Text("Remove") }
     }
 }
