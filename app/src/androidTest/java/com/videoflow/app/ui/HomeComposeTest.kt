@@ -30,6 +30,18 @@ class HomeComposeTest {
         rule.onNodeWithText("Recent Projects").fetchSemanticsNode()
         rule.onNodeWithContentDescription("New Project").fetchSemanticsNode()
 
+        // Final editor quality: Merge Videos is a real first-class workflow, not a note telling
+        // users to place clips manually on V1.
+        rule.onNodeWithText("Merge Videos").performClick()
+        rule.waitUntil(10_000) {
+            nodeExistsWithText("Merge Videos") && nodeExistsWithText("Select Videos") &&
+                nodeExistsWithText("Create & Preview Merge")
+        }
+        rule.onNodeWithText("Select Videos").fetchSemanticsNode()
+        rule.onNodeWithText("Create & Preview Merge").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Back").performClick()
+        rule.waitUntil(10_000) { nodeExistsWithDescription("New Project") && nodeExistsWithText("Merge Videos") }
+
         // Settings must expose real product policy rather than a placebo proxy preference.
         rule.onNodeWithContentDescription("Settings").performClick()
         rule.waitUntil(10_000) { nodeExistsWithText("Settings") && nodeExistsWithText("Proxy policy") }
@@ -67,10 +79,21 @@ class HomeComposeTest {
         rule.onNodeWithText("Export").performClick()
 
         rule.waitUntil(15_000) {
-            nodeExistsWithText("Export Video") && nodeExistsWithText("Recommended export")
+            nodeExistsWithText("Export Video") && nodeExistsWithText("Recommended export") &&
+                nodeExistsWithText("Export Mode: Recommended")
         }
         rule.onNodeWithText("Export Video").fetchSemanticsNode()
         rule.onNodeWithText("Recommended export").fetchSemanticsNode()
+
+        // Final-quality export mode is explicit. Smart Copy is not advertised as available for an
+        // empty/render-ineligible project, while Match Source remains available for rendered work.
+        rule.onNodeWithText("Export Mode: Recommended").performClick()
+        rule.waitUntil(10_000) {
+            nodeExistsWithText("Match Source") && nodeExistsWithText("Smart Copy is not available for this edit")
+        }
+        rule.onNodeWithText("Match Source").fetchSemanticsNode()
+        rule.onNodeWithText("Smart Copy is not available for this edit", substring = true).fetchSemanticsNode()
+        rule.onNodeWithText("Done").performClick()
 
         // The export content is a LazyColumn. On the API-35 certification device (320x640),
         // Advanced Settings is intentionally below the fold. The first scrollable semantics
