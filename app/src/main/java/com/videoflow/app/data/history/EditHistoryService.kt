@@ -1,12 +1,14 @@
 package com.videoflow.app.data.history
 
 import androidx.room.withTransaction
+import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.data.db.ClipEntity
 import com.videoflow.app.data.db.ImageOverlayEntity
 import com.videoflow.app.data.db.KeyframeEntity
 import com.videoflow.app.data.db.TextOverlayEntity
 import com.videoflow.app.data.db.TrackEntity
 import com.videoflow.app.data.db.VideoFlowDatabase
+import com.videoflow.app.domain.ai.AiWatermarkEffect
 import com.videoflow.app.domain.editor.ImageOverlay
 import com.videoflow.app.domain.editor.Keyframe
 import com.videoflow.app.domain.editor.TextOverlay
@@ -81,8 +83,28 @@ data class ImageOverlayHistoryEntry(
     init { require(before != null || after != null) }
 }
 
+/**
+ * AI edits live in the non-destructive sidecar rather than Room, but they participate in the same
+ * user-visible editor history stack. Complete project snapshots make apply/update/toggle/remove
+ * deterministic without introducing a destructive database migration.
+ */
+data class AiWatermarkHistoryEntry(
+    override val projectId: String,
+    override val label: String,
+    val before: List<AiWatermarkEffect>,
+    val after: List<AiWatermarkEffect>
+) : HistoryEntry {
+    init {
+        require(before.all { it.projectId == projectId })
+        require(after.all { it.projectId == projectId })
+    }
+}
+
 @Singleton
-class EditHistoryService @Inject constructor(private val db: VideoFlowDatabase) {
+class EditHistoryService @Inject constructor(
+    private val db: VideoFlowDatabase,
+    private val aiWatermarkRepository: AiWatermarkRepository
+) {
     private val undo = ArrayDeque<HistoryEntry>()
     private val redo = ArrayDeque<HistoryEntry>()
     private val _state = MutableStateFlow(HistoryState())
@@ -175,10 +197,22 @@ class EditHistoryService @Inject constructor(private val db: VideoFlowDatabase) 
             previous.projectId == next.projectId && previous.after?.id == next.before?.id ->
             previous.copy(label = next.label, after = next.after, afterKeyframes = next.afterKeyframes)
 
+        previous is AiWatermarkHistoryEntry && next is AiWatermarkHistoryEntry &&
+            previous.projectId == next.projectId && previous.after == next.before ->
+            previous.copy(label = next.label, after = next.after)
+
         else -> null
     }
 
     private suspend fun apply(entry: HistoryEntry, before: Boolean) {
+        // AI sidecar persistence is intentionally not wrapped in a fake Room transaction. Restore
+        // the atomic sidecar first, then touch the project in its own real Room transaction.
+        if (entry is AiWatermarkHistoryEntry) {
+            aiWatermarkRepository.replaceProjectEffects(entry.projectId, if (before) entry.before else entry.after)
+            db.withTransaction { touch(entry.projectId) }
+            return
+        }
+
         db.withTransaction {
             when (entry) {
                 is ClipHistoryEntry -> {
@@ -243,6 +277,8 @@ class EditHistoryService @Inject constructor(private val db: VideoFlowDatabase) 
                     if (desired != null) db.editorDao().putImageOverlay(desired.toEntity())
                     frames.forEach { db.editorDao().putKeyframe(it.toEntity()) }
                 }
+
+                is AiWatermarkHistoryEntry -> error("AI history is restored outside the Room transaction.")
             }
             touch(entry.projectId)
         }
