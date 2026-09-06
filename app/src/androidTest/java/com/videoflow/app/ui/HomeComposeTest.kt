@@ -42,7 +42,9 @@ class HomeComposeTest {
         rule.onNodeWithText("Select Videos").fetchSemanticsNode()
         rule.onNodeWithText("Create & Preview Merge").fetchSemanticsNode()
         rule.onNodeWithContentDescription("Back").performClick()
-        rule.waitUntil(10_000) { nodeExistsWithDescription("New Project") && nodeExistsWithText("Merge Videos") }
+        rule.waitUntil(10_000) {
+            nodeExistsWithDescription("New Project") && nodeExistsWithTextUnmerged("Merge Videos")
+        }
 
         // Settings must expose real product policy rather than a placebo proxy preference.
         rule.onNodeWithContentDescription("Settings").performClick()
@@ -118,6 +120,9 @@ class HomeComposeTest {
 
     private fun nodeExistsWithText(text: String): Boolean =
         rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+
+    private fun nodeExistsWithTextUnmerged(text: String): Boolean =
+        rule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     private fun nodeExistsWithTextSubstring(text: String): Boolean =
         rule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
