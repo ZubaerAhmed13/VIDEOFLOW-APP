@@ -14,14 +14,13 @@ import com.videoflow.app.data.media.MediaAnalyzer
 import com.videoflow.app.data.project.AddMediaResult
 import com.videoflow.app.data.project.ProjectRepository
 import com.videoflow.app.domain.editor.FrameRate
+import com.videoflow.app.domain.editor.SourceMediaAuthority
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.abs
-import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -156,8 +155,8 @@ class ProductHomeViewModel @Inject constructor(
                 when (val result = projectRepository.addMedia(id, uri)) {
                     is AddMediaResult.Added -> {
                         val asset = result.asset
-                        val sourceCanvas = sourceAwareCanvas(asset.width, asset.height)
-                        val frameRate = sourceFrameRate(asset.frameRate)
+                        val sourceCanvas = SourceMediaAuthority.canvas(asset.width, asset.height)
+                        val frameRate = SourceMediaAuthority.frameRate(asset.frameRate)
                         setCanvas(
                             id,
                             sourceCanvas?.first ?: fallbackPreset.width,
@@ -249,10 +248,11 @@ class ProductHomeViewModel @Inject constructor(
                 editorRepository.ensureProjectInitialized(id)
 
                 // Explicit project authority: the first ordered video seeds project canvas/FPS.
-                // This is a project setting only; Smart Copy still verifies every encoded source.
+                // Preserve the source dimensions rather than silently reducing a 4K/8K project to 1080p.
+                // Smart Copy still verifies every encoded source before packet copying.
                 val first = ordered.first()
-                val canvas = sourceAwareCanvas(first.width, first.height) ?: (1920 to 1080)
-                setCanvas(id, canvas.first, canvas.second, sourceFrameRate(first.frameRate))
+                val canvas = SourceMediaAuthority.canvas(first.width, first.height) ?: (1920 to 1080)
+                setCanvas(id, canvas.first, canvas.second, SourceMediaAuthority.frameRate(first.frameRate))
 
                 var timelineCursorUs = 0L
                 for (candidate in ordered) {
@@ -308,33 +308,6 @@ class ProductHomeViewModel @Inject constructor(
     }
 
     private fun validatedName(value: String): String? = value.trim().takeIf { it.isNotBlank() }?.take(80)
-}
-
-private fun sourceAwareCanvas(width: Int?, height: Int?): Pair<Int, Int>? {
-    if (width == null || height == null || width <= 0 || height <= 0) return null
-    val longest = max(width, height)
-    val scale = if (longest > 1920) 1920.0 / longest.toDouble() else 1.0
-    val scaledWidth = (width * scale).toInt().coerceAtLeast(2).evenDimension()
-    val scaledHeight = (height * scale).toInt().coerceAtLeast(2).evenDimension()
-    return scaledWidth to scaledHeight
-}
-
-private fun sourceFrameRate(value: Double?): FrameRate {
-    if (value == null || !value.isFinite() || value <= 0.0) return FrameRate.FPS_30
-    val known = listOf(
-        23.976 to FrameRate(24_000, 1_001),
-        24.0 to FrameRate.FPS_24,
-        25.0 to FrameRate.FPS_25,
-        29.97 to FrameRate.FPS_2997,
-        30.0 to FrameRate.FPS_30,
-        50.0 to FrameRate(50, 1),
-        59.94 to FrameRate.FPS_5994,
-        60.0 to FrameRate.FPS_60
-    )
-    return known.minByOrNull { abs(it.first - value) }
-        ?.takeIf { abs(it.first - value) < 0.08 }
-        ?.second
-        ?: FrameRate.FPS_30
 }
 
 private fun Int.evenDimension(): Int = when {
