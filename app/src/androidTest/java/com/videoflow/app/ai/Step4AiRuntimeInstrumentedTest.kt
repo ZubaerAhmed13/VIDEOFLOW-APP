@@ -3,6 +3,7 @@ package com.videoflow.app.ai
 import android.content.ContentValues
 import android.content.Context
 import android.provider.MediaStore
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -10,6 +11,9 @@ import com.videoflow.app.ai.watermark.AiModelPackManager
 import com.videoflow.app.ai.watermark.LocalRoiTracker
 import com.videoflow.app.ai.watermark.LocalWatermarkPreviewEngine
 import com.videoflow.app.data.ai.AiWatermarkRepository
+import com.videoflow.app.data.db.VideoFlowDatabase
+import com.videoflow.app.data.history.AiWatermarkHistoryEntry
+import com.videoflow.app.data.history.EditHistoryService
 import com.videoflow.app.domain.ai.AiModelRole
 import com.videoflow.app.domain.ai.AiWatermarkEffect
 import com.videoflow.app.domain.ai.NormalizedRoi
@@ -122,6 +126,44 @@ class Step4AiRuntimeInstrumentedTest {
 
         repository.remove(projectId, effect.id)
         assertTrue(repository.effectsForClip(projectId, clipId).isEmpty())
+    }
+
+    @Test
+    fun aiEffectHistory_undoRedoRestoresExactSidecarState() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = AiWatermarkRepository(context)
+        val db = Room.inMemoryDatabaseBuilder(context, VideoFlowDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val suffix = System.currentTimeMillis().toString()
+        val projectId = "ai-history-$suffix"
+        val effect = AiWatermarkEffect(
+            id = "effect-$suffix",
+            projectId = projectId,
+            clipId = "clip-$suffix",
+            clipLocalStartUs = 0L,
+            clipLocalEndUs = 1_000_000L,
+            roi = NormalizedRoi(0.2f, 0.2f, 0.4f, 0.4f)
+        )
+        try {
+            val history = EditHistoryService(db, repository)
+            val before = repository.load(projectId)
+            repository.upsert(effect)
+            val after = repository.load(projectId)
+            history.record(AiWatermarkHistoryEntry(projectId, "Apply AI Watermark", before, after))
+
+            assertTrue(history.state.value.canUndo)
+            assertEquals("Apply AI Watermark", history.undo())
+            assertEquals(before, repository.load(projectId))
+            assertTrue(history.state.value.canRedo)
+
+            assertEquals("Apply AI Watermark", history.redo())
+            assertEquals(after, repository.load(projectId))
+            assertTrue(history.state.value.canUndo)
+        } finally {
+            repository.replaceProjectEffects(projectId, emptyList())
+            db.close()
+        }
     }
 
     private fun createVideoRow(context: Context, displayName: String): android.net.Uri {
