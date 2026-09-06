@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.videoflow.app.BuildConfig
 import com.videoflow.app.domain.model.VideoFlowProject
+import com.videoflow.app.ui.ProjectThumbnailPreview
 import com.videoflow.app.ui.product.AppAppearance
 import com.videoflow.app.ui.product.PreferencesViewModel
 import com.videoflow.app.ui.product.ProductHomeViewModel
@@ -307,9 +308,11 @@ private fun ProductProjectCard(
 
     Card(onClick = onOpen, modifier = Modifier.fillMaxWidth().semantics { contentDescription = semantics }) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(width = 88.dp, height = 56.dp), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(30.dp))
-            }
+            ProjectThumbnailPreview(
+                sourceUri = first?.sourceUri,
+                mimeType = first?.mimeType,
+                modifier = Modifier.size(width = 88.dp, height = 56.dp)
+            )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(project.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
