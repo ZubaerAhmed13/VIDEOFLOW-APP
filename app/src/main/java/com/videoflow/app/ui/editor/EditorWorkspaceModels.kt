@@ -64,18 +64,16 @@ enum class VisualOwnerType { CLIP, TEXT, IMAGE }
 enum class TimedOwnerType { TEXT, IMAGE }
 
 /**
- * Single explicit contextual editing state for UI Step 2+.
+ * Single explicit contextual editing state for UI Step 2.
  *
  * Passive library/settings sheets remain EditorPanel. Any operation that changes media
  * or an overlay is represented here so Back/Cancel/Done and preview gestures have one
- * predictable state machine. Step 4 Watermark is exposed only because its local AI runtime,
- * persistence and final render path are real on the Step-4 branch.
+ * predictable state machine.
  */
 sealed interface EditorTool {
     data class Trim(val clipId: String) : EditorTool
     data class Speed(val clipId: String) : EditorTool
     data class Crop(val clipId: String) : EditorTool
-    data class Watermark(val clipId: String) : EditorTool
     data class Transform(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
     data class Opacity(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
     data class Volume(val clipId: String) : EditorTool
