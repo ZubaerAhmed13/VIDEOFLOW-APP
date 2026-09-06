@@ -26,6 +26,8 @@ This status is intentionally conservative. The master acceptance rule requires g
 - direct project-card → Editor navigation.
 - Rename / Project Details / Delete overflow.
 - delete wording explicitly separates project data from original media.
+- bounded real project thumbnail from the first media asset when Android/provider decoding permits it, with a safe media-type fallback icon.
+- thumbnail loading prefers Android provider thumbnails, uses sampled image decoding and bounded video-frame extraction rather than whole-source RAM loading.
 
 ### New Project
 
@@ -65,6 +67,7 @@ This status is intentionally conservative. The master acceptance rule requires g
 
 - first-run three-screen onboarding persisted with DataStore.
 - System / Light / Dark appearance preference.
+- explicit proxy-policy decision: no global proxy on/off or quality preference is shown because no global backend policy consumes one.
 - real editing-proxy storage usage.
 - real Clear Editing Proxies action through existing ProxyManager.
 - privacy, accessibility information, device capability, diagnostics, introduction and About routes.
@@ -84,14 +87,15 @@ This status is intentionally conservative. The master acceptance rule requires g
 
 The final Step 3 certification workflow performs:
 
-- architecture/privacy audit;
-- full JVM regression suite;
+- architecture/privacy audit including project-thumbnail, proxy-policy and product-flow requirements;
+- full JVM regression suite with expanded product-specific presentation/policy assertions;
 - lint;
 - instrumentation compile;
 - Debug / Review / Release APK assembly;
 - Review package/signature verification;
 - APK SHA-256 generation;
-- API 35 editor regression instrumentation;
+- API 35 Step 3 Home → Settings → New Project → Editor → Export product-flow instrumentation;
+- API 35 protected editor/contextual regression instrumentation;
 - Review install/launch/update checks.
 
 The final response records the exact latest green run and exact certified HEAD after the final implementation/documentation commit. This report does not hard-code a self-invalidating commit SHA.
@@ -102,6 +106,7 @@ The following cannot be truthfully certified without a real Android device and r
 
 - physical onboarding/Home/New Project flow;
 - real Android SAF provider selection and permission behavior;
+- physical project-thumbnail appearance for the selected provider/media;
 - physical editor interaction quality;
 - real device hardware encoder export;
 - real output Open/Share;
