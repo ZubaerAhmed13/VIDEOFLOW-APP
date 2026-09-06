@@ -16,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.videoflow.app.ui.EditorViewModel
+import com.videoflow.app.ui.product.AppAppearance
 import com.videoflow.app.ui.product.PreferencesViewModel
 import com.videoflow.app.ui.screens.AboutScreen
 import com.videoflow.app.ui.screens.DeviceCapabilityScreen
@@ -104,12 +105,18 @@ private fun VideoFlowNavigation(preferencesViewModel: PreferencesViewModel) {
         ) { entry ->
             val id = requireNotNull(entry.arguments?.getString("id"))
             val editorVm: EditorViewModel = hiltViewModel()
-            FinalQualityEditorRoute(
-                id = id,
-                onBack = { nav.popBackStack() },
-                onExport = { nav.navigate("export/$id") },
-                editorVm = editorVm
-            )
+            // The professional editor intentionally owns a dark workspace independent of the
+            // user's shell appearance. This keeps every Material control, dialog and sheet inside
+            // the editor on a matching dark colour scheme and prevents light-theme content colours
+            // from leaking onto the custom dark editor surfaces.
+            VideoFlowTheme(appearance = AppAppearance.DARK) {
+                FinalQualityEditorRoute(
+                    id = id,
+                    onBack = { nav.popBackStack() },
+                    onExport = { nav.navigate("export/$id") },
+                    editorVm = editorVm
+                )
+            }
         }
         composable(
             route = "export/{id}",
