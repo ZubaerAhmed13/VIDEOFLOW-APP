@@ -21,10 +21,10 @@ import com.videoflow.app.ui.screens.DeviceCapabilityScreen
 import com.videoflow.app.ui.screens.DiagnosticsScreen
 import com.videoflow.app.ui.screens.EditorScreen
 import com.videoflow.app.ui.screens.PrivacyScreen
-import com.videoflow.app.ui.screens.ProductExportScreen
 import com.videoflow.app.ui.screens.ProductHomeScreen
 import com.videoflow.app.ui.screens.ProductOnboardingScreen
-import com.videoflow.app.ui.screens.ProductSettingsScreen
+import com.videoflow.app.ui.screens.ProfessionalExportRoute
+import com.videoflow.app.ui.screens.ProfessionalSettingsScreen
 import com.videoflow.app.ui.screens.Step2ProjectScreen
 import com.videoflow.app.ui.theme.VideoFlowTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -102,22 +102,25 @@ private fun VideoFlowNavigation(preferencesViewModel: PreferencesViewModel) {
             route = "export/{id}",
             arguments = listOf(navArgument("id") { type = NavType.StringType })
         ) { entry ->
-            ProductExportScreen(
-                id = requireNotNull(entry.arguments?.getString("id")),
+            val id = requireNotNull(entry.arguments?.getString("id"))
+            ProfessionalExportRoute(
+                id = id,
                 onBack = { nav.popBackStack() },
                 onDone = { nav.popBackStack() },
+                onReviewSource = { nav.navigate("project/$id") },
                 vm = hiltViewModel()
             )
         }
         composable("settings") {
-            ProductSettingsScreen(
+            ProfessionalSettingsScreen(
                 onBack = { nav.popBackStack() },
                 onDevice = { nav.navigate("device") },
                 onDiagnostics = { nav.navigate("diagnostics") },
                 onPrivacy = { nav.navigate("privacy") },
                 onAbout = { nav.navigate("about") },
                 onIntroduction = { nav.navigate("introduction") },
-                preferencesViewModel = preferencesViewModel
+                preferencesViewModel = preferencesViewModel,
+                settingsViewModel = hiltViewModel()
             )
         }
         composable("privacy") { PrivacyScreen(onBack = { nav.popBackStack() }) }

@@ -13,8 +13,8 @@ android {
         applicationId = "com.videoflow.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0-alpha01"
+        versionCode = 3
+        versionName = "1.0.0-ui-step3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         manifestPlaceholders["appLabel"] = "VideoFlow"
