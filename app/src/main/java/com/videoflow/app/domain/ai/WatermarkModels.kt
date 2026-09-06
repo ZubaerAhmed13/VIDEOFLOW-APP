@@ -178,6 +178,22 @@ object AiWatermarkMath {
     }
 
     /**
+     * Feather weight for a pixel against the logical ROI for the current frame. Pixels outside the
+     * current target are never replaced. This must be evaluated with roiAt(presentationTimeUs), not
+     * with the effect's starting ROI, otherwise a tracked/moving ROI can blend the old location.
+     */
+    fun featherWeight(x: Int, y: Int, target: PixelRect, featherPx: Int): Float {
+        require(featherPx >= 0)
+        if (x !in target.left until target.right || y !in target.top until target.bottom) return 0f
+        if (featherPx == 0) return 1f
+        val edgeDistance = min(
+            min(x - target.left, target.right - 1 - x),
+            min(y - target.top, target.bottom - 1 - y)
+        ).coerceAtLeast(0)
+        return (edgeDistance.toFloat() / featherPx).coerceIn(0f, 1f)
+    }
+
+    /**
      * Splits an arbitrarily large ROI into non-overlapping replacement cores with bounded context.
      * Each read rectangle is <= modelSize in both axes, so 4K/8K frames never require whole-frame
      * CPU readback just because AI is active.
