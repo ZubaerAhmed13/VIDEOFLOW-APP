@@ -31,9 +31,10 @@ class HomeComposeTest {
         rule.onNodeWithContentDescription("New Project").fetchSemanticsNode()
 
         // Final editor quality: Merge Videos is a real first-class workflow, not a note telling
-        // users to place clips manually on V1. Click its stable accessibility semantics node;
-        // the visible label itself is intentionally merged into the parent semantics tree.
-        rule.onNodeWithContentDescription("Merge Videos").performClick()
+        // users to place clips manually on V1. The Extended FAB merges descendant semantics, so
+        // interact with the actual visible label through the unmerged tree rather than inventing
+        // a content description that the production control does not expose.
+        rule.onNodeWithText("Merge Videos", useUnmergedTree = true).performClick()
         rule.waitUntil(10_000) {
             nodeExistsWithText("Merge Videos") && nodeExistsWithText("Select Videos") &&
                 nodeExistsWithText("Create & Preview Merge")
