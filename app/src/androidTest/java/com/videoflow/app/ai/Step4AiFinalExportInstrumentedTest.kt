@@ -4,6 +4,7 @@ package com.videoflow.app.ai
 
 import android.content.ContentValues
 import android.content.Context
+import android.os.Bundle
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -182,9 +183,16 @@ class Step4AiFinalExportInstrumentedTest {
                 digest.digest().joinToString("") { "%02x".format(it) }
             }
             assertEquals(64, sha256.length)
-            println(
+            val marker =
                 "FINAL_AI_EXPORT_CERTIFIED project=$projectId bytes=${result.outputBytes} " +
                     "sha256=$sha256 model=${AiModelCatalog.FINAL_512.id} validation=true"
+
+            // System.out from instrumentation tests is not guaranteed to be forwarded by
+            // `adb shell am instrument`. Send the marker through Instrumentation's status stream
+            // so CI can cryptographically bind the visible certification evidence to this PASS.
+            InstrumentationRegistry.getInstrumentation().sendStatus(
+                0,
+                Bundle().apply { putString("stream", "$marker\n") }
             )
         } finally {
             aiRepository.replaceProjectEffects(projectId, emptyList())
