@@ -30,11 +30,10 @@ class HomeComposeTest {
         rule.onNodeWithText("Recent Projects").fetchSemanticsNode()
         rule.onNodeWithContentDescription("New Project").fetchSemanticsNode()
 
-        // Final editor quality: Merge Videos is a real first-class workflow, not a note telling
-        // users to place clips manually on V1. The Extended FAB merges descendant semantics, so
-        // interact with the actual visible label through the unmerged tree rather than inventing
-        // a content description that the production control does not expose.
-        rule.onNodeWithText("Merge Videos", useUnmergedTree = true).performClick()
+        // Final editor quality: Merge Videos is a real first-class workflow. The product control
+        // now exposes its own stable accessibility action, so exercise the actual clickable FAB
+        // rather than injecting a click through a child Text node in the unmerged semantics tree.
+        rule.onNodeWithContentDescription("Merge Videos").performClick()
         rule.waitUntil(10_000) {
             nodeExistsWithText("Merge Videos") && nodeExistsWithText("Select Videos") &&
                 nodeExistsWithText("Create & Preview Merge")
@@ -43,7 +42,7 @@ class HomeComposeTest {
         rule.onNodeWithText("Create & Preview Merge").fetchSemanticsNode()
         rule.onNodeWithContentDescription("Back").performClick()
         rule.waitUntil(10_000) {
-            nodeExistsWithDescription("New Project") && nodeExistsWithTextUnmerged("Merge Videos")
+            nodeExistsWithDescription("New Project") && nodeExistsWithDescription("Merge Videos")
         }
 
         // Settings must expose real product policy rather than a placebo proxy preference.
@@ -120,9 +119,6 @@ class HomeComposeTest {
 
     private fun nodeExistsWithText(text: String): Boolean =
         rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
-
-    private fun nodeExistsWithTextUnmerged(text: String): Boolean =
-        rule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     private fun nodeExistsWithTextSubstring(text: String): Boolean =
         rule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
