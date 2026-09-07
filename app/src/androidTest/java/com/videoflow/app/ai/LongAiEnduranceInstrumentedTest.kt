@@ -52,13 +52,16 @@ class LongAiEnduranceInstrumentedTest {
         val resolver = context.contentResolver
         val args = InstrumentationRegistry.getArguments()
         val configuredUri = requireNotNull(args.getString("vfSourceUri")) { "Supply vfSourceUri from an original source accessible to VideoFlow." }
-        val metadata = com.videoflow.app.data.media.MediaAnalyzer(context).analyze(android.net.Uri.parse(configuredUri)).metadata
+        val sourceInfo = com.videoflow.app.data.media.MediaAnalyzer(context).analyze(android.net.Uri.parse(configuredUri))
+        val metadata = sourceInfo.metadata
+        val videoInfo = metadata.videoTracks.firstOrNull()
+        val rotated = metadata.rotationDegrees == 90 || metadata.rotationDegrees == 270
         val startUs = args.getString("vfStartUs")?.toLong() ?: 0L
         val endUs = args.getString("vfEndUs")?.toLong() ?: requireNotNull(metadata.durationUs)
-        require(endUs > startUs)
+        require(startUs >= 0L && endUs > startUs && endUs <= requireNotNull(metadata.durationUs))
         val durationUs = endUs-startUs
-        val outputWidth = requireNotNull(metadata.width)
-        val outputHeight = requireNotNull(metadata.height)
+        val outputWidth = requireNotNull(if(rotated) metadata.height else metadata.width)
+        val outputHeight = requireNotNull(if(rotated) metadata.width else metadata.height)
         val cadence = com.videoflow.app.domain.editor.SourceMediaAuthority.frameRate(metadata.frameRate)
         val roiValues = (args.getString("vfRoi") ?: "0.70,0.05,0.90,0.15").split(',').map { it.toFloat() }
         require(roiValues.size == 4)
@@ -68,7 +71,23 @@ class LongAiEnduranceInstrumentedTest {
         val sourceUri = android.net.Uri.parse(configuredUri)
         val outputUri = createVideoRow(context, "videoflow-step4-final-output-$suffix.mp4")
         val aiRepository = AiWatermarkRepository(context)
-
+        val keepOutput = args.getString("vfKeepOutput")?.toBooleanStrict() ?: true
+        var succeeded = false
+        val started = android.os.SystemClock.elapsedRealtime()
+        var peakPssKb = 0L
+        var lastSampleMs = -10_000L
+        val diagnostics = java.io.File(context.getExternalFilesDir(null),"ai-endurance/$projectId.jsonl")
+        diagnostics.parentFile!!.mkdirs()
+        fun sample(progress: Float) {
+            val elapsed = android.os.SystemClock.elapsedRealtime()-started
+            if(elapsed-lastSampleMs < 5_000L && progress < 1f) return
+            lastSampleMs=elapsed
+            val pss=android.os.Debug.getPss();peakPssKb=maxOf(peakPssKb,pss)
+            val thermal=if(android.os.Build.VERSION.SDK_INT >= 29) context.getSystemService(android.os.PowerManager::class.java).currentThermalStatus else -1
+            diagnostics.appendText(org.json.JSONObject().put("elapsedMs",elapsed).put("progress",progress.toDouble())
+                .put("pssKb",pss).put("sampledPeakPssKb",peakPssKb).put("thermalStatus",thermal)
+                .put("tileSize",512).put("inferenceWorkers",1).put("queueLimit",2).toString()+"\n")
+        }
         try {
             val track = TimelineTrack(
                 id = "video-track",
@@ -103,24 +122,24 @@ class LongAiEnduranceInstrumentedTest {
                     "source" to OriginalRenderSource(
                         assetId = "source",
                         sourceUri = sourceUri.toString(),
-                        displayName = "sample_av.mp4",
-                        mimeType = "video/mp4",
-                        sizeBytes = null,
-                        durationUs = durationUs,
-                        width = outputWidth,
-                        height = outputHeight,
+                        displayName = sourceInfo.displayName,
+                        mimeType = sourceInfo.mimeType,
+                        sizeBytes = sourceInfo.sizeBytes,
+                        durationUs = metadata.durationUs,
+                        width = metadata.width,
+                        height = metadata.height,
                         rotationDegrees = metadata.rotationDegrees,
                         frameRate = metadata.frameRate,
-                        videoCodecMime = "video/avc",
+                        videoCodecMime = metadata.videoCodecMime,
                         audioCodecMime = metadata.audioCodecMime,
                         audioSampleRate = metadata.audioSampleRate ?: 48_000,
                         audioChannelCount = metadata.audioChannelCount,
-                        videoBitrate = null,
-                        colorStandard = null,
-                        colorTransfer = null,
-                        colorRange = null,
-                        hdrStaticInfoPresent = false,
-                        fingerprintSha256 = "step4-final-export-fixture"
+                        videoBitrate = videoInfo?.bitrate,
+                        colorStandard = videoInfo?.colorStandard,
+                        colorTransfer = videoInfo?.colorTransfer,
+                        colorRange = videoInfo?.colorRange,
+                        hdrStaticInfoPresent = videoInfo?.hdrStaticInfoPresent ?: false,
+                        fingerprintSha256 = null
                     )
                 ),
                 durationUs = durationUs
@@ -129,15 +148,14 @@ class LongAiEnduranceInstrumentedTest {
                 id = "final-ai-effect",
                 projectId = projectId,
                 clipId = clip.id,
-                // Keep the certification bounded to the opening frames so API-35 proves the real
-                // FINAL model path without turning CI into a full two-second CPU inference soak.
+                // Every frame in the configured duration uses the production FINAL model.
                 clipLocalStartUs = 0L,
                 clipLocalEndUs = durationUs,
                 roi = configuredRoi,
                 motionAnchors = emptyList(),
                 contextPaddingPx = 32,
                 featherPx = 6,
-                temporalStability = 0f,
+                temporalStability = .12f,
                 modelId = AiModelCatalog.FINAL_512.id,
                 enabled = true
             )
@@ -168,7 +186,7 @@ class LongAiEnduranceInstrumentedTest {
             assertTrue("Final AI export preflight problems: ${prepared.problems}", prepared.ready)
             assertTrue(prepared.warnings.any { it.code == "LOCAL_AI_RENDER_REQUIRED" })
 
-            val result = engine.render(requireNotNull(prepared.preparation), com.videoflow.app.render.RenderProgressListener {}).getOrThrow()
+            val result = engine.render(requireNotNull(prepared.preparation), com.videoflow.app.render.RenderProgressListener(::sample)).getOrThrow()
             assertTrue("Final AI export validation problems: ${result.validation.problems}", result.validation.passed)
             assertTrue(result.outputBytes > 1_024L)
             assertEquals(outputWidth, result.validation.video?.width)
@@ -188,9 +206,14 @@ class LongAiEnduranceInstrumentedTest {
                 digest.digest().joinToString("") { "%02x".format(it) }
             }
             assertEquals(64, sha256.length)
+            succeeded=true
+            sample(1f)
             val marker =
                 "LONG_AI_ENDURANCE_EXPORT_CERTIFIED project=$projectId bytes=${result.outputBytes} " +
-                    "sha256=$sha256 model=${AiModelCatalog.FINAL_512.id} validation=true"
+                    "sha256=$sha256 model=${AiModelCatalog.FINAL_512.id} validation=true " +
+                    "output=$outputUri diagnostics=${diagnostics.absolutePath} sampledPeakPssKb=$peakPssKb elapsedMs=${android.os.SystemClock.elapsedRealtime()-started}"
+            diagnostics.appendText(org.json.JSONObject().put("completed",true).put("outputUri",outputUri.toString())
+                .put("sha256",sha256).put("durationUs",durationUs).put("width",outputWidth).put("height",outputHeight).toString()+"\n")
 
             // System.out from instrumentation tests is not guaranteed to be forwarded by
             // `adb shell am instrument`. Send the marker through Instrumentation's status stream
@@ -202,7 +225,7 @@ class LongAiEnduranceInstrumentedTest {
         } finally {
             aiRepository.visualEdits.delete(projectId)
             aiRepository.replaceProjectEffects(projectId, emptyList())
-            resolver.delete(outputUri, null, null)
+            if(!succeeded || !keepOutput) resolver.delete(outputUri, null, null)
         }
     }
 
