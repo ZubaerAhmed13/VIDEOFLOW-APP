@@ -51,6 +51,7 @@ fun NativeVideoPlayer(
     var frameRendered by remember(uri) { mutableStateOf(false) }
     var redrawPending by remember(uri) { mutableStateOf(false) }
     val playerDisposed=remember(uri) { java.util.concurrent.atomic.AtomicBoolean(false) }
+    val appliedEffects=remember(uri) { java.util.concurrent.atomic.AtomicReference(videoEffects) }
     val mediaUri = remember(uri) {
         if (uri.startsWith("/")) Uri.fromFile(File(uri)) else Uri.parse(uri)
     }
@@ -80,13 +81,24 @@ fun NativeVideoPlayer(
     }
 
     LaunchedEffect(player, videoEffects) {
+        val current=appliedEffects.get()
+        if(current===videoEffects) return@LaunchedEffect
         val ready=frameRendered
         frameRendered=false
-        player.setVideoEffects(videoEffects)
-        // Interleave redraws with frame callbacks: the first frame must exist before it can be redrawn.
-        if (!player.playWhenReady) {
-            if(ready) player.setVideoEffects(androidx.media3.common.VideoFrameProcessor.REDRAW)
-            else redrawPending=true
+        if(com.videoflow.app.render.effects.VisualEffectPipeline.updatePreview(current,videoEffects)) {
+            // Parameter-only edits reuse shader programs and Media3's bounded replay cache.
+            if (!player.playWhenReady) {
+                if(ready) player.setVideoEffects(androidx.media3.common.VideoFrameProcessor.REDRAW)
+                else redrawPending=true
+            }
+        } else {
+            // Adding/removing/reordering stages registers a new stream and clears Media3's cache.
+            // Reprepare this same player at its retained position to decode that paused frame again.
+            redrawPending=false
+            appliedEffects.set(videoEffects)
+            player.stop()
+            player.setVideoEffects(videoEffects)
+            player.prepare()
         }
     }
 

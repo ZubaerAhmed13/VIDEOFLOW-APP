@@ -16,15 +16,31 @@ import com.videoflow.app.domain.effects.*
 object VisualEffectPipeline {
     fun create(edits: VisualEdits, clipId: String, sourceOffsetUs: Long = 0L, speed: Double = 1.0): List<Effect> =
         VisualStage.ordered(edits,clipId,sourceOffsetUs,speed).map(::VisualGlEffect)
+
+    /** Update shader parameters without registering a new input stream or clearing replay frames. */
+    fun updatePreview(current: List<Effect>, requested: List<Effect>): Boolean {
+        if(current.size!=requested.size) return false
+        val pairs=current.zip(requested)
+        if(pairs.any { (a,b) -> a !is VisualGlEffect || b !is VisualGlEffect || !a.sameStage(b) })
+            return current==requested
+        pairs.forEach { (a,b) -> (a as VisualGlEffect).update(b as VisualGlEffect) }
+        return true
+    }
 }
 
-private data class VisualGlEffect(val stage: VisualStage) : GlEffect {
-    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram = VisualShader(stage, useHdr)
+private class VisualGlEffect(stage: VisualStage) : GlEffect {
+    private val parameters=java.util.concurrent.atomic.AtomicReference(stage)
+    fun sameStage(other: VisualGlEffect): Boolean {
+        val a=parameters.get();val b=other.parameters.get()
+        return a.node?.id==b.node?.id && a.node?.type==b.node?.type
+    }
+    fun update(other: VisualGlEffect) { parameters.set(other.parameters.get()) }
+    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram = VisualShader(parameters::get, useHdr)
 }
 
 /** One output texture per stage, independent of duration. No CPU frame readback/cache. */
 private class VisualShader(
-    private val stage: VisualStage, useHdr: Boolean
+    private val stageProvider: () -> VisualStage, useHdr: Boolean
 ) : BaseGlShaderProgram(useHdr, 1) {
     private val program = GlProgram(VERTEX, FRAGMENT)
     private var width = 1
@@ -38,6 +54,7 @@ private class VisualShader(
         return Size(width, height)
     }
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
+        val stage=stageProvider()
         val localTimeUs = stage.localTimeUs(presentationTimeUs)
         val node=stage.node; val enhance=stage.enhance
         program.use()

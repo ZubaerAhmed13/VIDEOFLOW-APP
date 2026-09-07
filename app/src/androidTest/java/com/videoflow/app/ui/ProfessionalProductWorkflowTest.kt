@@ -94,6 +94,10 @@ class ProfessionalProductWorkflowTest {
             rule.runOnIdle { tool=ProfessionalEditorTool.Enhance(clip.id) }
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
             waitForVideoFrame()
+            val beforeEnhanceStage=stablePreviewPixels()
+            rule.onNodeWithContentDescription("Exposure adjustment").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.1f) }
+            waitForVideoFrame()
+            waitForPreviewChange(beforeEnhanceStage)
             val beforeExposure=stablePreviewPixels()
             rule.onNodeWithContentDescription("Exposure adjustment").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.2f) }
             assertEquals(.2f,toolsVm.state.value.draft.enhance.getValue(clip.id)[Adjustment.EXPOSURE],.001f)
