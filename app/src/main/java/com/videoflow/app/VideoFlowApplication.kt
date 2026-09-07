@@ -4,16 +4,20 @@ import android.app.Application
 import android.os.StrictMode
 import com.videoflow.app.data.export.ExportRepository
 import com.videoflow.app.export.ExportProcessIdentity
+import com.videoflow.app.export.ExportProcessRecoveryManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class VideoFlowApplication : Application() {
     @Inject lateinit var exportRepository: ExportRepository
+    @Inject lateinit var exportRecoveryManager: ExportProcessRecoveryManager
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val processStartedAt = System.currentTimeMillis()
@@ -26,6 +30,10 @@ class VideoFlowApplication : Application() {
         if (ExportProcessIdentity.isMainProcess(this)) {
             appScope.launch {
                 exportRepository.markInterruptedAfterProcessRestart(processStartedAt, this@VideoFlowApplication)
+                while (isActive) {
+                    exportRecoveryManager.reconcile()
+                    delay(5_000L)
+                }
             }
         }
         if (BuildConfig.DEBUG) {
