@@ -100,6 +100,13 @@ data class AiWatermarkHistoryEntry(
     }
 }
 
+data class VisualEditsHistoryEntry(
+    override val projectId: String,
+    override val label: String,
+    val before: com.videoflow.app.domain.effects.VisualEdits,
+    val after: com.videoflow.app.domain.effects.VisualEdits
+) : HistoryEntry
+
 @Singleton
 class EditHistoryService @Inject constructor(
     private val db: VideoFlowDatabase,
@@ -207,6 +214,11 @@ class EditHistoryService @Inject constructor(
     private suspend fun apply(entry: HistoryEntry, before: Boolean) {
         // AI sidecar persistence is intentionally not wrapped in a fake Room transaction. Restore
         // the atomic sidecar first, then touch the project in its own real Room transaction.
+        if (entry is VisualEditsHistoryEntry) {
+            aiWatermarkRepository.visualEdits.replace(entry.projectId, if (before) entry.before else entry.after)
+            db.withTransaction { touch(entry.projectId) }
+            return
+        }
         if (entry is AiWatermarkHistoryEntry) {
             aiWatermarkRepository.replaceProjectEffects(entry.projectId, if (before) entry.before else entry.after)
             db.withTransaction { touch(entry.projectId) }
@@ -278,6 +290,7 @@ class EditHistoryService @Inject constructor(
                     frames.forEach { db.editorDao().putKeyframe(it.toEntity()) }
                 }
 
+                is VisualEditsHistoryEntry -> error("Visual history is restored outside Room.")
                 is AiWatermarkHistoryEntry -> error("AI history is restored outside the Room transaction.")
             }
             touch(entry.projectId)

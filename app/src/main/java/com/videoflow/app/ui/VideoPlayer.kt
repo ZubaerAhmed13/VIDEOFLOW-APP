@@ -39,7 +39,8 @@ fun NativeVideoPlayer(
     showControls: Boolean = false,
     playWhenReady: Boolean = false,
     speed: Float = 1f,
-    volume: Float = 1f
+    volume: Float = 1f,
+    videoEffects: List<androidx.media3.common.Effect> = emptyList()
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -60,6 +61,8 @@ fun NativeVideoPlayer(
             prepare()
         }
     }
+
+    LaunchedEffect(player, videoEffects) { player.setVideoEffects(videoEffects) }
 
     // Do not chase every high-frequency UI playhead tick with a decoder seek. While playing, only
     // correct a meaningful discontinuity/drift; while paused/scrubbing keep precise seek response.

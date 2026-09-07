@@ -26,6 +26,7 @@ class SnapshotService @Inject constructor(
     suspend fun create(projectId: String, name: String): SnapshotEntity = withContext(Dispatchers.IO) {
         // Capture the complete AI sidecar with the same canonical codec used by normal AI
         // persistence. Keeping the sidecar as a nested versioned object avoids codec drift.
+        val visualState = com.videoflow.app.data.effects.VisualEditsRepository.encode(aiWatermarkRepository.visualEdits.load(projectId))
         val aiState = JSONObject(aiWatermarkRepository.exportProjectStateJson(projectId))
         db.withTransaction {
             val settings = db.editorDao().getProjectSettings(projectId) ?: error("Project settings missing")
@@ -36,7 +37,7 @@ class SnapshotService @Inject constructor(
             val ownerIds = clips.map { it.id } + text.map { it.id } + images.map { it.id }
             val keyframes = if (ownerIds.isEmpty()) emptyList() else db.editorDao().getKeyframes(ownerIds)
             val payload = JSONObject()
-                .put("format", SNAPSHOT_FORMAT_WITH_AI)
+                .put("format", SNAPSHOT_FORMAT_WITH_VISUAL)
                 .put("settings", settings.toJson())
                 .put("tracks", JSONArray(tracks.map { it.toJson() }))
                 .put("clips", JSONArray(clips.map { it.toJson() }))
@@ -44,6 +45,7 @@ class SnapshotService @Inject constructor(
                 .put("images", JSONArray(images.map { it.toJson() }))
                 .put("keyframes", JSONArray(keyframes.map { it.toJson() }))
                 .put("aiWatermark", aiState)
+                .put("visualEdits", JSONObject(visualState))
                 .toString()
             SnapshotEntity(
                 id = UUID.randomUUID().toString(),
@@ -68,7 +70,7 @@ class SnapshotService @Inject constructor(
         val snapshot = db.snapshotDao().get(snapshotId) ?: error("Snapshot not found")
         val root = JSONObject(snapshot.payloadJson)
         val format = root.getInt("format")
-        require(format == LEGACY_SNAPSHOT_FORMAT || format == SNAPSHOT_FORMAT_WITH_AI) {
+        require(format in LEGACY_SNAPSHOT_FORMAT..SNAPSHOT_FORMAT_WITH_VISUAL) {
             "Unsupported snapshot format"
         }
         val projectId = snapshot.projectId
@@ -78,6 +80,7 @@ class SnapshotService @Inject constructor(
         // Preserve the pre-restore AI state so a database/sidecar failure can be compensated. The
         // AI mutation is performed before the Room transaction commits; an AI write failure rolls
         // Room back, while a late Room failure restores this exact sidecar state below.
+        val beforeVisual = aiWatermarkRepository.visualEdits.load(projectId)
         val beforeAiState = aiWatermarkRepository.exportProjectStateJson(projectId)
         val snapshotAiState = if (format >= SNAPSHOT_FORMAT_WITH_AI) {
             root.getJSONObject("aiWatermark").toString()
@@ -112,6 +115,9 @@ class SnapshotService @Inject constructor(
                     aiWatermarkRepository.replaceProjectEffects(projectId, emptyList())
                 }
 
+                aiWatermarkRepository.visualEdits.replace(projectId,
+                    if (root.has("visualEdits")) com.videoflow.app.data.effects.VisualEditsRepository.decode(root.getJSONObject("visualEdits").toString())
+                    else com.videoflow.app.domain.effects.VisualEdits())
                 val project = db.projectDao().get(projectId)?.project ?: error("Project missing")
                 db.projectDao().update(
                     project.copy(
@@ -121,12 +127,14 @@ class SnapshotService @Inject constructor(
                 )
             }
         } catch (failure: Throwable) {
+            runCatching { aiWatermarkRepository.visualEdits.replace(projectId, beforeVisual) }
             runCatching { aiWatermarkRepository.restoreProjectStateJson(projectId, beforeAiState) }
             throw failure
         }
     }
 
     private companion object {
+        const val SNAPSHOT_FORMAT_WITH_VISUAL = 4
         const val LEGACY_SNAPSHOT_FORMAT = 2
         const val SNAPSHOT_FORMAT_WITH_AI = 3
         const val PROJECT_FORMAT_VERSION = 2

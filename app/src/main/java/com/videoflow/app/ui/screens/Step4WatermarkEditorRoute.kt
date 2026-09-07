@@ -34,6 +34,7 @@ import com.videoflow.app.ui.ai.WatermarkStudioPanel
 import com.videoflow.app.ui.editor.VideoFlowEditorColors
 
 /**
+ * AI Watermark Studio and professional tools share the contextual rail.
  * Step-4 product integration around the approved editor. The AI entry is contextual: it exists only
  * while a real video clip is selected, and opens the functional local Watermark Studio workflow.
  */
@@ -53,10 +54,10 @@ fun Step4WatermarkEditorRoute(
     val asset = project?.mediaAssets?.firstOrNull { it.id == selected?.assetId }
     val isVideoSelection = selected != null && asset != null &&
         (asset.videoCodecMime != null || asset.mimeType?.startsWith("video/") == true)
-    var studioOpen by rememberSaveable { mutableStateOf(false) }
+    var activeTool by androidx.compose.runtime.remember { mutableStateOf<com.videoflow.app.ui.editor.ProfessionalEditorTool?>(null) }
 
     LaunchedEffect(selectedId, isVideoSelection) {
-        if (!isVideoSelection) studioOpen = false
+        activeTool = null
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -64,26 +65,13 @@ fun Step4WatermarkEditorRoute(
             id = id,
             onBack = onBack,
             onExport = onExport,
-            editorVm = editorVm
+            editorVm = editorVm,
+            onProfessionalTool = { activeTool = it }
         )
 
-        if (isVideoSelection && !studioOpen) {
-            ExtendedFloatingActionButton(
-                onClick = { studioOpen = true },
-                icon = { Icon(Icons.Default.AutoFixHigh, contentDescription = null) },
-                text = { Text("AI Watermark") },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 18.dp, bottom = 154.dp)
-                    .semantics {
-                        contentDescription = "AI Watermark Studio, local mask tracking preview and apply"
-                    }
-            )
-        }
-
-        if (studioOpen && selected != null && currentEditor != null) {
+        if (activeTool != null && selected != null && currentEditor != null && asset != null) {
             // Registered after the base editor's BackHandler so Back closes the AI surface first.
-            BackHandler { studioOpen = false }
+            BackHandler { activeTool = null }
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val wide = maxWidth > maxHeight || maxWidth.value >= 700f
                 val panelModifier = if (wide) {
@@ -103,15 +91,20 @@ fun Step4WatermarkEditorRoute(
                     tonalElevation = 12.dp
                 ) {
                     Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        if (activeTool is com.videoflow.app.ui.editor.ProfessionalEditorTool.AiWatermark) {
                         WatermarkStudioPanel(
                             projectId = id,
                             clipId = selected.id,
                             project = project,
                             editor = currentEditor,
                             playheadUs = playheadUs,
-                            onDismiss = { studioOpen = false },
+                            onDismiss = { activeTool = null },
                             refreshEditor = { editorVm.load(id) }
                         )
+                        } else {
+                            com.videoflow.app.ui.effects.ProfessionalToolPanel(id, requireNotNull(activeTool), selected, asset,
+                                onClose = { activeTool = null }, onApplied = { editorVm.load(id) })
+                        }
                     }
                 }
             }

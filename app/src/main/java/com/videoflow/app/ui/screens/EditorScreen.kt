@@ -69,7 +69,8 @@ fun EditorScreen(
     id: String,
     onBack: () -> Unit,
     onExport: () -> Unit,
-    vm: EditorViewModel
+    vm: EditorViewModel,
+    onProfessionalTool: (com.videoflow.app.ui.editor.ProfessionalEditorTool) -> Unit = {}
 ) {
     val projectVm: ProjectViewModel = hiltViewModel()
     val overlayVm: OverlayAdvancedViewModel = hiltViewModel()
@@ -377,7 +378,8 @@ fun EditorScreen(
                 selectedClipMime = selectedClipMime,
                 onPanel = { clearToolSession(); activePanel = it },
                 onTool = ::openTool,
-                onSplit = { vm.splitSelected() }
+                onSplit = { vm.splitSelected() },
+                onProfessionalTool = { clearToolSession(); activePanel = null; onProfessionalTool(it) }
             )
         }
     ) { padding ->

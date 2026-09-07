@@ -195,7 +195,8 @@ fun EditorBottomToolbar(
     selectedClipMime: String?,
     onPanel: (EditorPanel) -> Unit,
     onTool: (EditorTool) -> Unit,
-    onSplit: () -> Unit
+    onSplit: () -> Unit,
+    onProfessionalTool: (ProfessionalEditorTool) -> Unit = {}
 ) {
     Surface(
         color = VideoFlowEditorColors.EditorSurface,
@@ -206,7 +207,7 @@ fun EditorBottomToolbar(
             EditorSelection.None, is EditorSelection.Track -> PrimaryToolbar(onPanel, onTool)
             is EditorSelection.Clip -> {
                 if (selectedClipMime?.startsWith("audio/") == true) AudioClipToolbar(selection.clipId, onTool, onSplit)
-                else VideoClipToolbar(selection.clipId, onTool, onSplit)
+                else VideoClipToolbar(selection.clipId, onTool, onSplit, onProfessionalTool, onPanel)
             }
             is EditorSelection.TextOverlay -> TextOverlayToolbar(selection.overlayId, onTool)
             is EditorSelection.ImageOverlay -> ImageOverlayToolbar(selection.overlayId, onTool)
@@ -227,13 +228,21 @@ private fun PrimaryToolbar(onPanel: (EditorPanel) -> Unit, onTool: (EditorTool) 
 }
 
 @Composable
-private fun VideoClipToolbar(clipId: String, onTool: (EditorTool) -> Unit, onSplit: () -> Unit) {
+private fun VideoClipToolbar(clipId: String, onTool: (EditorTool) -> Unit, onSplit: () -> Unit, onProfessionalTool: (ProfessionalEditorTool) -> Unit, onPanel: (EditorPanel) -> Unit) {
     ToolRow {
         ToolButton(Icons.Default.ContentCut, "Split", onSplit)
         ToolButton(Icons.Default.Tune, "Trim") { onTool(EditorTool.Trim(clipId)) }
         ToolButton(Icons.Default.Speed, "Speed") { onTool(EditorTool.Speed(clipId)) }
         ToolButton(Icons.Default.Crop, "Crop") { onTool(EditorTool.Crop(clipId)) }
         ToolButton(Icons.Default.VolumeUp, "Volume") { onTool(EditorTool.Volume(clipId)) }
+        ToolButton(Icons.Default.Audiotrack, "Audio") { onProfessionalTool(ProfessionalEditorTool.AudioExtract(clipId)) }
+        ToolButton(Icons.Default.TextFields, "Text") { onTool(EditorTool.TextEditor(null)) }
+        ToolButton(Icons.Default.Image, "Overlay") { onPanel(EditorPanel.Overlay) }
+        ToolButton(Icons.Default.Tune, "Effects") { onProfessionalTool(ProfessionalEditorTool.Effects(clipId)) }
+        ToolButton(Icons.Default.Tune, "Enhance") { onProfessionalTool(ProfessionalEditorTool.Enhance(clipId)) }
+        ToolButton(Icons.Default.Tune, "AI Tools") { onProfessionalTool(ProfessionalEditorTool.AiWatermark(clipId)) }
+        ToolButton(Icons.Default.AccessTime, "Precise Trim") { onProfessionalTool(ProfessionalEditorTool.PreciseTrim(clipId)) }
+        ToolButton(Icons.Default.Layers, "Canvas") { onPanel(EditorPanel.Canvas) }
         ToolButton(Icons.Default.MoreHoriz, "More") { onTool(EditorTool.More(clipId, VisualOwnerType.CLIP)) }
     }
 }

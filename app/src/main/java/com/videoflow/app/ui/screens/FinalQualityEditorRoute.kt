@@ -58,6 +58,7 @@ fun FinalQualityEditorRoute(
     onBack: () -> Unit,
     onExport: () -> Unit,
     editorVm: EditorViewModel,
+    onProfessionalTool: (com.videoflow.app.ui.editor.ProfessionalEditorTool) -> Unit = {},
     preciseVm: PreciseTrimViewModel = hiltViewModel()
 ) {
     val editor by editorVm.editor.collectAsState()
@@ -68,16 +69,11 @@ fun FinalQualityEditorRoute(
     var dialogOpen by rememberSaveable { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
-        EditorScreen(id = id, onBack = onBack, onExport = onExport, vm = editorVm)
-        if (selected != null && asset != null) {
-            ExtendedFloatingActionButton(
-                onClick = { dialogOpen = true },
-                icon = { androidx.compose.material3.Icon(Icons.Default.ContentCut, contentDescription = null) },
-                text = { Text("Precise Trim") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 86.dp)
-                    .semantics { contentDescription = "Precise Trim, exact From and To time entry" }
-            )
-        }
+        EditorScreen(id = id, onBack = onBack, onExport = onExport, vm = editorVm,
+            onProfessionalTool = { tool ->
+                if (tool is com.videoflow.app.ui.editor.ProfessionalEditorTool.PreciseTrim) dialogOpen = true
+                else onProfessionalTool(tool)
+            })
     }
 
     if (dialogOpen && selected != null && asset != null) {

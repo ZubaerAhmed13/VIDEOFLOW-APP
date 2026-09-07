@@ -46,12 +46,15 @@ data class RoiMotionAnchor(
     val clipLocalTimeUs: Long,
     val centerX: Float,
     val centerY: Float,
-    val confidence: Float = 1f
+    val confidence: Float = 1f,
+    val width: Float? = null, val height: Float? = null, val manual: Boolean = false
 ) {
     init {
         require(clipLocalTimeUs >= 0L)
         require(centerX in 0f..1f && centerY in 0f..1f)
         require(confidence in 0f..1f)
+        require(width == null || width > 0f && width <= 1f)
+        require(height == null || height > 0f && height <= 1f)
     }
 }
 
@@ -146,20 +149,17 @@ object AiWatermarkMath {
     fun roiAt(effect: AiWatermarkEffect, clipLocalTimeUs: Long): NormalizedRoi {
         val anchors = effect.motionAnchors.sortedBy { it.clipLocalTimeUs }
         if (anchors.isEmpty()) return effect.roi
-        if (clipLocalTimeUs <= anchors.first().clipLocalTimeUs) {
-            return effect.roi.translated(anchors.first().centerX, anchors.first().centerY)
-        }
-        if (clipLocalTimeUs >= anchors.last().clipLocalTimeUs) {
-            return effect.roi.translated(anchors.last().centerX, anchors.last().centerY)
-        }
+        fun rectangle(cx: Float, cy: Float, w: Float, h: Float) = NormalizedRoi(0f,0f,w,h).translated(cx,cy)
+        fun at(anchor: RoiMotionAnchor) = rectangle(anchor.centerX,anchor.centerY,anchor.width ?: effect.roi.width,anchor.height ?: effect.roi.height)
+        if (clipLocalTimeUs <= anchors.first().clipLocalTimeUs) return at(anchors.first())
+        if (clipLocalTimeUs >= anchors.last().clipLocalTimeUs) return at(anchors.last())
         val rightIndex = anchors.indexOfFirst { it.clipLocalTimeUs >= clipLocalTimeUs }
-        val right = anchors[rightIndex]
-        val left = anchors[rightIndex - 1]
-        val span = (right.clipLocalTimeUs - left.clipLocalTimeUs).coerceAtLeast(1L)
-        val t = ((clipLocalTimeUs - left.clipLocalTimeUs).toDouble() / span).coerceIn(0.0, 1.0).toFloat()
-        val cx = left.centerX + (right.centerX - left.centerX) * t
-        val cy = left.centerY + (right.centerY - left.centerY) * t
-        return effect.roi.translated(cx, cy)
+        val right = anchors[rightIndex]; val left = anchors[rightIndex-1]
+        val t = ((clipLocalTimeUs-left.clipLocalTimeUs).toDouble()/(right.clipLocalTimeUs-left.clipLocalTimeUs)).toFloat()
+        fun mix(a: Float,b: Float) = a+(b-a)*t
+        return rectangle(mix(left.centerX,right.centerX),mix(left.centerY,right.centerY),
+            mix(left.width ?: effect.roi.width,right.width ?: effect.roi.width),
+            mix(left.height ?: effect.roi.height,right.height ?: effect.roi.height))
     }
 
     fun toPixelRect(roi: NormalizedRoi, frameWidth: Int, frameHeight: Int): PixelRect {

@@ -1,6 +1,8 @@
 package com.videoflow.app.ui.ai
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -87,22 +89,21 @@ fun WatermarkStudioPanel(
     }
 
     val durationUs = clip.timelineDurationUs.coerceAtLeast(1L)
-    val studioLocalUs = remember(clipId) {
-        (playheadUs - clip.timelineStartUs).coerceIn(0L, durationUs - 1L)
-    }
-    val sourceTimeUs = clip.sourceStartUs + (studioLocalUs.toDouble() * clip.speed).roundToLong()
+    var studioLocalUs by remember(clipId) { mutableStateOf((playheadUs - clip.timelineStartUs).coerceIn(0L, durationUs - 1L)) }
     var roi by remember(clipId) { mutableStateOf(NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)) }
-    var range by remember(clipId) { mutableStateOf(0f..1f) }
+    var startUs by remember(clipId) { mutableStateOf(0L) }
+    var endUs by remember(clipId) { mutableStateOf(durationUs) }
+    var showBefore by remember(clipId) { mutableStateOf(false) }
+    var correctionRoi by remember(clipId, studioLocalUs) { mutableStateOf<NormalizedRoi?>(null) }
     var featherPx by remember(clipId) { mutableFloatStateOf(8f) }
     var contextPx by remember(clipId) { mutableFloatStateOf(48f) }
     var stability by remember(clipId) { mutableFloatStateOf(0.12f) }
     var editingEffectId by remember(clipId) { mutableStateOf<String?>(null) }
     var loadedAnchors by remember(clipId) { mutableStateOf<List<RoiMotionAnchor>>(emptyList()) }
 
-    val startUs = (range.start * durationUs.toDouble()).roundToLong().coerceIn(0L, durationUs - 1L)
-    val endUs = (range.endInclusive * durationUs.toDouble()).roundToLong().coerceIn(startUs + 1L, durationUs)
     val previewLocalUs = studioLocalUs.coerceIn(startUs, endUs - 1L)
-    val activeAnchors = state.trackedAnchors.ifEmpty { loadedAnchors }
+    val sourceTimeUs = clip.sourceStartUs + (previewLocalUs.toDouble() * clip.speed).roundToLong()
+    val activeAnchors = (state.trackedAnchors + loadedAnchors).associateBy { it.clipLocalTimeUs }.values.sortedBy { it.clipLocalTimeUs }
     val draftEffect = remember(projectId, clipId, startUs, endUs, roi, activeAnchors, contextPx, featherPx, stability) {
         AiWatermarkEffect(
             id = "draft",
@@ -118,8 +119,8 @@ fun WatermarkStudioPanel(
             modelId = AiModelCatalog.FINAL_512.id
         )
     }
-    val shownRoi = if (activeAnchors.isEmpty()) roi else draftEffect.roiAt(previewLocalUs)
-    val shownBitmap = state.aiPreview ?: state.sourceFrame
+    val shownRoi = correctionRoi ?: if (activeAnchors.isEmpty()) roi else draftEffect.roiAt(previewLocalUs)
+    val shownBitmap = if (showBefore) state.sourceFrame else state.aiPreview ?: state.sourceFrame
 
     fun invalidateMotionAndPreview() {
         loadedAnchors = emptyList()
@@ -130,7 +131,7 @@ fun WatermarkStudioPanel(
         editingEffectId = null
         loadedAnchors = emptyList()
         roi = NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)
-        range = 0f..1f
+        startUs = 0L; endUs = durationUs; correctionRoi = null
         featherPx = 8f
         contextPx = 48f
         stability = 0.12f
@@ -187,8 +188,8 @@ fun WatermarkStudioPanel(
                 bitmap = shownBitmap,
                 roi = shownRoi,
                 onRoiChange = { next ->
-                    roi = next
-                    invalidateMotionAndPreview()
+                    if (activeAnchors.isNotEmpty()) correctionRoi = next else roi = next
+                    vm.clearPreviewOnly()
                 },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -198,21 +199,13 @@ fun WatermarkStudioPanel(
                 contentAlignment = Alignment.Center
             ) { Text("Loading source preview…", color = VideoFlowEditorColors.SecondaryText) }
         }
-        RangeSlider(
-            value = range,
-            onValueChange = { next ->
-                if (next.endInclusive - next.start >= 0.001f) {
-                    range = next
-                    invalidateMotionAndPreview()
-                }
-            },
-            valueRange = 0f..1f,
-            modifier = Modifier.semantics { contentDescription = "Watermark effect start and end" }
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("From ${formatDurationUs(startUs)}")
-            Text("To ${formatDurationUs(endUs)}")
+        Row {
+            TextButton(enabled = state.aiPreview != null, onClick = { showBefore = true }) { Text("Before") }
+            TextButton(enabled = state.aiPreview != null, onClick = { showBefore = false }) { Text("After") }
         }
+        com.videoflow.app.ui.editor.PreciseRangeControls(durationUs,startUs,endUs,studioLocalUs,
+            onRange = { a,b -> startUs = a; endUs = b; vm.clearPreviewOnly() },
+            onSeek = { studioLocalUs = it; vm.clearPreviewOnly() })
 
         StepTitle("2", "Track movement")
         Text("Tracking samples small local frames and creates motion anchors; no video is uploaded.", color = VideoFlowEditorColors.SecondaryText)
@@ -228,6 +221,26 @@ fun WatermarkStudioPanel(
                 Text("${activeAnchors.size} anchors", color = VideoFlowEditorColors.SuccessColor)
             }
         }
+        Row(Modifier.fillMaxWidth().then(Modifier.horizontalScroll(rememberScrollState()))) {
+            TextButton(onClick = {
+                val current = correctionRoi ?: shownRoi
+                loadedAnchors = activeAnchors.filterNot { it.clipLocalTimeUs == previewLocalUs } + RoiMotionAnchor(
+                    previewLocalUs,(current.left+current.right)/2f,(current.top+current.bottom)/2f,1f,current.width,current.height,true)
+                correctionRoi = null; vm.clearPreviewOnly()
+            }) { Text(if (activeAnchors.any { it.manual && it.clipLocalTimeUs == previewLocalUs }) "Update correction" else "Add correction") }
+            TextButton(onClick = {
+                val previous = activeAnchors.filter { it.manual && it.clipLocalTimeUs < studioLocalUs }.lastOrNull()
+                previous?.let { studioLocalUs = it.clipLocalTimeUs; vm.clearPreviewOnly() }
+            }) { Text("Previous correction") }
+            TextButton(onClick = {
+                activeAnchors.firstOrNull { it.manual && it.clipLocalTimeUs > studioLocalUs }?.let { studioLocalUs = it.clipLocalTimeUs; vm.clearPreviewOnly() }
+            }) { Text("Next correction") }
+            TextButton(onClick = {
+                loadedAnchors = activeAnchors.filterNot { it.clipLocalTimeUs == previewLocalUs }
+                vm.clearDraftResults(); correctionRoi = null
+            }) { Text("Delete correction") }
+        }
+        Text("${activeAnchors.count { it.manual }} manual corrections")
         val confidence = state.trackingConfidence ?: activeAnchors.takeIf { it.isNotEmpty() }?.map { it.confidence }?.average()?.toFloat()
         confidence?.let {
             Text(
@@ -259,7 +272,7 @@ fun WatermarkStudioPanel(
         ) { Text(if (state.aiPreview == null) "Generate AI Preview" else "Refresh AI Preview") }
         state.previewProvider?.let { Text("Preview inference: $it", color = VideoFlowEditorColors.SuccessColor) }
 
-        Text("Edge feather  ${featherPx.roundToInt()} px", color = VideoFlowEditorColors.SecondaryText)
+        Text("Edge softness  ${featherPx.roundToInt()} px", color = VideoFlowEditorColors.SecondaryText)
         Slider(
             value = featherPx,
             onValueChange = { featherPx = it; vm.clearPreviewOnly() },
@@ -267,7 +280,7 @@ fun WatermarkStudioPanel(
             steps = 15,
             modifier = Modifier.semantics { contentDescription = "Watermark edge feather" }
         )
-        Text("AI context  ${contextPx.roundToInt()} px", color = VideoFlowEditorColors.SecondaryText)
+        Text("Reconstruction area  ${contextPx.roundToInt()} px", color = VideoFlowEditorColors.SecondaryText)
         Slider(
             value = contextPx,
             onValueChange = { contextPx = it; vm.clearPreviewOnly() },
@@ -275,7 +288,7 @@ fun WatermarkStudioPanel(
             steps = 11,
             modifier = Modifier.semantics { contentDescription = "Watermark AI context padding" }
         )
-        Text("Temporal stability  ${(stability * 100).roundToInt()}%", color = VideoFlowEditorColors.SecondaryText)
+        Text("Frame consistency  ${(stability * 100).roundToInt()}%", color = VideoFlowEditorColors.SecondaryText)
         Slider(
             value = stability,
             onValueChange = { stability = it; vm.clearPreviewOnly() },
@@ -323,8 +336,8 @@ fun WatermarkStudioPanel(
                     onEdit = {
                         editingEffectId = effect.id
                         roi = effect.roi
-                        range = (effect.clipLocalStartUs.toFloat() / durationUs.toFloat()).coerceIn(0f, 1f)..
-                            (effect.clipLocalEndUs.toFloat() / durationUs.toFloat()).coerceIn(0f, 1f)
+                        startUs = effect.clipLocalStartUs.coerceAtMost(durationUs-1)
+                        endUs = effect.clipLocalEndUs.coerceIn(startUs+1,durationUs)
                         featherPx = effect.featherPx.toFloat()
                         contextPx = effect.contextPaddingPx.toFloat()
                         stability = effect.temporalStability

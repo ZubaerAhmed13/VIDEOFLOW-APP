@@ -218,7 +218,8 @@ class Step4AiRuntimeInstrumentedTest {
             repository.replaceProjectEffects(projectId, listOf(effect))
             val snapshot = snapshots.create(projectId, "AI exact state")
             val payload = JSONObject(snapshot.payloadJson)
-            assertEquals(3, payload.getInt("format"))
+            assertEquals(4, payload.getInt("format"))
+            assertTrue(payload.has("visualEdits"))
             assertTrue(payload.has("aiWatermark"))
 
             repository.replaceProjectEffects(projectId, listOf(mutated))

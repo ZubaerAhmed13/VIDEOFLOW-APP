@@ -50,6 +50,10 @@ fun PreviewWorkspace(
     onTransformGesture: (dxNormalized: Float, dyNormalized: Float, zoom: Float, rotationDelta: Float) -> Unit = { _, _, _, _ -> },
     onTransformGestureEnd: () -> Unit = {}
 ) {
+    val visualContext = androidx.compose.ui.platform.LocalContext.current
+    val visualState = androidx.compose.runtime.produceState(com.videoflow.app.domain.effects.VisualEdits(), project?.updatedAt, editor) {
+        project?.id?.let { id -> value = com.videoflow.app.data.effects.VisualEditsRepository(visualContext).load(id) }
+    }
     val timeline = editor?.timeline
     val tracks = timeline?.tracks.orEmpty()
     val clips = timeline?.clips.orEmpty()
@@ -155,6 +159,9 @@ fun PreviewWorkspace(
                     val cropCenterY = ((crop?.top ?: 0f) + (crop?.bottom ?: 1f)) / 2f
                     NativeVideoPlayer(
                         uri = previewSource,
+                        videoEffects = androidx.compose.runtime.remember(visualState.value,activeVideoClip) {
+                            activeVideoClip?.let { com.videoflow.app.render.effects.VisualEffectPipeline.create(visualState.value,it.id,it.sourceStartUs,it.speed) }.orEmpty()
+                        },
                         startPositionMs = sourcePositionMs,
                         playWhenReady = isPlaying,
                         speed = activeVideoClip?.speed?.toFloat() ?: 1f,

@@ -58,6 +58,11 @@ class SmartCopyEngine @Inject constructor(
     }
 
     fun preflight(plan: FinalRenderPlan): SmartCopyPreflight {
+        val visual = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            com.videoflow.app.data.effects.VisualEditsRepository(context).load(plan.editorPlan.projectId)
+        }
+        if (visual.changesPixels(plan.editorPlan.clips.filter { it.enabled }.map { it.id }.toSet()))
+            return SmartCopyPreflight(false, listOf("Effects or Enhance require pixel rendering."))
         val policy = SourcePreservationPolicy.analyze(plan)
         if (!policy.smartCopyCandidate) return SmartCopyPreflight(false, policy.smartCopyReasons)
         return runCatching { runtimePreflight(plan) }

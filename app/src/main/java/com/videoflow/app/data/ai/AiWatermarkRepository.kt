@@ -27,6 +27,7 @@ import org.json.JSONObject
 class AiWatermarkRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    val visualEdits = com.videoflow.app.data.effects.VisualEditsRepository(context)
     private val root = File(context.filesDir, "ai-watermark/projects")
     private val _changes = MutableSharedFlow<String>(extraBufferCapacity = 32)
 
@@ -188,6 +189,7 @@ class AiWatermarkRepository @Inject constructor(
                     .put("centerX", anchor.centerX.toDouble())
                     .put("centerY", anchor.centerY.toDouble())
                     .put("confidence", anchor.confidence.toDouble())
+                    .put("width", anchor.width?.toDouble()).put("height", anchor.height?.toDouble()).put("manual", anchor.manual)
             )
         }
         return JSONObject()
@@ -223,7 +225,10 @@ class AiWatermarkRepository @Inject constructor(
                         clipLocalTimeUs = row.getLong("timeUs"),
                         centerX = row.getDouble("centerX").toFloat(),
                         centerY = row.getDouble("centerY").toFloat(),
-                        confidence = row.optDouble("confidence", 1.0).toFloat()
+                        confidence = row.optDouble("confidence", 1.0).toFloat(),
+                        width = if (row.has("width")) row.getDouble("width").toFloat() else null,
+                        height = if (row.has("height")) row.getDouble("height").toFloat() else null,
+                        manual = row.optBoolean("manual", false)
                     )
                 )
             }

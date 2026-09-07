@@ -43,7 +43,8 @@ class Media3CompositionBuilder(
         plan: FinalRenderPlan,
         settings: ResolvedExportSettings,
         aiEffects: List<AiWatermarkEffect> = emptyList(),
-        aiRuntime: SharedLamaRenderRuntime? = null
+        aiRuntime: SharedLamaRenderRuntime? = null,
+        visualEdits: com.videoflow.app.domain.effects.VisualEdits = com.videoflow.app.domain.effects.VisualEdits()
     ): Media3CompositionBundle {
         require(plan.durationUs > 0) { "Cannot export an empty timeline" }
         if (aiEffects.isNotEmpty()) requireNotNull(aiRuntime) { "Local AI effects require an active LaMa render runtime." }
@@ -87,7 +88,8 @@ class Media3CompositionBuilder(
                         source = source,
                         settings = settings,
                         aiEffects = aiByClip[item.clip.id].orEmpty(),
-                        aiRuntime = aiRuntime
+                        aiRuntime = aiRuntime,
+                        visualEdits = visualEdits
                     )
                     val croppedWidth = (source.width ?: plan.editorPlan.width) * item.clip.transform.crop.run { right - left }
                     val croppedHeight = (source.height ?: plan.editorPlan.height) * item.clip.transform.crop.run { bottom - top }
@@ -196,7 +198,8 @@ class Media3CompositionBuilder(
         source: OriginalRenderSource,
         settings: ResolvedExportSettings,
         aiEffects: List<AiWatermarkEffect>,
-        aiRuntime: SharedLamaRenderRuntime?
+        aiRuntime: SharedLamaRenderRuntime?,
+        visualEdits: com.videoflow.app.domain.effects.VisualEdits
     ): EditedMediaItemSequence {
         val effects = mutableListOf<Effect>()
 
@@ -222,6 +225,7 @@ class Media3CompositionBuilder(
                 1f - crop.top * 2f
             )
         }
+        effects += com.videoflow.app.render.effects.VisualEffectPipeline.create(visualEdits, clip.id)
         val item = EditedMediaItem.Builder(clippedMediaItem(source.sourceUri, clip.sourceStartUs, clip.sourceEndUs))
             .setRemoveAudio(true)
             .setSpeed(ConstantSpeedProvider(clip.speed.toFloat()))

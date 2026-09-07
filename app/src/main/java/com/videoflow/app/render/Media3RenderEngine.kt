@@ -85,6 +85,13 @@ class Media3RenderEngine @Inject constructor(
             problems += ExportProblem(ExportFailureCode.VALIDATION_FAILED, "Timeline is empty and has no frames to export.")
         }
 
+        val visualEdits = runCatching { aiRepository.visualEdits.load(plan.editorPlan.projectId) }.getOrElse {
+            problems += ExportProblem(ExportFailureCode.VALIDATION_FAILED, "Could not read Effects/Enhance: ${it.message}")
+            com.videoflow.app.domain.effects.VisualEdits()
+        }
+        if (visualEdits.changesPixels(plan.editorPlan.clips.filter { it.enabled }.map { it.id }.toSet()) && sourceHasHdr && settings.hdrPolicy != HdrPolicy.CONVERT_TO_SDR) {
+            problems += ExportProblem(ExportFailureCode.VALIDATION_FAILED, "Effects/Enhance HDR preservation is not certified. Choose explicit SDR conversion to use these adjustments.")
+        }
         val allAiEffects = runCatching { aiRepository.load(plan.editorPlan.projectId) }
             .getOrElse {
                 problems += ExportProblem(ExportFailureCode.VALIDATION_FAILED, "Could not read local AI edit state: ${it.message ?: "unknown error"}.")
@@ -205,7 +212,8 @@ class Media3RenderEngine @Inject constructor(
                     plan = preparation.plan,
                     settings = preparation.settings,
                     aiEffects = aiEffects,
-                    aiRuntime = aiRuntimeForCleanup
+                    aiRuntime = aiRuntimeForCleanup,
+                    visualEdits = aiRepository.visualEdits.load(preparation.plan.editorPlan.projectId)
                 )
             }
             listener.onProgress(0.04f)

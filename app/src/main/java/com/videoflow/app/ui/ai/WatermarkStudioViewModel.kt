@@ -120,6 +120,7 @@ class WatermarkStudioViewModel @Inject constructor(
     }
 
     fun loadSourceFrame(sourceUri: String, sourceTimeUs: Long) {
+        replaceAiPreview(null)
         frameJob?.cancel()
         frameJob = viewModelScope.launch {
             val previousBusy = _state.value.busy

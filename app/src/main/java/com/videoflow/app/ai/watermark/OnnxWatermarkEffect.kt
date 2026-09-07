@@ -111,7 +111,11 @@ object OnnxWatermarkEffectFactory {
     ): List<ByteBufferGlEffect<LamaPatch>> {
         require(sourceWidth > 0 && sourceHeight > 0)
         val modelSize = effectModelSize(effect)
-        val baseTarget = AiWatermarkMath.toPixelRect(effect.roi, sourceWidth, sourceHeight)
+        val maxWidth = max(effect.roi.width, effect.motionAnchors.maxOfOrNull { it.width ?: effect.roi.width } ?: effect.roi.width)
+        val maxHeight = max(effect.roi.height, effect.motionAnchors.maxOfOrNull { it.height ?: effect.roi.height } ?: effect.roi.height)
+        // Reserve enough tile stages for the maximum manual size, including one-pixel rounding.
+        val baseTarget = PixelRect(0, 0, (kotlin.math.ceil(maxWidth * sourceWidth).toInt()+1).coerceAtMost(sourceWidth),
+            (kotlin.math.ceil(maxHeight * sourceHeight).toInt()+1).coerceAtMost(sourceHeight))
         val count = AiWatermarkMath.planTiles(
             target = baseTarget,
             frameWidth = sourceWidth,
@@ -161,7 +165,10 @@ private class LamaTileProcessor(
         image: ByteBufferGlEffect.Image,
         presentationTimeUs: Long
     ): ListenableFuture<LamaPatch> {
-        if (!effect.activeAt(presentationTimeUs)) return Futures.immediateFuture(LamaPatch.NO_OP)
+        if (!effect.activeAt(presentationTimeUs)) { previousCore = null; return Futures.immediateFuture(LamaPatch.NO_OP) }
+        val currentTarget = AiWatermarkMath.toPixelRect(effect.roiAt(presentationTimeUs), frameWidth, frameHeight)
+        val currentTiles = AiWatermarkMath.planTiles(currentTarget,frameWidth,frameHeight,512,effect.contextPaddingPx.coerceAtMost(255))
+        if (tileIndex >= currentTiles.size) { previousCore = null; return Futures.immediateFuture(LamaPatch.NO_OP) }
         val logicalTarget = AiWatermarkMath.toPixelRect(effect.roiAt(presentationTimeUs), frameWidth, frameHeight)
         val tile = tileAt(presentationTimeUs)
         return runtime.submit {
