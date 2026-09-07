@@ -3,6 +3,7 @@ package com.videoflow.app
 import android.app.Application
 import android.os.StrictMode
 import com.videoflow.app.data.export.ExportRepository
+import com.videoflow.app.export.ExportProcessIdentity
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -15,12 +16,17 @@ class VideoFlowApplication : Application() {
     @Inject lateinit var exportRepository: ExportRepository
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val processStartedAt=System.currentTimeMillis()
+    private val processStartedAt = System.currentTimeMillis()
 
     override fun onCreate() {
         super.onCreate()
-        appScope.launch {
-            exportRepository.markInterruptedAfterProcessRestart(processStartedAt,this@VideoFlowApplication)
+        // Hilt/Application is instantiated in both the editor and :export processes. Only the main
+        // process may classify jobs from a previous app lifetime as interrupted; doing this in
+        // :export would immediately invalidate the job that caused the process to start.
+        if (ExportProcessIdentity.isMainProcess(this)) {
+            appScope.launch {
+                exportRepository.markInterruptedAfterProcessRestart(processStartedAt, this@VideoFlowApplication)
+            }
         }
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(
