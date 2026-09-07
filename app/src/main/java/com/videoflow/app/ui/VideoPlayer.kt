@@ -11,6 +11,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +48,7 @@ fun NativeVideoPlayer(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var playbackError by remember(uri) { mutableStateOf<String?>(null) }
+    var frameRendered by remember(uri) { mutableStateOf(false) }
     val mediaUri = remember(uri) {
         if (uri.startsWith("/")) Uri.fromFile(File(uri)) else Uri.parse(uri)
     }
@@ -53,7 +57,9 @@ fun NativeVideoPlayer(
     val player = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(mediaUri))
+            setVideoEffects(videoEffects)
             addListener(object : Player.Listener {
+                override fun onRenderedFirstFrame() { frameRendered=true }
                 override fun onPlayerError(error: PlaybackException) {
                     playbackError = "VideoFlow could not prepare this media for playback."
                 }
@@ -62,7 +68,12 @@ fun NativeVideoPlayer(
         }
     }
 
-    LaunchedEffect(player, videoEffects) { player.setVideoEffects(videoEffects) }
+    LaunchedEffect(player, videoEffects) {
+        frameRendered=false
+        player.setVideoEffects(videoEffects)
+        // A paused comparison needs a newly rendered frame after the effect chain changes.
+        if (!player.playWhenReady) player.seekTo(player.currentPosition)
+    }
 
     // Do not chase every high-frequency UI playhead tick with a decoder seek. While playing, only
     // correct a meaningful discontinuity/drift; while paused/scrubbing keep precise seek response.
@@ -107,7 +118,8 @@ fun NativeVideoPlayer(
                 if (it.player !== player) it.player = player
                 it.useController = showControls
             },
-            modifier = modifier.heightIn(min = 220.dp, max = 420.dp)
+            modifier = modifier.heightIn(min = 220.dp, max = 420.dp).testTag("native-video-preview")
+                .semantics { stateDescription=if(frameRendered) "Video preview ready" else "Preparing video preview" }
         )
         playbackError?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

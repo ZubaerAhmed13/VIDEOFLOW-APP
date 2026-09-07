@@ -194,9 +194,15 @@ fun WatermarkStudioPanel(
     Slider(value=(studioLocalUs.toDouble()/durationUs).toFloat(), onValueChange={
         studioLocalUs=(it.toDouble()*durationUs).roundToLong().coerceIn(0L,durationUs-1L); vm.clearPreviewOnly()
     },modifier=Modifier.padding(horizontal=18.dp).semantics { contentDescription="AI preview playhead" })
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
         listOf("Select","Time","Track","Preview","Apply").forEachIndexed { index,label ->
-            androidx.compose.material3.FilterChip(stage==index,{stage=index},{Text(label)})
+            TextButton(onClick={stage=index},
+                modifier=Modifier.weight(1f).height(48.dp)
+                    .background(if(stage==index) VideoFlowEditorColors.SelectionAccent.copy(alpha=.22f) else Color.Transparent)
+                    .semantics { contentDescription="AI stage $label" },
+                contentPadding=androidx.compose.foundation.layout.PaddingValues(horizontal=2.dp)) {
+                Text(label,maxLines=1,style=androidx.compose.material3.MaterialTheme.typography.labelSmall)
+            }
         }
     }
     Column(

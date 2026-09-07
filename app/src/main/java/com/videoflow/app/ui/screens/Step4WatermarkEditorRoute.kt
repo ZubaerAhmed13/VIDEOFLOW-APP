@@ -85,8 +85,10 @@ fun Step4WatermarkEditorRoute(
                         .fillMaxWidth()
                         .heightIn(max = maxHeight * 0.82f)
                 }
+                com.videoflow.app.ui.theme.VideoFlowTheme(com.videoflow.app.ui.product.AppAppearance.DARK) {
                 Surface(
                     modifier = panelModifier,
+                    contentColor = VideoFlowEditorColors.PrimaryText,
                     color = VideoFlowEditorColors.EditorSurfaceElevated,
                     tonalElevation = 12.dp
                 ) {
@@ -107,6 +109,7 @@ fun Step4WatermarkEditorRoute(
                                 onClose = { activeTool = null }, onApplied = { editorVm.load(id) })
                         }
                     }
+                }
                 }
             }
         }

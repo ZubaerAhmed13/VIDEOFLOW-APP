@@ -67,7 +67,7 @@ class ProfessionalProductWorkflowTest {
             val aiVm=WatermarkStudioViewModel(ai,manager,LocalWatermarkPreviewEngine(context,manager),LocalRoiTracker(LocalWatermarkPreviewEngine(context,manager)),history)
             store.put("tools",toolsVm);store.put("ai",aiVm)
             var tool by mutableStateOf<ProfessionalEditorTool?>(ProfessionalEditorTool.AudioExtract(clip.id))
-            rule.setContent { MaterialTheme { Surface(Modifier.fillMaxSize()) {
+            rule.setContent { com.videoflow.app.ui.theme.VideoFlowTheme(com.videoflow.app.ui.product.AppAppearance.DARK) { Surface(Modifier.fillMaxSize(),color=com.videoflow.app.ui.editor.VideoFlowEditorColors.EditorSurfaceElevated) {
                 val selected=tool
                 if(selected is ProfessionalEditorTool.AiWatermark) WatermarkStudioPanel(id,clip.id,project,loaded,0L,{tool=null},{},vm=aiVm)
                 else if(selected!=null) ProfessionalToolPanel(id,selected,clip,asset,{tool=null},{},vm=toolsVm)
@@ -82,6 +82,7 @@ class ProfessionalProductWorkflowTest {
             rule.onNodeWithText("Film",substring=false).performScrollTo().performClick()
             rule.onNodeWithText("Sepia").performScrollTo().performClick()
             assertTrue(ai.visualEdits.load(id).effects.isEmpty()) // Draft does not persist on selection.
+            waitForVideoFrame()
             screenshot("effects")
             rule.onNodeWithText("Done").performClick()
             rule.waitUntil(30_000) { tool==null }
@@ -91,6 +92,7 @@ class ProfessionalProductWorkflowTest {
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
             rule.onNodeWithContentDescription("Exposure adjustment").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.2f) }
             assertEquals(.2f,toolsVm.state.value.draft.enhance.getValue(clip.id)[Adjustment.EXPOSURE],.001f)
+            waitForVideoFrame()
             screenshot("enhance")
             rule.onNodeWithText("Done").performClick()
             rule.waitUntil(30_000) { tool==null }
@@ -117,7 +119,7 @@ class ProfessionalProductWorkflowTest {
             rule.onNodeWithText("After",substring=false).performClick()
             screenshot("ai-preview")
             // Stage chip and commit button both say Apply; the chip exists before opening the stage.
-            rule.onNodeWithText("Apply",substring=false).performClick()
+            rule.onNodeWithContentDescription("AI stage Apply").performClick()
             rule.onNodeWithContentDescription("Apply AI removal").assertIsEnabled().performScrollTo().performClick()
             rule.waitUntil(30_000) { tool==null || aiVm.state.value.error!=null }
             assertNull("AI commit failed",aiVm.state.value.error)
@@ -134,6 +136,13 @@ class ProfessionalProductWorkflowTest {
             instrumentation.runOnMainSync { store.clear() }
             projectId?.let { ai.deleteProjectState(it);ai.visualEdits.delete(it);File(context.filesDir,"extracted-audio/$it").deleteRecursively() }
             db.close();resolver.delete(source,null,null)
+        }
+    }
+    private fun waitForVideoFrame() {
+        rule.waitUntil(30_000) {
+            rule.onAllNodesWithTag("native-video-preview").fetchSemanticsNodes().any {
+                it.config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription] == "Video preview ready"
+            }
         }
     }
     private fun screenshot(label: String) {
