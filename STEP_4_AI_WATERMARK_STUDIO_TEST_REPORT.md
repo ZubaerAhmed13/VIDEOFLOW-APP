@@ -22,19 +22,41 @@ Step-4 specific coverage includes:
 
 `AiWatermarkMathTest.movingRoiFeather_usesCurrentFrameTargetNotStartTarget` verifies the defect correction. At a tracked/moved timestamp, a center pixel of the moved target must have full feather weight against the current target and zero weight against the stale starting target.
 
-## API-35 local AI runtime certification
+## API-35 local AI runtime and lifecycle certification
 
 Class: `com.videoflow.app.ai.Step4AiRuntimeInstrumentedTest`
 
-Required coverage:
+The class contains six instrumentation methods and must cover all of these product behaviors:
 
-1. checksum-pinned dual model pack installs and opens offline
-2. preview inference runs against a real decoded video frame
-3. bounded local ROI tracking returns ordered normalized motion anchors
-4. AI sidecar Apply/Update/Remove remains non-destructive
-5. AI history Undo/Redo restores exact before/after sidecar state
+1. checksum-pinned dual model pack installs and opens offline;
+2. preview inference runs against a real decoded video frame and bounded local ROI tracking returns ordered normalized motion anchors;
+3. AI sidecar Apply/Update/Remove remains non-destructive;
+4. AI history Undo/Redo restores exact before/after sidecar state;
+5. project snapshot format 3 stores the complete AI state, restores it exactly after mutation, and a legacy format-2 snapshot explicitly clears later AI state;
+6. canonical project deletion removes the Room project, AI sidecar and interrupted `.<project>.json.tmp-*` file.
 
-The workflow must reject instrumentation crashes/failures and require an `OK (N tests)` result.
+The workflow must reject instrumentation crashes/failures and require an `OK (6 tests)` result for this exact-head suite. A future test addition may increase that number, but it must never drop below these six required lifecycle/runtime methods merely to obtain a green build.
+
+### Snapshot AI-state assertions
+
+The snapshot certification must prove:
+
+- new snapshot payload has `format = 3`;
+- `aiWatermark` exists in the snapshot payload;
+- ROI, timing, motion anchors/confidence, context padding, feather, temporal stability, model ID and enabled state survive the round trip through the canonical AI sidecar codec;
+- current AI state can be mutated after snapshot creation;
+- restoring the snapshot produces exact equality with the captured `AiWatermarkEffect` state;
+- format-2 snapshot compatibility does not retain post-snapshot AI edits.
+
+### Project deletion assertions
+
+The deletion certification must prove:
+
+- a real app-private AI sidecar exists before deletion;
+- an interrupted atomic-write temp file can also exist before deletion;
+- `ProjectDeletionService.deleteProject()` removes the Room project row;
+- the canonical AI repository subsequently loads an empty state;
+- both the sidecar and interrupted temp file are absent after successful deletion.
 
 ## API-35 final AI export certification
 
@@ -89,6 +111,20 @@ Required before API-35 execution:
 - deterministic MP4 fixture embedded in androidTest APK PASS
 - runtime-bundle SHA-256 verification PASS
 
+## Dependency/model licensing verification
+
+`DEPENDENCY_LICENSES.md` must describe the current Step-4 dependency/model surface rather than the retired Step-1-only state. At minimum it must remain consistent with:
+
+- `onnxruntime-android:1.29.0` in `app/build.gradle.kts`;
+- final model SHA-256 `cab19978adc306622fe37ef60d4a52103b99c98141d499c2a2366a7ed1255dbe`;
+- preview model SHA-256 `1941214c210399eb815eb2d32570ba91d5e6c4ac3de4c939bd3fb09300454972`;
+- the exact `g-ronimo/lama` build URLs in the Step-4 workflow;
+- Apache-2.0 model provenance and MIT ONNX Runtime licensing;
+- separation of shipped runtime components from test/build-only tooling;
+- the requirement to preserve applicable transitive dependency notices for the exact release HEAD.
+
+A model/dependency version, source, checksum or license change is incomplete if this record is not updated with it.
+
 ## Review APK lifecycle
 
 API-35 must also verify:
@@ -103,6 +139,7 @@ API-35 must also verify:
 CI must continue to enforce:
 
 - no application INTERNET permission
+- no application ACCESS_NETWORK_STATE permission
 - no AI HTTP/Retrofit/OkHttp/DownloadManager path
 - no cloud AI fallback
 - no analytics/crash-telemetry SDK introduced by Step 4
@@ -112,6 +149,6 @@ The model files are downloaded only by CI while producing the build and are chec
 
 ## Pass criteria
 
-Automated Step-4 certification is PASS only when both workflow jobs for the exact final HEAD complete successfully, including the final AI export gate. If any required stage is pending, skipped unexpectedly, cancelled, or red, automated completion remains NOT COMPLETE.
+Automated Step-4 certification is PASS only when both workflow jobs for the exact final HEAD complete successfully, including the six-method runtime/lifecycle suite and final AI export gate. If any required stage is pending, skipped unexpectedly, cancelled, or red, automated completion remains NOT COMPLETE.
 
 Physical-phone review remains separate and is recorded in `STEP_4_AI_WATERMARK_STUDIO_PHYSICAL_REVIEW.md`.
