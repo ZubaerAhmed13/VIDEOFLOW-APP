@@ -62,6 +62,7 @@ class Step5ProcessDeathTest {
             ProjectDeletionService(db,AiWatermarkRepository(context)).deleteProject(id)
             for(key in listOf("source","output")) context.contentResolver.delete(android.net.Uri.parse(prefs.getString(key,null)),null,null)
             prefs.edit().clear().commit()
+            Unit
         } finally { db.close() }
     }
 }

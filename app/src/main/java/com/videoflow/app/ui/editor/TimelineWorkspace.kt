@@ -8,6 +8,8 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.Slider
@@ -49,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -111,16 +115,28 @@ fun TimelineWorkspace(
     onProfessionalTool: (ProfessionalEditorTool)->Unit = {}
 ) {
     val horizontal = rememberScrollState()
-    val vertical = rememberScrollState()
     val safeDuration = maxOf(durationUs, 5_000_000L)
     var originUs by rememberSaveable { mutableLongStateOf(0L) }
     val windowDurationUs = minOf(safeDuration,TimelineViewport.durationUs(pixelsPerSecond))
     val windowEndUs = minOf(safeDuration,originUs+windowDurationUs)
     val totalWidth = timelineWidth(windowDurationUs, pixelsPerSecond)
     val density = LocalDensity.current
+    var pendingZoomScroll by remember { mutableStateOf<Float?>(null) }
     fun zoomTo(next: Float, anchorDp: Double = with(density) { horizontal.value.toDp().value.toDouble() } + 120.0) {
+        if(next==pixelsPerSecond) return
+        val anchorTime=TimelineViewport.timeAt(originUs,anchorDp,pixelsPerSecond)
+        val scrollDp=with(density) { horizontal.value.toDp().value }
         originUs=TimelineViewport.zoomOrigin(originUs,anchorDp,pixelsPerSecond,next,safeDuration)
+        pendingZoomScroll=(TimelineViewport.positionDp(anchorTime,originUs,next)-(anchorDp-scrollDp)).toFloat().coerceAtLeast(0f)
         onZoom(next)
+    }
+    val currentPinch by rememberUpdatedState<(Float,Double)->Unit>({ factor,anchor -> zoomTo((pixelsPerSecond*factor).coerceIn(12f,240f),anchor) })
+    LaunchedEffect(pixelsPerSecond) {
+        pendingZoomScroll?.let { scroll ->
+            androidx.compose.runtime.withFrameNanos { }
+            horizontal.scrollTo(with(density) { scroll.dp.roundToPx() })
+            pendingZoomScroll=null
+        }
     }
     LaunchedEffect(playheadUs, safeDuration) {
         if(playheadUs < originUs || playheadUs >= windowEndUs) {
@@ -173,10 +189,10 @@ fun TimelineWorkspace(
                         .weight(1f)
                         .fillMaxHeight()
                         .horizontalScroll(horizontal)
-                        .pointerInput(pixelsPerSecond) {
+                        .pointerInput(density) {
                             detectTransformGestures { centroid, _, zoom, _ ->
                                 if (zoom.isFinite() && zoom > 0f) {
-                                    zoomTo((pixelsPerSecond * zoom).coerceIn(12f, 240f), with(density) { (horizontal.value+centroid.x).toDp().value.toDouble() })
+                                    currentPinch(zoom, with(density) { (horizontal.value+centroid.x).toDp().value.toDouble() })
                                 }
                             }
                         }
@@ -193,14 +209,9 @@ fun TimelineWorkspace(
                     }
                 }
             } else {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .verticalScroll(vertical)
-                ) {
-                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)
-                    tracks.sortedBy { it.orderIndex }.forEach { track ->
+                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                    item("timed-edits") { TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs) }
+                    items(tracks.sortedBy { it.orderIndex },key={it.id}) { track ->
                         TrackRow(
                             track = track,
                             originUs = originUs,
@@ -324,7 +335,7 @@ private fun TrackRow(
                         .width(totalWidth)
                         .fillMaxHeight()
                         .clipToBounds()
-                        .pointerInput(pixelsPerSecond) {
+                        .pointerInput(pixelsPerSecond, originUs, windowEndUs) {
                             detectTapGestures { offset ->
                                 val xDp = with(density) { offset.x.toDp().value }
                                 onClearSelection()
@@ -440,7 +451,7 @@ private fun TimelineClipCard(
         if (abs(delta) > 0.01f) horizontal.dispatchRawDelta(delta)
     }
 
-    val bodyDrag = if (locked) Modifier else Modifier.pointerInput(clip.id, pixelsPerSecond, selected) {
+    val bodyDrag = if (locked) Modifier else Modifier.pointerInput(clip, originUs, windowEndUs, pixelsPerSecond, selected) {
         detectHorizontalDragGestures(
             onDragStart = { onSelect() },
             onDragCancel = { movePx = 0f },
@@ -491,6 +502,7 @@ private fun TimelineClipCard(
         if (selected && !locked) {
             if(shownStartUs==clip.timelineStartUs) TimelineTrimHandle(
                 description = "Trim clip start",
+                onCancelled = { startTrimPx=0f },
                 modifier = Modifier.align(Alignment.CenterStart),
                 onDrag = { amount, pointerLocalX ->
                     val next = (startTrimPx + amount).coerceAtMost(baseWidthPx + endTrimPx - minWidthPx)
@@ -505,6 +517,7 @@ private fun TimelineClipCard(
             )
             if(shownEndUs==clip.timelineStartUs+clip.timelineDurationUs) TimelineTrimHandle(
                 description = "Trim clip end",
+                onCancelled = { endTrimPx=0f },
                 modifier = Modifier.align(Alignment.CenterEnd),
                 onDrag = { amount, pointerLocalX ->
                     val next = (endTrimPx + amount).coerceAtLeast(startTrimPx - baseWidthPx + minWidthPx)
@@ -526,8 +539,12 @@ private fun TimelineTrimHandle(
     description: String,
     modifier: Modifier,
     onDrag: (amountPx: Float, pointerLocalX: Float) -> Unit,
-    onFinished: () -> Unit
+    onFinished: () -> Unit,
+    onCancelled: () -> Unit
 ) {
+    val currentDrag by rememberUpdatedState(onDrag)
+    val currentFinished by rememberUpdatedState(onFinished)
+    val currentCancelled by rememberUpdatedState(onCancelled)
     var dragged by remember { mutableFloatStateOf(0f) }
     Box(
         modifier
@@ -537,12 +554,12 @@ private fun TimelineTrimHandle(
             .semantics { contentDescription = description }
             .pointerInput(description) {
                 detectHorizontalDragGestures(
-                    onDragCancel = { dragged = 0f },
-                    onDragEnd = { dragged = 0f; onFinished() }
+                    onDragCancel = { dragged = 0f; currentCancelled() },
+                    onDragEnd = { dragged = 0f; currentFinished() }
                 ) { change, amount ->
                     change.consume()
                     dragged += amount
-                    onDrag(amount, change.position.x)
+                    currentDrag(amount, change.position.x)
                 }
             },
         contentAlignment = Alignment.Center

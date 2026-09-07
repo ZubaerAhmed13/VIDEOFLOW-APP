@@ -70,7 +70,7 @@ class SegmentedAiRenderEngine @Inject constructor(
         if (clip.timelineStartUs != 0L || clip.speed != 1.0 || clip.gainDb != 0f || clip.fadeInUs != 0L || clip.fadeOutUs != 0L) return false
         if (plan.editorPlan.keyframes.isNotEmpty() || plan.durationUs != clip.timelineDurationUs) return false
         val track = plan.editorPlan.tracks.firstOrNull { it.id == clip.trackId } ?: return false
-        if (track.type != TrackType.VIDEO || track.muted || track.solo || track.gainDb != 0f) return false
+        if (track.type != TrackType.VIDEO || !track.visible || track.muted || plan.editorPlan.tracks.any { it.solo } || track.gainDb != 0f) return false
         if (source.audioCodecMime != null && (source.audioCodecMime != MediaFormat.MIMETYPE_AUDIO_AAC || source.audioChannelCount != settings.audioChannels || source.audioSampleRate != settings.audioSampleRate)) return false
         return ai.load(plan.editorPlan.projectId).any { it.enabled && it.clipId == clip.id }
     }
@@ -89,11 +89,16 @@ class SegmentedAiRenderEngine @Inject constructor(
             val effects = ai.load(plan.editorPlan.projectId)
             val visual = ai.visualEdits.load(plan.editorPlan.projectId)
             val original = plan.originalSources.getValue(clip.assetId)
-            val fingerprint = com.videoflow.app.data.media.UriFingerprintService(context).fingerprint(Uri.parse(original.sourceUri), original.sizeBytes,
-                original.durationUs,original.width,original.height)
-            if (original.fingerprintSha256?.matches(Regex("[0-9a-fA-F]{64}")) == true)
-                require(original.fingerprintSha256 == fingerprint.sha256) { "Original media changed; reconnect and review the source before resuming." }
-            val signature = AiCheckpointIdentity.key(plan,preparation.settings,effects,visual,requireNotNull(fingerprint.sha256) { "Original media could not be fingerprinted safely." },checkpointIntervalUs,AiModelCatalog.FINAL_512.sha256)
+            val sourceFingerprints=linkedMapOf<String,String>()
+            for((assetId,source) in plan.originalSources.toSortedMap()) {
+                val fresh=com.videoflow.app.data.media.UriFingerprintService(context).fingerprint(Uri.parse(source.sourceUri),source.sizeBytes,
+                    source.durationUs,source.width,source.height)
+                val hash=requireNotNull(fresh.sha256) { "Original media could not be fingerprinted safely." }
+                if(source.fingerprintSha256?.matches(Regex("[0-9a-fA-F]{64}"))==true)
+                    require(source.fingerprintSha256==hash) { "Original media changed; reconnect and review the source before resuming." }
+                sourceFingerprints[assetId]=hash
+            }
+            val signature = AiCheckpointIdentity.key(plan,preparation.settings,effects,visual,sourceFingerprints.toString(),checkpointIntervalUs,AiModelCatalog.FINAL_512.sha256)
             val directory = File(context.filesDir,"ai-jobs/$signature")
             directory.mkdirs()
             val checkpoint = AtomicFile(File(directory,"checkpoint.json"))
@@ -104,7 +109,7 @@ class SegmentedAiRenderEngine @Inject constructor(
             fun save(state: AiLongJobState) {
                 sampledPeakPssKb = maxOf(sampledPeakPssKb,android.os.Debug.getPss())
                 val row = JSONObject().put("version",1).put("signature",signature).put("project",plan.editorPlan.projectId)
-                    .put("sourceFingerprint",plan.originalSources.getValue(clip.assetId).fingerprintSha256)
+                    .put("sourceFingerprints",JSONObject(sourceFingerprints as Map<*,*>))
                     .put("modelSha256",AiModelCatalog.FINAL_512.sha256).put("destination",preparation.destination.uri.toString())
                     .put("sampledPeakPssKb",sampledPeakPssKb).put("tileSize",512).put("queueLimit",2).put("workers",1)
                     .put("durationUs",plan.durationUs).put("completedUs",completedUs).put("state",state.name)
