@@ -155,6 +155,11 @@ class Step5ProductIntegrationTest {
             assertEquals(saved,AiWatermarkRepository(context).load(id).single())
             val snapshot=com.videoflow.app.data.snapshot.SnapshotService(db,ai).create(id,"Step 5 complete workflow")
             com.videoflow.app.data.snapshot.SnapshotService(db,ai).restore(snapshot.id)
+            // Keep a native preview alive while a separate export graph is created and released.
+            rule.runOnIdle { tool=ProfessionalEditorTool.Effects(clip.id) }
+            rule.waitUntil(30_000) { toolsVm.state.value.loaded }
+            waitForVideoFrame()
+            val beforeExportPreview=stablePreviewPixels()
             val output=resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,ContentValues().apply {
                 put(MediaStore.Video.Media.DISPLAY_NAME,"step5-product-final.mp4");put(MediaStore.Video.Media.MIME_TYPE,"video/mp4")
                 put(MediaStore.Video.Media.RELATIVE_PATH,"Movies/VideoFlowCertification")
@@ -169,6 +174,8 @@ class Step5ProductIntegrationTest {
                 assertTrue(prepared.problems.toString(),prepared.ready)
                 val result=engine.render(checkNotNull(prepared.preparation),com.videoflow.app.render.RenderProgressListener {}).getOrThrow()
                 assertTrue(result.validation.problems.toString(),result.validation.passed)
+                rule.onNodeWithText("Play",substring=false).performClick()
+                waitForPreviewChange(beforeExportPreview)
             } finally { resolver.delete(output,null,null) }
             instrumentation.sendStatus(0,android.os.Bundle().apply { putString("stream","STEP5_PRODUCT_INTEGRATION_CERTIFIED audio=${editor.load(id).timeline.clips.size} effects=1 enhance=0.2 aiCorrections=1\n") })
         } finally {

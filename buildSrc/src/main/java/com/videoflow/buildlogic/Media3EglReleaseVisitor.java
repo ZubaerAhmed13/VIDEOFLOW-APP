@@ -25,10 +25,10 @@ public abstract class Media3EglReleaseVisitor implements AsmClassVisitorFactory<
                     @Override public void visitInsn(int opcode) {
                         if (opcode == Opcodes.RETURN) {
                             // The original method has already destroyed its owned context here.
-                            // Release this GL worker's EGL TLS/driver connection, without terminating
-                            // the process-wide display used by a concurrent editor preview.
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "android/opengl/EGL14", "eglReleaseThread", "()Z", false);
-                            super.visitInsn(Opcodes.POP);
+                            // Match DefaultGlObjectsProvider's complete EGL lifecycle, including
+                            // the display initialization reference and worker TLS/driver connection.
+                            super.visitVarInsn(Opcodes.ALOAD, 1);
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "androidx/media3/common/util/GlUtil", "terminate", "(Landroid/opengl/EGLDisplay;)V", false);
                         }
                         super.visitInsn(opcode);
                     }
