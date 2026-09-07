@@ -57,7 +57,7 @@ class Step5ArchitectureTest {
                 override fun close() {}
             }
             val hash=FingerprintEngine().fingerprint(reader,3_600_000_000L,3840,2160)
-            assertEquals(64,hash.sha256.length)
+            assertEquals(64,checkNotNull(hash.sha256).length)
             assertEquals(12L*1024*1024,bytes)
             assertTrue(largest>Int.MAX_VALUE-256*1024L)
         }

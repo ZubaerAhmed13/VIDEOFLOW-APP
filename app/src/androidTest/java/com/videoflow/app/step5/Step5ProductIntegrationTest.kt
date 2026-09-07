@@ -80,6 +80,11 @@ class Step5ProductIntegrationTest {
             rule.onNodeWithText("Extract audio").performScrollTo().performClick()
             rule.waitUntil(60_000) { tool==null }
             assertEquals(3,editor.load(id).timeline.clips.size)
+            val audioClip=editor.load(id).timeline.clips.single { it.assetId!=asset.id }
+            val properties=com.videoflow.app.data.editor.EditorPropertyService(db)
+            properties.setClipGain(id,audioClip.id,-9f)
+            properties.setFades(id,audioClip.id,100_000L,100_000L)
+            editor.addTextOverlay(id,300_000L,"Step 5 integrated",500_000L)
 
             rule.runOnIdle { tool=ProfessionalEditorTool.Effects(clip.id) }
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
@@ -122,6 +127,9 @@ class Step5ProductIntegrationTest {
             rule.onNodeWithText("Set End").performScrollTo().performClick()
             rule.onNodeWithText("Jump to start").performScrollTo().performClick()
             rule.onNodeWithText("Track",substring=false).performClick()
+            rule.onNodeWithText("Track movement",substring=false).performScrollTo().performClick()
+            rule.waitUntil(90_000) { aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
+            assertTrue("Automatic tracking produced no anchors",aiVm.state.value.trackedAnchors.isNotEmpty())
             rule.onNodeWithText("Add correction").performScrollTo().performClick()
             rule.onNodeWithText("Select",substring=false).performClick()
             rule.onNodeWithText("Move left").performScrollTo().performClick()
@@ -143,7 +151,7 @@ class Step5ProductIntegrationTest {
             assertEquals(Math.round(clip.timelineDurationUs*.25),saved.clipLocalStartUs)
             assertEquals(Math.round(clip.timelineDurationUs*.75),saved.clipLocalEndUs)
             assertEquals(1,saved.motionAnchors.count { it.manual })
-            assertTrue(saved.motionAnchors.single().centerX < (.68f+.97f)/2f)
+            assertTrue(saved.motionAnchors.single { it.manual }.centerX < (.68f+.97f)/2f)
             assertEquals(saved,AiWatermarkRepository(context).load(id).single())
             val snapshot=com.videoflow.app.data.snapshot.SnapshotService(db,ai).create(id,"Step 5 complete workflow")
             com.videoflow.app.data.snapshot.SnapshotService(db,ai).restore(snapshot.id)

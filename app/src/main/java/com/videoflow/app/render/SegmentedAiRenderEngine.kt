@@ -93,7 +93,7 @@ class SegmentedAiRenderEngine @Inject constructor(
                 original.durationUs,original.width,original.height)
             if (original.fingerprintSha256?.matches(Regex("[0-9a-fA-F]{64}")) == true)
                 require(original.fingerprintSha256 == fingerprint.sha256) { "Original media changed; reconnect and review the source before resuming." }
-            val signature = sha(("segmented-v3-static-overlays-$checkpointIntervalUs-${fingerprint.sha256}"+plan.toString()+preparation.settings.toString()+effects.toString()+VisualEditsRepository.encode(visual)+AiModelCatalog.FINAL_512.sha256).toByteArray())
+            val signature = AiCheckpointIdentity.key(plan,preparation.settings,effects,visual,fingerprint.sha256,checkpointIntervalUs,AiModelCatalog.FINAL_512.sha256)
             val directory = File(context.filesDir,"ai-jobs/$signature")
             directory.mkdirs()
             val checkpoint = AtomicFile(File(directory,"checkpoint.json"))
@@ -221,6 +221,8 @@ class SegmentedAiRenderEngine @Inject constructor(
                                 checkCancelled(); currentCoroutineContext().ensureActive()
                                 val time=segment.startUs+extractor.sampleTime
                                 require(time>lastVideo) { "Segment timestamps are not strictly increasing." }
+                                val maximumGap=(2_000_000.0/plan.editorPlan.frameRate.fps).toLong()+1L
+                                require(lastVideo<0L || time-lastVideo<=maximumGap) { "A video section is missing at a segment boundary." }
                                 require(android.os.Build.VERSION.SDK_INT < 28 || extractor.sampleSize<=buffer.capacity()) { "Encoded frame exceeds bounded assembly buffer." }
                                 buffer.clear(); val size=extractor.readSampleData(buffer,0)
                                 if(size<0) break
@@ -235,6 +237,7 @@ class SegmentedAiRenderEngine @Inject constructor(
                             checkCancelled(); currentCoroutineContext().ensureActive()
                             if(audio.sampleTime>=clip.sourceStartUs) {
                                 require(android.os.Build.VERSION.SDK_INT < 28 || audio.sampleSize<=buffer.capacity())
+                                require(audio.sampleFlags and MediaExtractor.SAMPLE_FLAG_ENCRYPTED == 0) { "Encrypted audio cannot be assembled." }
                                 buffer.clear(); val size=audio.readSampleData(buffer,0); if(size<0) break
                                 info.set(0,size,audio.sampleTime-clip.sourceStartUs,MediaCodec.BUFFER_FLAG_KEY_FRAME)
                                 muxer.writeSampleData(outputAudio,buffer,info)

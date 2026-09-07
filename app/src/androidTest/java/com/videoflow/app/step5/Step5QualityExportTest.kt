@@ -26,6 +26,7 @@ class Step5QualityExportTest {
             val mae=identity.indices.map { difference(identity[it],original[it]) }.average()
             assertTrue("SDR identity mean RGB error $mae",mae<12.0)
             f.evidence("quality.jsonl","{\"check\":\"sdr_identity\",\"mean_rgb_error\":$mae,\"threshold\":12.0}")
+            val initialFds=java.io.File("/proc/self/fd").list()!!.size
             val cases=VisualEffectType.entries.map { type -> type.name to VisualEdits(listOf(VideoEffectNode(type.name,f.clip.id,type,0L,1_000_000L,1f))) }+
                 Adjustment.entries.flatMap { adjustment -> (if(adjustment in setOf(Adjustment.SHARPEN,Adjustment.VIGNETTE)) listOf(0f,1f) else listOf(-1f,1f)).map { value ->
                     "${adjustment.name}-$value" to VisualEdits(enhance=mapOf(f.clip.id to EnhanceParameters(mapOf(adjustment to value))))
@@ -39,6 +40,9 @@ class Step5QualityExportTest {
                 else assertTrue("$name did not visibly change decoded export pixels: $change",change>.25)
                 f.evidence("quality.jsonl","{\"control\":\"$name\",\"max_mean_rgb_difference\":$change,\"threshold\":0.25}")
             }
+            val finalFds=java.io.File("/proc/self/fd").list()!!.size
+            assertTrue("Repeated renders leaked file descriptors: $initialFds -> $finalFds",finalFds-initialFds<20)
+            f.evidence("resources.jsonl","{\"initial_fds\":$initialFds,\"final_fds\":$finalFds,\"pss_kb\":${android.os.Debug.getPss()}}")
             f.ai.visualEdits.replace(f.id,VisualEdits())
             val reset=f.render(plan).first
             assertTrue(difference(identity[1],pixels(f,reset,times[1]))<2.0)

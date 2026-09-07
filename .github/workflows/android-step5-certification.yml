@@ -119,7 +119,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle wrapper --gradle-version 9.6.0
+          gradle wrapper --gradle-version 9.6.0 --gradle-distribution-sha256-sum bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01
           chmod +x gradlew
 
       - name: Step 4 architecture, product-entry and privacy audit
@@ -289,10 +289,10 @@ jobs:
             adb shell svc wifi disable
             adb shell svc data disable
             adb shell pm grant com.videoflow.app.debug android.permission.POST_NOTIFICATIONS
-            adb shell am instrument -w -r -e class com.videoflow.app.step5.Step5RecoverySecurityTest,com.videoflow.app.step5.Step5QualityExportTest,com.videoflow.app.step5.Step5AudioVideoSyncTest,com.videoflow.app.step5.Step5CheckpointOverlayTest,com.videoflow.app.step5.Step5ProductIntegrationTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/step5-integration.txt 2>&1
+            adb shell am instrument -w -r -e class com.videoflow.app.step5.Step5AiOutsideRoiTest,com.videoflow.app.step5.Step5RecoverySecurityTest,com.videoflow.app.step5.Step5QualityExportTest,com.videoflow.app.step5.Step5AudioVideoSyncTest,com.videoflow.app.step5.Step5CheckpointOverlayTest,com.videoflow.app.step5.Step5ProductIntegrationTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/step5-integration.txt 2>&1
             cat step4-emulator-reports/step5-integration.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/step5-integration.txt
-            grep -E -q 'OK \(7 tests\)' step4-emulator-reports/step5-integration.txt
+            grep -E -q 'OK \(8 tests\)' step4-emulator-reports/step5-integration.txt
             grep -q 'STEP5_OVERLAY_CHECKPOINT_CERTIFIED' step4-emulator-reports/step5-integration.txt
             grep -q 'STEP5_PRODUCT_INTEGRATION_CERTIFIED' step4-emulator-reports/step5-integration.txt
             for configuration in portrait landscape tablet; do
