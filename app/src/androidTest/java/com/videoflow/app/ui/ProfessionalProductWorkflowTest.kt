@@ -95,7 +95,8 @@ class ProfessionalProductWorkflowTest {
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
             waitForVideoFrame()
             val beforeEnhanceStage=stablePreviewPixels()
-            rule.onNodeWithContentDescription("Exposure adjustment").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.1f) }
+            // Darken first: the fixture has saturated primaries that positive exposure can clip.
+            rule.onNodeWithContentDescription("Exposure adjustment").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(-.2f) }
             waitForVideoFrame()
             waitForPreviewChange(beforeEnhanceStage)
             val beforeExposure=stablePreviewPixels()
