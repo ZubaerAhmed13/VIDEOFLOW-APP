@@ -93,7 +93,7 @@ class SegmentedAiRenderEngine @Inject constructor(
                 original.durationUs,original.width,original.height)
             if (original.fingerprintSha256?.matches(Regex("[0-9a-fA-F]{64}")) == true)
                 require(original.fingerprintSha256 == fingerprint.sha256) { "Original media changed; reconnect and review the source before resuming." }
-            val signature = AiCheckpointIdentity.key(plan,preparation.settings,effects,visual,fingerprint.sha256,checkpointIntervalUs,AiModelCatalog.FINAL_512.sha256)
+            val signature = AiCheckpointIdentity.key(plan,preparation.settings,effects,visual,requireNotNull(fingerprint.sha256) { "Original media could not be fingerprinted safely." },checkpointIntervalUs,AiModelCatalog.FINAL_512.sha256)
             val directory = File(context.filesDir,"ai-jobs/$signature")
             directory.mkdirs()
             val checkpoint = AtomicFile(File(directory,"checkpoint.json"))

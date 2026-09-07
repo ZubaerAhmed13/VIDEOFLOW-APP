@@ -191,11 +191,9 @@ jobs:
           git rev-parse HEAD > step4-artifacts/SOURCE_COMMIT.txt
           cp app/build/outputs/apk/review/app-review.apk step4-artifacts/VideoFlow_Step5_Review.apk
           cp app/build/outputs/apk/debug/app-debug.apk step4-artifacts/VideoFlow_Step5_Debug.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk step4-artifacts/VideoFlow_Step5_Debug-androidTest.apk
           cp review-badging.txt review-permissions.txt review-signature.txt androidtest-video-fixture.txt step4-artifacts/
-          for DOC in STEP_4_AI_WATERMARK_STUDIO_HANDOFF.md STEP_4_AI_WATERMARK_STUDIO_COMPLETION_REPORT.md STEP_4_AI_WATERMARK_STUDIO_TEST_REPORT.md STEP_4_AI_WATERMARK_STUDIO_PHYSICAL_REVIEW.md; do
-            test -f "$DOC" && cp "$DOC" step4-artifacts/
-          done
-          cp PROFESSIONAL_*.md AUDIO_EXTRACT_ARCHITECTURE.md VIDEO_EFFECTS_ARCHITECTURE.md ENHANCE_ARCHITECTURE.md AI_LONG_DURATION_ARCHITECTURE.md AI_30_MINUTE_CERTIFICATION.md step4-artifacts/
+          cp STEP_5_*.md RELEASE_CANDIDATE_MANIFEST.md step4-artifacts/
           (cd step4-artifacts && sha256sum *.apk | tee SHA256SUMS.txt)
           cp app/build/outputs/apk/debug/app-debug.apk step4-runtime/VideoFlow_Step5_Debug.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk step4-runtime/VideoFlow_Step5_Debug-androidTest.apk
@@ -375,4 +373,73 @@ jobs:
           name: VideoFlow-Step5-API35-Certification
           path: step4-emulator-reports/
           if-no-files-found: warn
+          retention-days: 30
+
+  long-media-architecture:
+    name: Long-media architecture evidence
+    needs: step4-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Step5-Build-Evidence
+          path: verified-build
+      - run: python scripts/step5/certify.py architecture verified-build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Step5-Long-Media-Evidence
+          path: long-media-evidence.json
+          if-no-files-found: error
+
+  privacy-packaging:
+    name: Privacy, model and RC package integrity
+    needs: step4-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Step5-APKs
+          path: verified-apks
+      - run: python scripts/step5/certify.py packaging verified-apks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Step5-Packaging-Evidence
+          path: packaging-evidence.json
+          if-no-files-found: error
+
+  exact-head-report:
+    name: Exact-head RC completion and physical test package
+    needs: [step4-build, api35-ai-certification, long-media-architecture, privacy-packaging]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Step5-APKs
+          path: verified-apks
+      - uses: actions/download-artifact@v4
+        with:
+          name: Step5-Build-Evidence
+          path: verified-build
+      - uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Step5-API35-Certification
+          path: verified-runtime
+      - name: Bind successful evidence to exact head and prepare physical package
+        env:
+          CERTIFICATION_NEEDS: ${{ toJSON(needs) }}
+        run: python scripts/step5/certify.py report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Step5-Completion-Report
+          path: completion-report/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Step5-Physical-Test-Package
+          path: VideoFlow_Step5_Physical_Test_Package.zip
+          if-no-files-found: error
           retention-days: 30
