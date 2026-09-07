@@ -68,7 +68,9 @@ class Step5ProductIntegrationTest {
             val history=EditHistoryService(db,ai)
             val toolsVm=ProfessionalToolsViewModel(ai,history,AudioExtractionService(context,db,editor,projects,history),context)
             val manager=AiModelPackManager(context)
-            val aiVm=WatermarkStudioViewModel(ai,manager,LocalWatermarkPreviewEngine(context,manager),LocalRoiTracker(LocalWatermarkPreviewEngine(context,manager)),history)
+            val previewEngine=LocalWatermarkPreviewEngine(context,manager)
+            val processedPreviewManager=AiProcessedPreviewManager(context,editor,projects,ai,manager)
+            val aiVm=WatermarkStudioViewModel(ai,manager,previewEngine,processedPreviewManager,LocalRoiTracker(previewEngine),history)
             store.put("tools",toolsVm);store.put("ai",aiVm)
             var tool by mutableStateOf<ProfessionalEditorTool?>(ProfessionalEditorTool.AudioExtract(clip.id))
             rule.setContent { com.videoflow.app.ui.theme.VideoFlowTheme(com.videoflow.app.ui.product.AppAppearance.DARK) { Surface(Modifier.fillMaxSize(),color=com.videoflow.app.ui.editor.VideoFlowEditorColors.EditorSurfaceElevated,contentColor=com.videoflow.app.ui.editor.VideoFlowEditorColors.PrimaryText) {
@@ -135,7 +137,7 @@ class Step5ProductIntegrationTest {
             rule.onNodeWithText("Move left").performScrollTo().performClick()
             rule.onNodeWithText("Preview",substring=false).performClick()
             rule.waitUntil(30_000) { aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
-            rule.onNodeWithText("Generate AI Preview").performScrollTo().performClick()
+            rule.onNodeWithText("Generate Still Preview").performScrollTo().performClick()
             rule.waitUntil(180_000) { aiVm.state.value.aiPreview!=null || aiVm.state.value.error!=null }
             assertNotNull(aiVm.state.value.error,aiVm.state.value.aiPreview)
             rule.onNodeWithText("Before",substring=false).performClick()
