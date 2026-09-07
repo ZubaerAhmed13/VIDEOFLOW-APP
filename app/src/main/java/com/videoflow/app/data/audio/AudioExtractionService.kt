@@ -68,7 +68,7 @@ class AudioExtractionService @Inject constructor(
                     require(asset.audioChannelCount == source.audioChannelCount && asset.audioSampleRate == source.audioSampleRate) {
                         "This device cannot preserve the source audio channels/sample rate in the editing format."
                     }
-                    db.mediaAssetDao().update(asset.copy(displayName = "Extracted from ${source.displayName}"))
+                    db.mediaAssetDao().update(asset.copy(displayName = "Extracted from ${source.displayName}", permissionPersisted = true))
                     val track = editor.createTrack(projectId, TrackType.AUDIO, "Extracted audio")
                     val originalEntity = db.editorDao().getClips(projectId).first { it.id == clipId }
                     val audio = originalEntity.copy(
@@ -115,7 +115,7 @@ class AudioExtractionService @Inject constructor(
                 var samples = 0L
                 while (extractor.sampleTime >= 0) {
                     currentCoroutineContext().ensureActive()
-                    require(extractor.sampleSize <= buffer.capacity().toLong()) { "Encoded audio packet exceeds the safe buffer size." }
+                    require(android.os.Build.VERSION.SDK_INT < 28 || extractor.sampleSize <= buffer.capacity().toLong()) { "Encoded audio packet exceeds the safe buffer size." }
                     buffer.clear()
                     val size = extractor.readSampleData(buffer, 0)
                     if (size < 0) break

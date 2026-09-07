@@ -19,7 +19,10 @@ data class RenderPreparation(
     val encoder: EncoderCapability,
     val estimatedRequiredBytes: Long,
     val warnings: List<ExportWarning>,
-    val usesTemporaryLocalOutput: Boolean
+    val usesTemporaryLocalOutput: Boolean,
+    val aiEffectsOverride: List<com.videoflow.app.domain.ai.AiWatermarkEffect>? = null,
+    val visualEditsOverride: com.videoflow.app.domain.effects.VisualEdits? = null,
+    val visualTimeOffsetUs: Long = 0L
 )
 
 data class RenderExecutionResult(

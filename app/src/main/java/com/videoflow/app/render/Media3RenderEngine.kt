@@ -201,10 +201,10 @@ class Media3RenderEngine @Inject constructor(
         var completedSuccessfully = false
         try {
             listener.onProgress(0.01f)
-            val allAiEffects = withContext(Dispatchers.IO) { aiRepository.load(preparation.plan.editorPlan.projectId) }
+            val allAiEffects = preparation.aiEffectsOverride ?: withContext(Dispatchers.IO) { aiRepository.load(preparation.plan.editorPlan.projectId) }
             val aiEffects = AiReconstructionExportPolicy.activeForProject(allAiEffects, preparation.plan.editorPlan.clips)
             if (aiEffects.isNotEmpty()) {
-                aiRuntimeForCleanup = SharedLamaRenderRuntime.create(aiModelPackManager)
+                aiRuntimeForCleanup = SharedLamaRenderRuntime.create(aiModelPackManager, context)
                 activeAiRuntime = aiRuntimeForCleanup
             }
             val bundle = withContext(Dispatchers.IO) {
@@ -213,7 +213,8 @@ class Media3RenderEngine @Inject constructor(
                     settings = preparation.settings,
                     aiEffects = aiEffects,
                     aiRuntime = aiRuntimeForCleanup,
-                    visualEdits = aiRepository.visualEdits.load(preparation.plan.editorPlan.projectId)
+                    visualEdits = preparation.visualEditsOverride ?: aiRepository.visualEdits.load(preparation.plan.editorPlan.projectId),
+                    visualTimeOffsetUs = preparation.visualTimeOffsetUs
                 )
             }
             listener.onProgress(0.04f)

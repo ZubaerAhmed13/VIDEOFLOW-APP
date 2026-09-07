@@ -60,8 +60,15 @@ class ProfessionalToolsViewModel @Inject constructor(
                 for (fraction in listOf(.15, .5, .85)) {
                     currentCoroutineContext().ensureActive()
                     val time = startUs + ((endUs-startUs).toDouble()*fraction).toLong()
-                    val bitmap = retriever.getScaledFrameAtTime(time, MediaMetadataRetriever.OPTION_CLOSEST, 128, 128)
-                        ?: error("Could not analyze a representative frame")
+                    val bitmap = if (android.os.Build.VERSION.SDK_INT >= 27) {
+                        retriever.getScaledFrameAtTime(time, MediaMetadataRetriever.OPTION_CLOSEST, 128, 128)
+                    } else {
+                        retriever.getFrameAtTime(time, MediaMetadataRetriever.OPTION_CLOSEST)?.let { original ->
+                            val scaled = android.graphics.Bitmap.createScaledBitmap(original,128,128,true)
+                            if (scaled !== original) original.recycle()
+                            scaled
+                        }
+                    } ?: error("Could not analyze a representative frame")
                     try {
                         for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
                             val pixel = bitmap.getPixel(x,y)

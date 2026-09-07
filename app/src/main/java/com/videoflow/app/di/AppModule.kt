@@ -30,5 +30,5 @@ object AppModule {
     @Provides
     @Singleton
     @UnstableApi
-    fun provideRenderEngine(engine: Media3RenderEngine): RenderEngine = engine
+    fun provideRenderEngine(engine: com.videoflow.app.render.SegmentedAiRenderEngine): RenderEngine = engine
 }

@@ -89,8 +89,8 @@ vec3 blurAt(vec2 p,float radius){
 void main(){
  vec2 p=vTex; float a=uAmount;
  if(uMode==14.0) p=(p-0.5)/(1.0+a*0.12*(0.5+0.5*sin(uTime*6.283185)))+0.5;
- if(uMode==15.0) p=(p-0.5)/1.06+0.5+vec2(sin(uTime*37.0),cos(uTime*43.0))*a*0.025;
- if(uMode==16.0) p=(p-0.5)/1.02+0.5+vec2(sin(uTime*53.0),cos(uTime*61.0))*a*0.005;
+ if(uMode==15.0) p=(p-0.5)/(1.0+0.06*a)+0.5+vec2(sin(uTime*37.0),cos(uTime*43.0))*a*0.025;
+ if(uMode==16.0) p=(p-0.5)/(1.0+0.02*a)+0.5+vec2(sin(uTime*53.0),cos(uTime*61.0))*a*0.005;
  vec3 c=sampleAt(p); float alpha=texture2D(uTexSampler,p).a;
  if(uMode==0.0){
    vec3 original=c;

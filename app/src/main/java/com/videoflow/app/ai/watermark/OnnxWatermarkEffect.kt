@@ -29,7 +29,8 @@ import kotlin.math.min
 /** Shared final-quality LaMa session for one export; inference is bounded and serialized. */
 class SharedLamaRenderRuntime private constructor(
     private val ort: AiOrtSession,
-    private val executor: ListeningExecutorService
+    private val executor: ListeningExecutorService,
+    private val context: android.content.Context?
 ) : AutoCloseable {
     private val cancelled = AtomicBoolean(false)
     private val inferenceLock = Any()
@@ -39,6 +40,11 @@ class SharedLamaRenderRuntime private constructor(
 
     fun submit(block: () -> LamaPatch): ListenableFuture<LamaPatch> = executor.submit<LamaPatch> {
         if (cancelled.get()) throw InterruptedException("AI export cancelled")
+        // Reduce scheduling pressure under heat without changing tiles, model or pixels.
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val thermal = context?.getSystemService(android.os.PowerManager::class.java)?.currentThermalStatus ?: 0
+            if (thermal >= android.os.PowerManager.THERMAL_STATUS_SEVERE) Thread.sleep(50L)
+        }
         block()
     }
 
@@ -76,15 +82,24 @@ class SharedLamaRenderRuntime private constructor(
     }
 
     companion object {
-        suspend fun create(manager: AiModelPackManager): SharedLamaRenderRuntime {
+        suspend fun create(manager: AiModelPackManager, context: android.content.Context? = null): SharedLamaRenderRuntime {
             // NNAPI is attempted first; AiModelPackManager falls back to the CPU correctness path.
             val session = manager.openSession(AiModelRole.FINAL, preferNnapi = true)
-            val executor = MoreExecutors.listeningDecorator(
-                Executors.newSingleThreadExecutor { runnable ->
-                    Thread(runnable, "VideoFlow-LaMa-Final").apply { priority = Thread.NORM_PRIORITY - 1 }
-                }
-            )
-            return SharedLamaRenderRuntime(session, executor)
+            val profile = com.videoflow.app.domain.ai.AiResourceProfile()
+            val pool = java.util.concurrent.ThreadPoolExecutor(1,1,0L,java.util.concurrent.TimeUnit.MILLISECONDS,
+                java.util.concurrent.ArrayBlockingQueue<Runnable>(profile.queueCapacity),
+                java.util.concurrent.ThreadFactory { runnable -> Thread(runnable,"VideoFlow-LaMa-Final").apply { priority = Thread.NORM_PRIORITY-1 } },
+                java.util.concurrent.RejectedExecutionHandler { task, executor ->
+                    // Backpressure is bounded and cancellation-aware; no unbounded executor queue.
+                    while (true) {
+                        if (executor.isShutdown) throw java.util.concurrent.RejectedExecutionException("AI export stopped")
+                        if (executor.queue.offer(task,100L,java.util.concurrent.TimeUnit.MILLISECONDS)) break
+                    }
+                    if (executor.isShutdown && executor.remove(task)) throw java.util.concurrent.RejectedExecutionException("AI export stopped")
+                })
+            val executor = MoreExecutors.listeningDecorator(pool)
+            return SharedLamaRenderRuntime(session, executor, context)
+
         }
     }
 }
