@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.videoflow.app.ai.watermark.AiModelPackManager
+import com.videoflow.app.ai.watermark.AiMovingPreviewLength
+import com.videoflow.app.ai.watermark.AiProcessedPreviewManager
 import com.videoflow.app.ai.watermark.LocalRoiTracker
 import com.videoflow.app.ai.watermark.LocalWatermarkPreviewEngine
 import com.videoflow.app.data.ai.AiWatermarkRepository
@@ -15,12 +17,15 @@ import com.videoflow.app.domain.ai.RoiMotionAnchor
 import com.videoflow.app.domain.editor.TimelineClip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
 
 
@@ -30,7 +35,9 @@ enum class WatermarkStudioBusy {
     LOADING_FRAME,
     TRACKING,
     AI_PREVIEW,
-    APPLYING
+    MOVING_PREVIEW,
+    APPLYING,
+    PREPARING_EDITOR_PREVIEW
 }
 
 data class WatermarkStudioState(
@@ -41,18 +48,23 @@ data class WatermarkStudioState(
     val sourceFrame: Bitmap? = null,
     val aiPreview: Bitmap? = null,
     val previewProvider: String? = null,
+    val movingPreviewPath: String? = null,
+    val movingPreviewStartUs: Long = 0L,
+    val movingPreviewEndUs: Long = 0L,
+    val movingPreviewProvider: String? = null,
     val trackedAnchors: List<RoiMotionAnchor> = emptyList(),
     val trackingConfidence: Float? = null,
     val existingEffects: List<AiWatermarkEffect> = emptyList(),
     val error: String? = null
 )
 
-/** Product-facing orchestration for the mask -> tracking -> AI preview -> apply workflow. */
+/** Product-facing orchestration for mask -> tracking -> still/moving AI preview -> apply. */
 @HiltViewModel
 class WatermarkStudioViewModel @Inject constructor(
     private val repository: AiWatermarkRepository,
     private val modelPackManager: AiModelPackManager,
     private val previewEngine: LocalWatermarkPreviewEngine,
+    private val processedPreviewManager: AiProcessedPreviewManager,
     private val tracker: LocalRoiTracker,
     private val historyService: EditHistoryService
 ) : ViewModel() {
@@ -80,7 +92,7 @@ class WatermarkStudioViewModel @Inject constructor(
     }
 
     fun bind(projectId: String, clipId: String) {
-        if(boundProjectId==projectId && boundClipId==clipId) return
+        if (boundProjectId == projectId && boundClipId == clipId) return
         historyService.activateProject(projectId)
         frameJob?.cancel(); workJob?.cancel()
         replaceAiPreview(null); replaceSourceFrame(null)
@@ -123,7 +135,7 @@ class WatermarkStudioViewModel @Inject constructor(
     }
 
     fun loadSourceFrame(sourceUri: String, sourceTimeUs: Long) {
-        clearPreviewOnly()
+        clearStillPreviewOnly()
         frameJob?.cancel()
         frameJob = viewModelScope.launch {
             val previousBusy = _state.value.busy
@@ -138,7 +150,7 @@ class WatermarkStudioViewModel @Inject constructor(
                     }
                 }
                 .onFailure { error ->
-                    if (error is kotlinx.coroutines.CancellationException) return@onFailure
+                    if (error is CancellationException) return@onFailure
                     if (_state.value.busy == WatermarkStudioBusy.LOADING_FRAME) {
                         _state.value = _state.value.copy(
                             busy = WatermarkStudioBusy.IDLE,
@@ -156,6 +168,10 @@ class WatermarkStudioViewModel @Inject constructor(
             trackedAnchors = emptyList(),
             trackingConfidence = null,
             previewProvider = null,
+            movingPreviewPath = null,
+            movingPreviewStartUs = 0L,
+            movingPreviewEndUs = 0L,
+            movingPreviewProvider = null,
             progress = 0f,
             busy = WatermarkStudioBusy.IDLE,
             error = null
@@ -163,6 +179,20 @@ class WatermarkStudioViewModel @Inject constructor(
     }
 
     fun clearPreviewOnly() {
+        if (_state.value.busy == WatermarkStudioBusy.AI_PREVIEW || _state.value.busy == WatermarkStudioBusy.MOVING_PREVIEW) {
+            workJob?.cancel()
+            _state.value = _state.value.copy(busy = WatermarkStudioBusy.IDLE, progress = 0f)
+        }
+        replaceAiPreview(null)
+        _state.value = _state.value.copy(
+            previewProvider = null,
+            movingPreviewPath = null,
+            movingPreviewProvider = null,
+            error = null
+        )
+    }
+
+    private fun clearStillPreviewOnly() {
         if (_state.value.busy == WatermarkStudioBusy.AI_PREVIEW) {
             workJob?.cancel()
             _state.value = _state.value.copy(busy = WatermarkStudioBusy.IDLE, progress = 0f)
@@ -180,6 +210,7 @@ class WatermarkStudioViewModel @Inject constructor(
     ) {
         workJob?.cancel()
         replaceAiPreview(null)
+        _state.value = _state.value.copy(movingPreviewPath = null, movingPreviewProvider = null)
         workJob = viewModelScope.launch {
             _state.value = _state.value.copy(
                 busy = WatermarkStudioBusy.TRACKING,
@@ -202,7 +233,7 @@ class WatermarkStudioViewModel @Inject constructor(
                     error = null
                 )
             }.onFailure { error ->
-                if (error is kotlinx.coroutines.CancellationException) return@onFailure
+                if (error is CancellationException) return@onFailure
                 _state.value = _state.value.copy(
                     busy = WatermarkStudioBusy.IDLE,
                     progress = 0f,
@@ -265,7 +296,7 @@ class WatermarkStudioViewModel @Inject constructor(
                     error = null
                 )
             }.onFailure { error ->
-                if (error is kotlinx.coroutines.CancellationException) return@onFailure
+                if (error is CancellationException) return@onFailure
                 _state.value = _state.value.copy(
                     busy = WatermarkStudioBusy.IDLE,
                     progress = 0f,
@@ -275,28 +306,104 @@ class WatermarkStudioViewModel @Inject constructor(
         }
     }
 
+    fun previewMoving(
+        effect: AiWatermarkEffect,
+        centerLocalUs: Long,
+        length: AiMovingPreviewLength
+    ) {
+        if (!_state.value.runtimeReady) return
+        workJob?.cancel()
+        workJob = viewModelScope.launch {
+            replaceAiPreview(null)
+            _state.value = _state.value.copy(
+                busy = WatermarkStudioBusy.MOVING_PREVIEW,
+                progress = 0f,
+                movingPreviewPath = null,
+                movingPreviewProvider = null,
+                error = null
+            )
+            runCatching {
+                processedPreviewManager.prepareDraftWindow(
+                    projectId = effect.projectId,
+                    clipId = effect.clipId,
+                    draftEffect = effect,
+                    centerLocalUs = centerLocalUs,
+                    length = length
+                ) { progress ->
+                    _state.value = _state.value.copy(
+                        busy = WatermarkStudioBusy.MOVING_PREVIEW,
+                        progress = progress.coerceIn(0f, 1f)
+                    )
+                }
+            }.onSuccess { ready ->
+                _state.value = _state.value.copy(
+                    busy = WatermarkStudioBusy.IDLE,
+                    progress = 1f,
+                    movingPreviewPath = ready.path,
+                    movingPreviewStartUs = ready.clipLocalStartUs,
+                    movingPreviewEndUs = ready.clipLocalEndUs,
+                    movingPreviewProvider = processedPreviewManager.state.value.provider,
+                    error = null
+                )
+            }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                _state.value = _state.value.copy(
+                    busy = WatermarkStudioBusy.IDLE,
+                    progress = 0f,
+                    movingPreviewPath = null,
+                    error = "Moving AI preview: ${error.message ?: error::class.java.simpleName}"
+                )
+            }
+        }
+    }
+
     fun apply(effect: AiWatermarkEffect, onApplied: () -> Unit) {
         workJob?.cancel()
         workJob = viewModelScope.launch {
-            _state.value = _state.value.copy(busy = WatermarkStudioBusy.APPLYING, progress = 0.5f, error = null)
-            runCatching {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                val before = repository.load(effect.projectId)
-                val existed = before.any { it.id == effect.id }
-                repository.upsert(effect)
-                historyService.touchProject(effect.projectId)
-                val after = repository.load(effect.projectId)
-                historyService.record(
-                    AiWatermarkHistoryEntry(
-                        projectId = effect.projectId,
-                        label = if (existed) "Update AI Watermark" else "Apply AI Watermark",
-                        before = before,
-                        after = after
+            _state.value = _state.value.copy(busy = WatermarkStudioBusy.APPLYING, progress = 0.1f, error = null)
+            val persisted = runCatching {
+                withContext(NonCancellable) {
+                    val before = repository.load(effect.projectId)
+                    val existed = before.any { it.id == effect.id }
+                    repository.upsert(effect)
+                    historyService.touchProject(effect.projectId)
+                    val after = repository.load(effect.projectId)
+                    historyService.record(
+                        AiWatermarkHistoryEntry(
+                            projectId = effect.projectId,
+                            label = if (existed) "Update AI Watermark" else "Apply AI Watermark",
+                            before = before,
+                            after = after
+                        )
                     )
-                )
-                after.filter { it.clipId == effect.clipId }
+                    after.filter { it.clipId == effect.clipId }
                 }
-            }.onSuccess { effects ->
+            }
+            if (persisted.isFailure) {
+                val error = persisted.exceptionOrNull()
+                _state.value = _state.value.copy(
+                    busy = WatermarkStudioBusy.IDLE,
+                    progress = 0f,
+                    error = "Apply: ${error?.message ?: error?.javaClass?.simpleName ?: "Unknown error"}"
+                )
+                return@launch
+            }
+
+            val effects = persisted.getOrThrow()
+            _state.value = _state.value.copy(
+                busy = WatermarkStudioBusy.PREPARING_EDITOR_PREVIEW,
+                progress = 0f,
+                existingEffects = effects,
+                error = null
+            )
+            runCatching {
+                processedPreviewManager.prepareClip(effect.projectId, effect.clipId) { progress ->
+                    _state.value = _state.value.copy(
+                        busy = WatermarkStudioBusy.PREPARING_EDITOR_PREVIEW,
+                        progress = progress.coerceIn(0f, 1f)
+                    )
+                }
+            }.onSuccess {
                 _state.value = _state.value.copy(
                     busy = WatermarkStudioBusy.IDLE,
                     progress = 1f,
@@ -305,10 +412,14 @@ class WatermarkStudioViewModel @Inject constructor(
                 )
                 onApplied()
             }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                // The edit was already atomically saved. Keep it, report preview preparation honestly,
+                // and let the user retry/cancel without losing the AI effect.
                 _state.value = _state.value.copy(
                     busy = WatermarkStudioBusy.IDLE,
                     progress = 0f,
-                    error = "Apply: ${error.message ?: error::class.java.simpleName}"
+                    existingEffects = effects,
+                    error = "AI edit saved, but moving preview could not be prepared: ${error.message ?: error::class.java.simpleName}"
                 )
             }
         }
@@ -329,6 +440,7 @@ class WatermarkStudioViewModel @Inject constructor(
                         after = after
                     )
                 )
+                processedPreviewManager.invalidateProject(effect.projectId)
             }.onFailure { error -> _state.value = _state.value.copy(error = error.message) }
         }
     }
@@ -348,17 +460,19 @@ class WatermarkStudioViewModel @Inject constructor(
                         after = after
                     )
                 )
+                processedPreviewManager.invalidateProject(effect.projectId)
             }.onFailure { error -> _state.value = _state.value.copy(error = error.message) }
         }
     }
 
     fun cancelWork() {
         workJob?.cancel()
+        viewModelScope.launch { processedPreviewManager.cancel() }
         _state.value = _state.value.copy(busy = WatermarkStudioBusy.IDLE, progress = 0f)
     }
 
     fun closeSession() {
-        boundProjectId=null; boundClipId=null
+        boundProjectId = null; boundClipId = null
         modelJob?.cancel(); frameJob?.cancel(); cancelWork()
         replaceAiPreview(null); replaceSourceFrame(null)
     }

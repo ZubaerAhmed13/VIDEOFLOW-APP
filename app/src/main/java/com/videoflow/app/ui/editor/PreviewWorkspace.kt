@@ -22,7 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.videoflow.app.ai.watermark.AiPreviewCacheBus
+import com.videoflow.app.ai.watermark.AiPreviewCacheStore
 import com.videoflow.app.data.editor.EditorProject
+import com.videoflow.app.domain.editor.AiPreviewPlaybackResolver
 import com.videoflow.app.domain.editor.AudioMath
 import com.videoflow.app.domain.editor.CropRect
 import com.videoflow.app.domain.editor.KeyframeEvaluator
@@ -51,6 +54,7 @@ fun PreviewWorkspace(
     onTransformGestureEnd: () -> Unit = {}
 ) {
     val visualContext = androidx.compose.ui.platform.LocalContext.current
+    val aiPreviewRevision = AiPreviewCacheBus.revision.collectAsState().value
     val visualState = androidx.compose.runtime.produceState(com.videoflow.app.domain.effects.VisualEdits(), project?.updatedAt, editor) {
         project?.id?.let { id -> value = com.videoflow.app.data.effects.VisualEditsRepository(visualContext).load(id) }
     }
@@ -69,6 +73,30 @@ fun PreviewWorkspace(
     val previewSource = activeProxy?.path ?: activeAsset
         ?.takeIf { it.sourceStatus == SourceStatus.AVAILABLE }
         ?.sourceUri
+    val aiReadySegments = androidx.compose.runtime.produceState(
+        initialValue = emptyList<com.videoflow.app.ai.watermark.AiPreviewReadySegment>(),
+        project?.id,
+        activeVideoClip?.id,
+        editor,
+        aiPreviewRevision
+    ) {
+        val p = project
+        val e = editor
+        val c = activeVideoClip
+        value = if (p != null && e != null && c != null) {
+            AiPreviewCacheStore(visualContext).resolveReadySegments(p, e, c)
+        } else emptyList()
+    }
+    val stitchedPreviewSegments = androidx.compose.runtime.remember(previewSource, activeVideoClip, aiReadySegments.value) {
+        val clip = activeVideoClip
+        if (previewSource != null && clip != null && aiReadySegments.value.isNotEmpty()) {
+            AiPreviewPlaybackResolver.build(previewSource, clip, aiReadySegments.value)
+        } else emptyList()
+    }
+    val activeAiPreview = aiReadySegments.value.any { activeLocal ->
+        val local = activeVideoClip?.let { (playheadUs - it.timelineStartUs).coerceAtLeast(0L) } ?: -1L
+        local in activeLocal.clipLocalStartUs until activeLocal.clipLocalEndUs
+    }
     val activeVideoTrack = activeVideoClip?.let { clip -> tracks.firstOrNull { it.id == clip.trackId } }
     val effectiveAudioTrackIds = TimelineEngine.effectiveAudioTracks(tracks).map { it.id }.toSet()
     val activeLocalUs = activeVideoClip?.let { (playheadUs - it.timelineStartUs).coerceAtLeast(0L) } ?: 0L
@@ -159,13 +187,15 @@ fun PreviewWorkspace(
                     val cropCenterY = ((crop?.top ?: 0f) + (crop?.bottom ?: 1f)) / 2f
                     NativeVideoPlayer(
                         uri = previewSource,
-                        videoEffects = androidx.compose.runtime.remember(visualState.value,activeVideoClip) {
-                            activeVideoClip?.let { com.videoflow.app.render.effects.VisualEffectPipeline.create(visualState.value,it.id,it.sourceStartUs,it.speed) }.orEmpty()
+                        videoEffects = androidx.compose.runtime.remember(visualState.value, activeVideoClip) {
+                            activeVideoClip?.let { com.videoflow.app.render.effects.VisualEffectPipeline.create(visualState.value, it.id, it.sourceStartUs, it.speed) }.orEmpty()
                         },
                         startPositionMs = sourcePositionMs,
                         playWhenReady = isPlaying,
                         speed = activeVideoClip?.speed?.toFloat() ?: 1f,
                         volume = videoVolume,
+                        previewSegments = stitchedPreviewSegments,
+                        clipSourceStartMs = (activeVideoClip?.sourceStartUs ?: 0L) / 1_000L,
                         modifier = Modifier
                             .fillMaxSize()
                             .offset(
@@ -312,6 +342,14 @@ fun PreviewWorkspace(
                 modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
             ) {
                 Text("Proxy", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+            }
+        }
+        if (activeAiPreview) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.72f),
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+            ) {
+                Text("AI Preview", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
             }
         }
     }
