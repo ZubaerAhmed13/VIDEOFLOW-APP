@@ -79,6 +79,7 @@ fun WatermarkStudioPanel(
     playheadUs: Long,
     onDismiss: () -> Unit,
     refreshEditor: () -> Unit,
+    initialEffectId: String? = null,
     vm: WatermarkStudioViewModel = hiltViewModel()
 ) {
     val state by vm.state.collectAsState()
@@ -153,14 +154,23 @@ fun WatermarkStudioPanel(
         vm.clearPreviewOnly()
     }
 
+    var initialLoaded by remember(initialEffectId) { mutableStateOf(false) }
+    LaunchedEffect(initialEffectId,state.existingEffects) {
+        if (!initialLoaded && initialEffectId != null) state.existingEffects.firstOrNull { it.id==initialEffectId }?.let { effect ->
+            editingEffectId=effect.id; roi=effect.roi
+            startUs=effect.clipLocalStartUs.coerceAtMost(durationUs-1L)
+            endUs=effect.clipLocalEndUs.coerceIn(startUs+1L,durationUs)
+            featherPx=effect.featherPx.toFloat(); contextPx=effect.contextPaddingPx.toFloat(); stability=effect.temporalStability
+            loadedAnchors=effect.motionAnchors; studioLocalUs=startUs; initialLoaded=true
+        }
+    }
     LaunchedEffect(projectId, clipId) { vm.bind(projectId, clipId) }
     LaunchedEffect(asset.sourceUri, sourceTimeUs) {
         vm.loadSourceFrame(asset.sourceUri, sourceTimeUs.coerceIn(clip.sourceStartUs, clip.sourceEndUs - 1L))
     }
 
     Column(Modifier.fillMaxSize()) {
-    StudioHeader("AI Watermark Studio", "Offline • Original-quality export", onDismiss)
-        Text("Drag inside the box to move it. Drag a corner to resize it around the watermark.", color = VideoFlowEditorColors.SecondaryText)
+    StudioHeader("AI Watermark Studio", "", onDismiss)
         if (shownBitmap != null) {
             InteractiveRoiPreview(
                 bitmap = shownBitmap,
@@ -170,16 +180,16 @@ fun WatermarkStudioPanel(
             )
         } else {
             Box(
-                Modifier.fillMaxWidth().height(150.dp).background(VideoFlowEditorColors.TimelineBackground),
+                Modifier.fillMaxWidth().height(previewHeight).background(VideoFlowEditorColors.TimelineBackground),
                 contentAlignment = Alignment.Center
             ) { Text("Loading source preview…", color = VideoFlowEditorColors.SecondaryText) }
         }
 
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(com.videoflow.app.domain.editor.TrimTimecode.formatUs(studioLocalUs),modifier=Modifier.weight(1f).padding(start=18.dp))
             TextButton(enabled = state.aiPreview != null, onClick = { showBefore = true }) { Text("Before") }
             TextButton(enabled = state.aiPreview != null, onClick = { showBefore = false }) { Text("After") }
         }
-    Text("${com.videoflow.app.domain.editor.TrimTimecode.formatUs(studioLocalUs)} / ${com.videoflow.app.domain.editor.TrimTimecode.formatUs(durationUs)}", modifier=Modifier.padding(horizontal=18.dp))
     Slider(value=(studioLocalUs.toDouble()/durationUs).toFloat(), onValueChange={
         studioLocalUs=(it.toDouble()*durationUs).roundToLong().coerceIn(0L,durationUs-1L); vm.clearPreviewOnly()
     },modifier=Modifier.padding(horizontal=18.dp).semantics { contentDescription="AI preview playhead" })
@@ -296,7 +306,7 @@ fun WatermarkStudioPanel(
             androidx.compose.material3.FilterChip(detailedPreview,{ detailedPreview=true; vm.clearPreviewOnly() },{ Text("Detailed preview") })
         }
         Text("Final export always uses Best Quality at original resolution.")
-        Text("Preview uses the smaller local model. Final export uses the 512px final model on bounded original-resolution ROI tiles.", color = VideoFlowEditorColors.SecondaryText)
+        Text("Preview is an approximation. Detailed preview uses the final model; export reconstructs the original source region.", color = VideoFlowEditorColors.SecondaryText)
         Button(
             onClick = {
                 val width = asset.width
@@ -410,7 +420,7 @@ private fun StudioHeader(title: String, subtitle: String, onClose: (() -> Unit)?
             Text(title, color = VideoFlowEditorColors.PrimaryText)
             if (onClose != null) TextButton(onClick=onClose) { Text("Close") }
         }
-        Text(subtitle, color = VideoFlowEditorColors.SecondaryText)
+        if (subtitle.isNotEmpty()) Text(subtitle, color = VideoFlowEditorColors.SecondaryText)
     }
 }
 
@@ -469,9 +479,11 @@ private fun InteractiveRoiPreview(
     val currentOnChange = rememberUpdatedState(onRoiChange)
     val ratio = bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1).toFloat()
 
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.background(Color.Black), contentAlignment=Alignment.Center) {
+    val fittedWidth = minOf(maxWidth, maxHeight * ratio)
+    val fittedHeight = fittedWidth / ratio
     Box(
-        modifier
-            .aspectRatio(ratio.coerceIn(0.35f, 3.2f))
+        Modifier.width(fittedWidth).height(fittedHeight)
             .background(Color.Black)
             .onSizeChanged { size = it }
             .semantics { contentDescription = "Interactive watermark mask region" }
@@ -531,6 +543,7 @@ private fun InteractiveRoiPreview(
                 drawCircle(VideoFlowEditorColors.TextOnAccent, handleRadius * 0.45f, it)
             }
         }
+    }
     }
 }
 

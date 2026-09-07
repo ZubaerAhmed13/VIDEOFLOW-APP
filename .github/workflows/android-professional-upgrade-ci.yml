@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: professional-upgrade-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   step4-build:
@@ -297,12 +297,14 @@ jobs:
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/editor-regression.txt
             grep -E -q 'OK \([0-9]+ tests?\)' step4-emulator-reports/editor-regression.txt
 
-            adb shell am instrument -w -r -e class com.videoflow.app.editor.ProfessionalAudioPersistenceTest,com.videoflow.app.ui.ProfessionalToolControlsTest,com.videoflow.app.ai.ProfessionalCombinedExportInstrumentedTest,com.videoflow.app.ai.ProfessionalCheckpointExportInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/professional-upgrade.txt 2>&1
+            adb shell am instrument -w -r -e class com.videoflow.app.editor.ProfessionalAudioPersistenceTest,com.videoflow.app.ui.ProfessionalToolControlsTest,com.videoflow.app.ui.ProfessionalProductWorkflowTest,com.videoflow.app.ai.ProfessionalCombinedExportInstrumentedTest,com.videoflow.app.ai.ProfessionalCheckpointExportInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/professional-upgrade.txt 2>&1
             cat step4-emulator-reports/professional-upgrade.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/professional-upgrade.txt
-            grep -E -q 'OK \(5 tests\)' step4-emulator-reports/professional-upgrade.txt
+            grep -E -q 'OK \(6 tests\)' step4-emulator-reports/professional-upgrade.txt
             grep -q 'PROFESSIONAL_COMBINED_EXPORT_CERTIFIED' step4-emulator-reports/professional-upgrade.txt
             grep -q 'PROFESSIONAL_CHECKPOINT_EXPORT_CERTIFIED' step4-emulator-reports/professional-upgrade.txt
+
+            adb pull /sdcard/Android/data/com.videoflow.app.debug/files/professional-screenshots step4-emulator-reports/
 
             adb shell am instrument -w -r -e class com.videoflow.app.db.RoomPersistenceTest,com.videoflow.app.db.Step2MigrationTest,com.videoflow.app.editor.Step2ComplexPersistenceTest,com.videoflow.app.editor.ProxyManagerInstrumentationTest,com.videoflow.app.media.MediaAnalyzerInstrumentationTest,com.videoflow.app.media.PlayerInstrumentationTest,com.videoflow.app.export.NativeRenderEngineInstrumentedTest,com.videoflow.app.export.SafMediaMuxerFactoryInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/retained-product-regression.txt 2>&1
             cat step4-emulator-reports/retained-product-regression.txt
@@ -328,4 +330,37 @@ jobs:
           name: VideoFlow-Professional-Upgrade-API35-Certification
           path: step4-emulator-reports/
           if-no-files-found: warn
+          retention-days: 30
+
+  exact-head-report:
+    name: Exact-head completion report
+    needs: [step4-build, api35-ai-certification]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-Professional-Upgrade-APKs
+          path: verified-apks
+      - name: Generate report only after every certification gate succeeds
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os,pathlib,shutil
+          commit=os.environ['GITHUB_SHA']
+          assert pathlib.Path('verified-apks/SOURCE_COMMIT.txt').read_text().strip()==commit
+          target=pathlib.Path('completion-report');target.mkdir()
+          run=f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          evidence=f"\n\nExact tested commit: `{commit}`\n\nWorkflow run: {run}\n\nAutomated certification: **PASS**. Physical device certification: **NOT VERIFIED**.\n"
+          for name in ['PROFESSIONAL_FEATURE_UPGRADE_COMPLETION_REPORT.md','PROFESSIONAL_FEATURE_UPGRADE_TEST_REPORT.md']:
+              text=pathlib.Path(name).read_text().replace('PENDING','PASS')
+              (target/name).write_text(text+evidence)
+          shutil.copy('verified-apks/SHA256SUMS.txt',target/'SHA256SUMS.txt')
+          shutil.copy('verified-apks/SOURCE_COMMIT.txt',target/'SOURCE_COMMIT.txt')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Professional-Upgrade-Completion-Report
+          path: completion-report/
+          if-no-files-found: error
           retention-days: 30

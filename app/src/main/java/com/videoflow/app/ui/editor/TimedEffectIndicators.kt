@@ -3,20 +3,24 @@ package com.videoflow.app.ui.editor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.domain.editor.TimelineClip
 
-private data class EffectIndicator(val clip: TimelineClip,val label: String,val startUs: Long,val endUs: Long,val ai: Boolean)
+private data class EffectIndicator(val id: String,val clip: TimelineClip,val label: String,val startUs: Long,val endUs: Long,val ai: Boolean,val enabled: Boolean)
 
-/** One region per edit, never one view per video frame. Shares the timeline's scroll and zoom. */
+/** Separate selectable edit rows, with a bounded viewport and no frame-dependent UI objects. */
 @Composable
 fun TimedEffectIndicators(clips: List<TimelineClip>, revision: Long, scroll: ScrollState, width: Dp, pixelsPerSecond: Float,
     onSelect: (EditorSelection)->Unit, onSeek: (Long)->Unit, onOpen: (ProfessionalEditorTool)->Unit) {
@@ -28,25 +32,33 @@ fun TimedEffectIndicators(clips: List<TimelineClip>, revision: Long, scroll: Scr
             val visual=repository.visualEdits.load(projectId)
             val ai=repository.load(projectId)
             clips.flatMap { clip ->
-                visual.effects.filter { it.clipId==clip.id }.map { EffectIndicator(clip,"FX ${it.type.label}",it.startUs,it.endUs,false) }+
-                    ai.filter { it.clipId==clip.id }.map { EffectIndicator(clip,"AI removal",it.clipLocalStartUs,it.clipLocalEndUs,true) }
+                visual.effects.filter { it.clipId==clip.id }.map { EffectIndicator(it.id,clip,"FX ${it.type.label}",it.startUs,it.endUs,false,it.enabled) }+
+                    ai.filter { it.clipId==clip.id }.mapIndexed { index,it -> EffectIndicator(it.id,clip,"AI ${index+1}",it.clipLocalStartUs,it.clipLocalEndUs,true,it.enabled) }
             }
         }
     }
     if(indicators.isEmpty()) return
-    Row(Modifier.fillMaxWidth().height(28.dp)) {
-        Text("Effects",modifier=Modifier.width(84.dp).padding(4.dp))
-        Box(Modifier.weight(1f).horizontalScroll(scroll)) {
-            Box(Modifier.width(width).height(28.dp)) {
-                indicators.forEach { effect ->
-                    val start=effect.clip.timelineStartUs+effect.startUs
-                    val end=effect.clip.timelineStartUs+minOf(effect.endUs,effect.clip.timelineDurationUs)
-                    if(end>start) Text(effect.label, maxLines=1,
+    Row(Modifier.fillMaxWidth().heightIn(max=144.dp).verticalScroll(rememberScrollState())) {
+        Column(Modifier.width(84.dp)) {
+            indicators.forEach { effect ->
+                Text(effect.label, maxLines=1, modifier=Modifier.height(48.dp).fillMaxWidth().clickable {
+                    onSelect(EditorSelection.Clip(effect.clip.id));onSeek(effect.clip.timelineStartUs+effect.startUs)
+                    onOpen(if(effect.ai) ProfessionalEditorTool.AiWatermark(effect.clip.id,effect.id) else ProfessionalEditorTool.Effects(effect.clip.id,effect.id))
+                }.padding(6.dp))
+            }
+        }
+        Column(Modifier.weight(1f).horizontalScroll(scroll).width(width)) {
+            indicators.forEach { effect ->
+                val start=effect.clip.timelineStartUs+effect.startUs
+                val end=effect.clip.timelineStartUs+minOf(effect.endUs,effect.clip.timelineDurationUs)
+                Box(Modifier.width(width).height(48.dp)) {
+                    if(end>start) Text(if(effect.enabled) effect.label else "${effect.label} (off)", maxLines=1,
                         modifier=Modifier.offset(x=(start.toDouble()/1_000_000*pixelsPerSecond).toFloat().dp)
-                            .width(((end-start).toDouble()/1_000_000*pixelsPerSecond).toFloat().dp.coerceAtLeast(8.dp))
-                            .height(26.dp).background(VideoFlowEditorColors.SelectionAccent.copy(alpha=.35f))
+                            .width(((end-start).toDouble()/1_000_000*pixelsPerSecond).toFloat().dp.coerceAtLeast(48.dp))
+                            .height(48.dp).background(VideoFlowEditorColors.SelectionAccent.copy(alpha=if(effect.enabled) .35f else .15f))
+                            .semantics { contentDescription="${effect.label} ${com.videoflow.app.domain.editor.TrimTimecode.formatUs(effect.startUs)} to ${com.videoflow.app.domain.editor.TrimTimecode.formatUs(effect.endUs)}" }
                             .clickable { onSelect(EditorSelection.Clip(effect.clip.id));onSeek(start)
-                                onOpen(if(effect.ai) ProfessionalEditorTool.AiWatermark(effect.clip.id) else ProfessionalEditorTool.Effects(effect.clip.id)) }
+                                onOpen(if(effect.ai) ProfessionalEditorTool.AiWatermark(effect.clip.id,effect.id) else ProfessionalEditorTool.Effects(effect.clip.id,effect.id)) }.padding(6.dp)
                     )
                 }
             }

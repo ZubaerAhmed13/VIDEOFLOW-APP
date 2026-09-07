@@ -93,8 +93,9 @@ class Media3CompositionBuilder(
                         visualEdits = visualEdits,
                         visualTimeOffsetUs = visualTimeOffsetUs
                     )
-                    val croppedWidth = (source.width ?: plan.editorPlan.width) * item.clip.transform.crop.run { right - left }
-                    val croppedHeight = (source.height ?: plan.editorPlan.height) * item.clip.transform.crop.run { bottom - top }
+                    val rotated = source.rotationDegrees == 90 || source.rotationDegrees == 270
+                    val croppedWidth = ((if (rotated) source.height else source.width) ?: plan.editorPlan.width) * item.clip.transform.crop.run { right - left }
+                    val croppedHeight = ((if (rotated) source.width else source.height) ?: plan.editorPlan.height) * item.clip.transform.crop.run { bottom - top }
                     val (sx, sy) = aspectFitScale(croppedWidth, croppedHeight, outputSize)
                     layers += RenderVisualLayer(RenderLayerKind.VIDEO_CLIP, item.clip.id, sx, sy)
                 }
@@ -220,6 +221,8 @@ class Media3CompositionBuilder(
             }
         }
 
+        // Shared preview/final source-space adjustments precede crop and canvas composition.
+        effects += com.videoflow.app.render.effects.VisualEffectPipeline.create(visualEdits, clip.id, -visualTimeOffsetUs)
         val crop = clip.transform.crop
         if (crop.left > 0f || crop.top > 0f || crop.right < 1f || crop.bottom < 1f) {
             effects += Crop(
@@ -229,7 +232,6 @@ class Media3CompositionBuilder(
                 1f - crop.top * 2f
             )
         }
-        effects += com.videoflow.app.render.effects.VisualEffectPipeline.create(visualEdits, clip.id, -visualTimeOffsetUs)
         val item = EditedMediaItem.Builder(clippedMediaItem(source.sourceUri, clip.sourceStartUs, clip.sourceEndUs))
             .setRemoveAudio(true)
             .setSpeed(ConstantSpeedProvider(clip.speed.toFloat()))

@@ -99,7 +99,8 @@ fun Step4WatermarkEditorRoute(
                             editor = currentEditor,
                             playheadUs = playheadUs,
                             onDismiss = { activeTool = null },
-                            refreshEditor = { editorVm.load(id) }
+                            refreshEditor = { editorVm.load(id) },
+                            initialEffectId = (activeTool as? com.videoflow.app.ui.editor.ProfessionalEditorTool.AiWatermark)?.effectId
                         )
                         } else {
                             com.videoflow.app.ui.effects.ProfessionalToolPanel(id, requireNotNull(activeTool), selected, asset,

@@ -14,22 +14,17 @@ import com.videoflow.app.domain.effects.*
 
 /** Both ExoPlayer preview and the production Composition use this exact ordered factory. */
 object VisualEffectPipeline {
-    fun create(edits: VisualEdits, clipId: String, sourceOffsetUs: Long = 0L, speed: Double = 1.0): List<Effect> = buildList {
-        edits.enhance[clipId]?.takeUnless { it.isIdentity }?.let { add(VisualGlEffect(enhance = it, sourceOffsetUs = sourceOffsetUs, speed = speed)) }
-        edits.ordered(clipId).forEach { add(VisualGlEffect(node = it, sourceOffsetUs = sourceOffsetUs, speed = speed)) }
-    }
+    fun create(edits: VisualEdits, clipId: String, sourceOffsetUs: Long = 0L, speed: Double = 1.0): List<Effect> =
+        VisualStage.ordered(edits,clipId,sourceOffsetUs,speed).map(::VisualGlEffect)
 }
 
-private data class VisualGlEffect(
-    val node: VideoEffectNode? = null,
-    val enhance: EnhanceParameters = EnhanceParameters(), val sourceOffsetUs: Long = 0L, val speed: Double = 1.0
-) : GlEffect {
-    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram = VisualShader(node, enhance, useHdr, sourceOffsetUs, speed)
+private data class VisualGlEffect(val stage: VisualStage) : GlEffect {
+    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram = VisualShader(stage, useHdr)
 }
 
 /** One output texture per stage, independent of duration. No CPU frame readback/cache. */
 private class VisualShader(
-    private val node: VideoEffectNode?, private val enhance: EnhanceParameters, useHdr: Boolean, private val sourceOffsetUs: Long, private val speed: Double
+    private val stage: VisualStage, useHdr: Boolean
 ) : BaseGlShaderProgram(useHdr, 1) {
     private val program = GlProgram(VERTEX, FRAGMENT)
     private var width = 1
@@ -43,13 +38,14 @@ private class VisualShader(
         return Size(width, height)
     }
     override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
-        val localTimeUs = ((presentationTimeUs - sourceOffsetUs).toDouble() / speed).toLong()
+        val localTimeUs = stage.localTimeUs(presentationTimeUs)
+        val node=stage.node; val enhance=stage.enhance
         program.use()
         program.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
         program.setFloatsUniform("uPixel", floatArrayOf(1f / width, 1f / height))
         program.setFloatUniform("uTime", ((localTimeUs % 60_000_000L).toDouble() / 1_000_000.0).toFloat())
         program.setFloatUniform("uMode", node?.type?.ordinal?.plus(1)?.toFloat() ?: 0f)
-        program.setFloatUniform("uAmount", if (node?.activeAt(localTimeUs) == true) node.intensity else 0f)
+        program.setFloatUniform("uAmount", stage.amountAt(presentationTimeUs))
         program.setFloatsUniform("uBasic", floatArrayOf(enhance[Adjustment.EXPOSURE], enhance[Adjustment.BRIGHTNESS], enhance[Adjustment.CONTRAST], enhance[Adjustment.SATURATION]))
         program.setFloatsUniform("uTone", floatArrayOf(enhance[Adjustment.HIGHLIGHTS], enhance[Adjustment.SHADOWS], enhance[Adjustment.TEMPERATURE], enhance[Adjustment.TINT]))
         program.setFloatsUniform("uDetail", floatArrayOf(enhance[Adjustment.SHARPEN], enhance[Adjustment.CLARITY], enhance[Adjustment.VIGNETTE]))

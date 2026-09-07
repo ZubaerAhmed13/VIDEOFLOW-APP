@@ -162,7 +162,8 @@ class SegmentedAiRenderEngine @Inject constructor(
                 listener.onProgress(1f)
                 Result.success(RenderExecutionResult(preparation.destination.uri,output.fileSizeBytes,System.currentTimeMillis()-started,null,null,output))
             } catch (failure: Throwable) {
-                save(if (cancelled.get() || failure is CancellationException) AiLongJobState.CANCELLED else AiLongJobState.FAILED)
+                runCatching { save(if (cancelled.get() || failure is CancellationException) AiLongJobState.CANCELLED else AiLongJobState.FAILED) }
+                    .onFailure { failure.addSuppressed(it) }
                 // Completed validated segments remain resumable. A partial final destination is never successful.
                 runCatching { context.contentResolver.openFileDescriptor(preparation.destination.uri,"rwt")?.close() }
                 Result.failure(if (cancelled.get() || failure is CancellationException) RenderPipelineException(ExportFailureCode.CANCELLED,"AI export cancelled; completed checkpoints retained.",failure) else failure)

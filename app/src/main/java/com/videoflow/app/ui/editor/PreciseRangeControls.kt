@@ -43,6 +43,14 @@ fun PreciseRangeControls(durationUs: Long, startUs: Long, endUs: Long, playheadU
                 if (a < b) onRange(a, b)
             }, modifier = Modifier.semantics { contentDescription = "Effect range handles" }
         )
+        val rangeLength = endUs-startUs
+        val moveLimit = durationUs-rangeLength
+        Text("Move entire range")
+        Slider(value=if(moveLimit>0L) (startUs.toDouble()/moveLimit).toFloat() else 0f,
+            enabled=moveLimit>0L, onValueChange={ value ->
+                val nextStart=(value.toDouble()*moveLimit).roundToLong().coerceIn(0L,moveLimit)
+                onRange(nextStart,nextStart+rangeLength)
+            },modifier=Modifier.semantics { contentDescription="Move entire effect range" })
         Row(Modifier.horizontalScroll(rememberScrollState())) {
             TextButton(onClick = { zoom = (zoom * 2).coerceAtMost(4096) }) { Text("Zoom in") }
             TextButton(onClick = { zoom = (zoom / 2).coerceAtLeast(1) }) { Text("Zoom out") }

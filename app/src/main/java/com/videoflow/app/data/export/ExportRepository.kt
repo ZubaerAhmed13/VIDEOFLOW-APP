@@ -102,7 +102,7 @@ class ExportRepository @Inject constructor(
     }
 
     suspend fun markInterruptedAfterProcessRestart(now: Long = System.currentTimeMillis()): Int = withContext(Dispatchers.IO) {
-        db.exportDao().markInterruptedJobs(now, "Rendering process was interrupted before completion. Render Again is required.")
+        db.exportDao().markInterruptedJobs(now, "Export was interrupted. Start export again with unchanged settings to reuse available validated AI checkpoints; other timelines restart safely.")
     }
 
     suspend fun putReport(report: ExportReport) = withContext(Dispatchers.IO) {

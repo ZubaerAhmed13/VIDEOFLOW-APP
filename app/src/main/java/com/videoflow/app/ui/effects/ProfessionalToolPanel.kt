@@ -24,7 +24,7 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
     onClose: () -> Unit, onApplied: () -> Unit, vm: ProfessionalToolsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
     val previewHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .25f).dp.coerceIn(72.dp,220.dp)
-    var selectedId by remember(tool) { mutableStateOf<String?>(null) }
+    var selectedId by remember(tool) { mutableStateOf((tool as? ProfessionalEditorTool.Effects)?.effectId) }
     var positionUs by remember(tool) { mutableLongStateOf(0L) }
     var before by remember(tool) { mutableStateOf(false) }
     var mute by remember(tool) { mutableStateOf(false) }
