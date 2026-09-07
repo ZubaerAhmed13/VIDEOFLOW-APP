@@ -10,7 +10,7 @@ import com.videoflow.app.domain.export.ExportSize
 import com.videoflow.app.domain.export.FinalRenderEvaluator
 import com.videoflow.app.domain.export.FinalRenderPlan
 
-enum class RenderLayerKind { BACKGROUND, VIDEO_CLIP, IMAGE_OVERLAY, TEXT_OVERLAY }
+enum class RenderLayerKind { CLOCK, BACKGROUND, VIDEO_CLIP, IMAGE_OVERLAY, TEXT_OVERLAY }
 
 data class RenderVisualLayer(
     val kind: RenderLayerKind,
@@ -35,11 +35,13 @@ class TimelineVideoCompositorSettings(
 
     override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
         val layer = layers.getOrNull(inputId) ?: return hidden()
-        if (layer.kind == RenderLayerKind.BACKGROUND) return StaticOverlaySettings.Builder().build()
+        if (layer.kind == RenderLayerKind.CLOCK) return hidden()
+        if (layer.kind == RenderLayerKind.BACKGROUND) return StaticOverlaySettings.Builder()
+            .setScale(layer.baseScaleX, layer.baseScaleY).build()
 
         val state = FinalRenderEvaluator.evaluate(plan, presentationTimeUs.coerceAtLeast(0L))
         val transform = when (layer.kind) {
-            RenderLayerKind.BACKGROUND -> null
+            RenderLayerKind.CLOCK, RenderLayerKind.BACKGROUND -> null
             RenderLayerKind.VIDEO_CLIP -> state.video.firstOrNull { it.clip.id == layer.ownerId }?.transform
             RenderLayerKind.IMAGE_OVERLAY -> state.images.firstOrNull { it.overlay.id == layer.ownerId }?.transform
             RenderLayerKind.TEXT_OVERLAY -> state.text.firstOrNull { it.overlay.id == layer.ownerId }?.transform

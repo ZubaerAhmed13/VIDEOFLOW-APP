@@ -57,8 +57,8 @@ def report():
         matches=re.findall(r'OK \((\d+) tests?\)',text)
         assert len(matches)==1,name
         counts[name]=int(matches[0])
-    assert counts['step5-integration']==12 and counts['professional-upgrade']==5
-    for name in ('quality.jsonl','av-sync.jsonl','ai-roi-quality.jsonl','resources.jsonl','vfr-cadence.jsonl','audio-fades.jsonl'):
+    assert counts['step5-integration']==13 and counts['professional-upgrade']==5
+    for name in ('quality.jsonl','av-sync.jsonl','ai-roi-quality.jsonl','resources.jsonl','vfr-cadence.jsonl','audio-fades.jsonl','composition-geometry.jsonl'):
         path=logs/'step5-evidence'/name
         rows=[json.loads(line) for line in path.read_text().splitlines()]
         assert rows,name

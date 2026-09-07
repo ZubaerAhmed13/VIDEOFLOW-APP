@@ -28,3 +28,5 @@ The final run retains every baseline unit and instrumentation suite, and adds:
 - Step5ProcessDeathTest: two separate instrumentation processes, a real foreground AI job, explicit adb force-stop, interrupted-job recognition and editable-project preservation.
 
 Final counts and precise test outcomes are generated from the exact run's XML and instrumentation logs in `certification-results.json`. Quality/resource measurements accompany the report. Assertions are not disabled to accommodate failures. Physical results remain NOT VERIFIED.
+
+The Step 5 integrated device group also includes decoded composition geometry: full-canvas background, unequal-size video fit, and text above opaque video. Its required count is 13 tests.

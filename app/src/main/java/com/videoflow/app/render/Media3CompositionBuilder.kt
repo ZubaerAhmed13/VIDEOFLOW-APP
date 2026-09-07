@@ -71,14 +71,15 @@ class Media3CompositionBuilder(
             if (track.visible) visualItems += VisualItem.Text(track.orderIndex, overlay)
         }
 
-        visualItems.sortWith(compareBy<VisualItem> { it.trackOrder }.thenBy { it.timelineStartUs }.thenBy { it.ownerId })
+        // Media3 draws first-registered inputs on top; reverse the editor's back-to-front order.
+        visualItems.sortWith(compareByDescending<VisualItem> { it.trackOrder }.thenByDescending { it.timelineStartUs }.thenByDescending { it.ownerId })
 
         val videoSequences = mutableListOf<EditedMediaItemSequence>()
         val layers = mutableListOf<RenderVisualLayer>()
 
         val background = rasterAssets.createBackground(plan.editorPlan.backgroundArgb)
         videoSequences += singleImageSequence(background, 0L, plan.durationUs, settings)
-        layers += RenderVisualLayer(RenderLayerKind.BACKGROUND, "__background__")
+        layers += RenderVisualLayer(RenderLayerKind.CLOCK, "__clock__")
 
         visualItems.forEach { item ->
             when (item) {
@@ -118,7 +119,6 @@ class Media3CompositionBuilder(
                         ExportSize(plan.editorPlan.width, plan.editorPlan.height),
                         outputSize
                     )
-                    val bounds = imageBounds(textFile)
                     videoSequences += singleImageSequence(
                         textFile,
                         item.overlay.timelineStartUs,
@@ -128,13 +128,16 @@ class Media3CompositionBuilder(
                     layers += RenderVisualLayer(
                         RenderLayerKind.TEXT_OVERLAY,
                         item.overlay.id,
-                        (bounds.first.toFloat() / outputSize.width).coerceAtLeast(1f / outputSize.width),
-                        (bounds.second.toFloat() / outputSize.height).coerceAtLeast(1f / outputSize.height)
+                        1f,
+                        1f
                     )
                 }
             }
         }
 
+        // The transparent primary clock keeps CFR; the actual background is the bottom layer.
+        videoSequences += singleImageSequence(background, 0L, plan.durationUs, settings)
+        layers += RenderVisualLayer(RenderLayerKind.BACKGROUND, "__background__", outputSize.width / 8f, outputSize.height / 8f)
         val audioSequences = buildAudioSequences(plan, tracksById, settings)
         val allSequences = videoSequences + audioSequences
         val compositor = TimelineVideoCompositorSettings(plan, outputSize, layers)
@@ -315,8 +318,9 @@ class Media3CompositionBuilder(
         val sw = sourceWidth.toFloat().coerceAtLeast(1f)
         val sh = sourceHeight.toFloat().coerceAtLeast(1f)
         val factor = minOf(output.width / sw, output.height / sh)
-        return ((sw * factor) / output.width).coerceAtMost(1f) to
-            ((sh * factor) / output.height).coerceAtMost(1f)
+        // OverlayMatrixProvider already multiplies by inputSize/outputSize.
+        // Supply the pixel-space fit factor without normalizing it a second time.
+        return factor to factor
     }
 
     private sealed interface VisualItem {
