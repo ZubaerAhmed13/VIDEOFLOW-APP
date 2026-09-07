@@ -1,3 +1,7 @@
+import com.android.build.api.instrumentation.FramesComputationMode
+import com.android.build.api.instrumentation.InstrumentationScope
+import com.videoflow.buildlogic.Media3EglReleaseVisitor
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -123,4 +127,10 @@ dependencies {
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.0")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+}
+// Media3 1.11.0 destroys the multi-input context but omits releasing the GL worker's
+// EGL thread state. Keep the pinned library and correct only that cleanup boundary.
+androidComponents.onVariants { variant ->
+    variant.instrumentation.transformClassesWith(Media3EglReleaseVisitor::class.java, InstrumentationScope.ALL) {}
+    variant.instrumentation.setAsmFramesComputationMode(FramesComputationMode.COMPUTE_FRAMES_FOR_INSTRUMENTED_METHODS)
 }

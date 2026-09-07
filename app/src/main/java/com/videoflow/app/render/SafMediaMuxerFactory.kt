@@ -55,17 +55,25 @@ class SafMediaMuxerFactory(
         private val pfd: android.os.ParcelFileDescriptor
     ) : Muxer {
         private val muxer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        private val formats = mutableListOf<Format>()
+        private val nativeTrackIds = mutableMapOf<Int, Int>()
         private var started = false
         private var closed = false
 
         override fun addTrack(format: Format): Int = wrap("add output track") {
             check(!started) { "All tracks must be added before sample writing starts" }
-            muxer.addTrack(MediaFormatUtil.createMediaFormatFromFormat(format))
+            formats.add(format)
+            formats.lastIndex
         }
 
         override fun writeSampleData(trackId: Int, byteBuffer: ByteBuffer, bufferInfo: BufferInfo) {
             wrap("write encoded sample") {
                 if (!started) {
+                    // Codec initialization is asynchronous. Keep a canonical video-first MP4
+                    // track order regardless of which encoder reports its format first.
+                    formats.indices.sortedBy { if(formats[it].sampleMimeType?.startsWith("video/")==true) 0 else 1 }.forEach { logical ->
+                        nativeTrackIds[logical] = muxer.addTrack(MediaFormatUtil.createMediaFormatFromFormat(formats[logical]))
+                    }
                     muxer.start()
                     started = true
                 }
@@ -77,7 +85,7 @@ class SafMediaMuxerFactory(
                 val frameworkInfo = MediaCodec.BufferInfo().apply {
                     set(offset, sampleSize, bufferInfo.presentationTimeUs, toFrameworkFlags(bufferInfo.flags))
                 }
-                muxer.writeSampleData(trackId, data, frameworkInfo)
+                muxer.writeSampleData(nativeTrackIds.getValue(trackId), data, frameworkInfo)
             }
         }
 

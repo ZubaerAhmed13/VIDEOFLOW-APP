@@ -124,11 +124,14 @@ class Step5AudioVideoSyncTest {
                 }
                 val index=decoder.dequeueOutputBuffer(info,10_000)
                 if(index>=0) {
+                    f.evidence("video-decode.txt","uri=$uri pts=${info.presentationTimeUs} size=${info.size} flags=${info.flags}")
                     if(info.size>0) {
                         val decoded=checkNotNull(decoder.getOutputImage(index)) { "YUV output image unavailable" }
                         val white=try {
                             val crop=decoded.cropRect;val plane=decoded.planes[0]
-                            (plane.buffer.get(plane.buffer.position()+(crop.top+crop.height()/2)*plane.rowStride+(crop.left+crop.width()/2)*plane.pixelStride).toInt() and 255)>128
+                            val y=plane.buffer.get(plane.buffer.position()+(crop.top+crop.height()/2)*plane.rowStride+(crop.left+crop.width()/2)*plane.pixelStride).toInt() and 255
+                            f.evidence("video-decode.txt","luma=$y crop=$crop stride=${plane.rowStride} pixel=${plane.pixelStride}")
+                            y>128
                         } finally { decoded.close() }
                         if(info.presentationTimeUs in 0 until duration && white && !active) events+=info.presentationTimeUs
                         active=white
