@@ -11,14 +11,21 @@ import com.videoflow.app.ai.watermark.AiModelPackManager
 import com.videoflow.app.ai.watermark.LocalRoiTracker
 import com.videoflow.app.ai.watermark.LocalWatermarkPreviewEngine
 import com.videoflow.app.data.ai.AiWatermarkRepository
+import com.videoflow.app.data.db.ProjectEntity
+import com.videoflow.app.data.db.ProjectSettingsEntity
 import com.videoflow.app.data.db.VideoFlowDatabase
 import com.videoflow.app.data.history.AiWatermarkHistoryEntry
 import com.videoflow.app.data.history.EditHistoryService
+import com.videoflow.app.data.project.ProjectDeletionService
+import com.videoflow.app.data.snapshot.SnapshotService
 import com.videoflow.app.domain.ai.AiModelRole
 import com.videoflow.app.domain.ai.AiWatermarkEffect
 import com.videoflow.app.domain.ai.NormalizedRoi
+import com.videoflow.app.domain.ai.RoiMotionAnchor
 import com.videoflow.app.domain.editor.TimelineClip
+import java.io.File
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -161,7 +168,123 @@ class Step4AiRuntimeInstrumentedTest {
             assertEquals(after, repository.load(projectId))
             assertTrue(history.state.value.canUndo)
         } finally {
-            repository.replaceProjectEffects(projectId, emptyList())
+            repository.deleteProjectState(projectId)
+            db.close()
+        }
+    }
+
+    @Test
+    fun projectSnapshot_roundTripRestoresExactAiState_andLegacySnapshotClearsAi() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = AiWatermarkRepository(context)
+        val db = Room.inMemoryDatabaseBuilder(context, VideoFlowDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val suffix = System.currentTimeMillis().toString()
+        val projectId = "ai-snapshot-$suffix"
+        val now = System.currentTimeMillis()
+        val effect = AiWatermarkEffect(
+            id = "snapshot-effect-$suffix",
+            projectId = projectId,
+            clipId = "snapshot-clip-$suffix",
+            clipLocalStartUs = 125_000L,
+            clipLocalEndUs = 1_875_000L,
+            roi = NormalizedRoi(0.11f, 0.22f, 0.47f, 0.58f),
+            motionAnchors = listOf(
+                RoiMotionAnchor(125_000L, 0.29f, 0.40f, 0.91f),
+                RoiMotionAnchor(1_500_000L, 0.34f, 0.44f, 0.82f)
+            ),
+            contextPaddingPx = 64,
+            featherPx = 17,
+            temporalStability = 0.18f,
+            enabled = false
+        )
+        val mutated = effect.copy(
+            id = "mutated-$suffix",
+            roi = NormalizedRoi(0.55f, 0.55f, 0.80f, 0.80f),
+            motionAnchors = emptyList(),
+            featherPx = 2,
+            enabled = true
+        )
+        try {
+            db.projectDao().insert(
+                ProjectEntity(projectId, "AI Snapshot Test", 1, now, now, now)
+            )
+            db.editorDao().putProjectSettings(
+                ProjectSettingsEntity(projectId, 1920, 1080, 30, 1, 0xFF000000L, now, now)
+            )
+            val snapshots = SnapshotService(db, repository)
+
+            repository.replaceProjectEffects(projectId, listOf(effect))
+            val snapshot = snapshots.create(projectId, "AI exact state")
+            val payload = JSONObject(snapshot.payloadJson)
+            assertEquals(3, payload.getInt("format"))
+            assertTrue(payload.has("aiWatermark"))
+
+            repository.replaceProjectEffects(projectId, listOf(mutated))
+            snapshots.restore(snapshot.id)
+            assertEquals(listOf(effect), repository.load(projectId))
+
+            // Backward compatibility is intentional: a format-2 snapshot has no AI state, so
+            // restoring it must produce an empty AI state instead of leaking newer effects.
+            val legacyPayload = JSONObject(snapshot.payloadJson)
+            legacyPayload.put("format", 2)
+            legacyPayload.remove("aiWatermark")
+            val legacy = snapshot.copy(
+                id = "legacy-$suffix",
+                name = "Legacy pre-AI",
+                payloadJson = legacyPayload.toString(),
+                createdAt = snapshot.createdAt + 1L
+            )
+            db.snapshotDao().put(legacy)
+            repository.replaceProjectEffects(projectId, listOf(mutated))
+            snapshots.restore(legacy.id)
+            assertTrue(repository.load(projectId).isEmpty())
+        } finally {
+            repository.deleteProjectState(projectId)
+            db.close()
+        }
+    }
+
+    @Test
+    fun projectDeletion_removesAiSidecarAndInterruptedTempFiles() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = AiWatermarkRepository(context)
+        val db = Room.inMemoryDatabaseBuilder(context, VideoFlowDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val suffix = System.currentTimeMillis().toString()
+        val projectId = "ai-delete-$suffix"
+        val now = System.currentTimeMillis()
+        val effect = AiWatermarkEffect(
+            id = "delete-effect-$suffix",
+            projectId = projectId,
+            clipId = "delete-clip-$suffix",
+            clipLocalStartUs = 0L,
+            clipLocalEndUs = 1_000_000L,
+            roi = NormalizedRoi(0.1f, 0.1f, 0.3f, 0.3f)
+        )
+        val sidecarRoot = File(context.filesDir, "ai-watermark/projects")
+        val sidecar = File(sidecarRoot, "$projectId.json")
+        val interruptedTemp = File(sidecarRoot, ".$projectId.json.tmp-certification")
+        try {
+            db.projectDao().insert(
+                ProjectEntity(projectId, "AI Deletion Test", 1, now, now, now)
+            )
+            repository.upsert(effect)
+            assertTrue(sidecar.isFile)
+            sidecarRoot.mkdirs()
+            interruptedTemp.writeText("incomplete")
+            assertTrue(interruptedTemp.isFile)
+
+            ProjectDeletionService(db, repository).deleteProject(projectId)
+
+            assertTrue(db.projectDao().get(projectId) == null)
+            assertTrue(repository.load(projectId).isEmpty())
+            assertFalse(sidecar.exists())
+            assertFalse(interruptedTemp.exists())
+        } finally {
+            repository.deleteProjectState(projectId)
             db.close()
         }
     }
