@@ -22,7 +22,7 @@ class AiLongJobPlan(val durationUs: Long, val segmentUs: Long = 60_000_000L) {
     fun storageBytes(bitsPerSecond: Long): Long {
         require(bitsPerSecond > 0)
         val seconds = 1L+(durationUs-1L)/1_000_000L
-        val bytes = Math.multiplyExact(seconds, (bitsPerSecond+7L)/8L)
+        val bytes = Math.multiplyExact(seconds, 1L+(bitsPerSecond-1L)/8L)
         return Math.addExact(Math.multiplyExact(bytes, 3L)/2L, 64L*1024L*1024L)
     }
 }
