@@ -59,6 +59,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -285,9 +286,13 @@ private fun ImageOverlayToolbar(overlayId: String, onTool: (EditorTool) -> Unit)
 @Composable
 private fun ToolRow(content: @Composable () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(64.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+        Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) { content() }
 }
 
@@ -295,24 +300,33 @@ private fun ToolRow(content: @Composable () -> Unit) {
 private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     val fontScale = LocalDensity.current.fontScale
     val compactLabelSize = if (fontScale >= 1.3f) 9.sp else MaterialTheme.typography.labelSmall.fontSize
+    val cellWidth = when {
+        label.length >= 11 -> 96.dp
+        label.length >= 8 -> 84.dp
+        else -> 72.dp
+    }
     Column(
         modifier = Modifier
-            .width(52.dp)
-            .height(58.dp)
+            .width(cellWidth)
+            .height(64.dp)
             .semantics { contentDescription = label }
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(vertical = 5.dp),
+            .padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Icon(icon, contentDescription = null, tint = VideoFlowEditorColors.PrimaryText)
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
             label,
+            modifier = Modifier.fillMaxWidth(),
             color = VideoFlowEditorColors.PrimaryText,
             style = MaterialTheme.typography.labelSmall,
             fontSize = compactLabelSize,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
         )
     }
 }
