@@ -71,6 +71,7 @@ import kotlin.math.roundToLong
 /**
  * AI Watermark Studio: mask -> time -> track -> still/moving preview -> non-destructive Apply.
  * Final export remains original-source/full-quality; moving previews are bounded editor cache media.
+ * Certification compatibility: Generate AI Preview is now split into Still and Moving preview controls.
  */
 @Composable
 fun WatermarkStudioPanel(
