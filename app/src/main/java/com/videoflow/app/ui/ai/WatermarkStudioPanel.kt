@@ -244,14 +244,20 @@ fun WatermarkStudioPanel(
         if (stage == 0) {
             StepTitle("1", "Mask and timing")
             Text("Move or resize the box in the preview, then choose Time or Track.")
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
+            Column {
                 val cx=(shownRoi.left+shownRoi.right)/2f; val cy=(shownRoi.top+shownRoi.bottom)/2f
-                TextButton(onClick={changeRoi(shownRoi.translated(cx-.005f,cy))}) {Text("Move left")}
-                TextButton(onClick={changeRoi(shownRoi.translated(cx+.005f,cy))}) {Text("Move right")}
-                TextButton(onClick={changeRoi(shownRoi.translated(cx,cy-.005f))}) {Text("Move up")}
-                TextButton(onClick={changeRoi(shownRoi.translated(cx,cy+.005f))}) {Text("Move down")}
-                TextButton(onClick={changeRoi(NormalizedRoi(0f,0f,(shownRoi.width+.01f).coerceAtMost(1f),(shownRoi.height+.01f).coerceAtMost(1f)).translated(cx,cy))}) {Text("Larger")}
-                TextButton(onClick={changeRoi(NormalizedRoi(0f,0f,(shownRoi.width-.01f).coerceAtLeast(.01f),(shownRoi.height-.01f).coerceAtLeast(.01f)).translated(cx,cy))}) {Text("Smaller")}
+                Row(Modifier.fillMaxWidth()) {
+                TextButton(modifier=Modifier.weight(1f),onClick={changeRoi(shownRoi.translated(cx-.005f,cy))}) {Text("Move left")}
+                TextButton(modifier=Modifier.weight(1f),onClick={changeRoi(shownRoi.translated(cx+.005f,cy))}) {Text("Move right")}
+                }
+                Row(Modifier.fillMaxWidth()) {
+                TextButton(modifier=Modifier.weight(1f),onClick={changeRoi(shownRoi.translated(cx,cy-.005f))}) {Text("Move up")}
+                TextButton(modifier=Modifier.weight(1f),onClick={changeRoi(shownRoi.translated(cx,cy+.005f))}) {Text("Move down")}
+                }
+                Row(Modifier.fillMaxWidth()) {
+                TextButton(modifier=Modifier.weight(1f),onClick={changeRoi(NormalizedRoi(0f,0f,(shownRoi.width+.01f).coerceAtMost(1f),(shownRoi.height+.01f).coerceAtMost(1f)).translated(cx,cy))}) {Text("Larger")}
+                TextButton(modifier=Modifier.weight(1f),onClick={changeRoi(NormalizedRoi(0f,0f,(shownRoi.width-.01f).coerceAtLeast(.01f),(shownRoi.height-.01f).coerceAtLeast(.01f)).translated(cx,cy))}) {Text("Smaller")}
+                }
             }
         }
         if (stage == 1) {
@@ -276,24 +282,28 @@ fun WatermarkStudioPanel(
                 Text("${activeAnchors.size} anchors", color = VideoFlowEditorColors.SuccessColor)
             }
         }
-        Row(Modifier.fillMaxWidth().then(Modifier.horizontalScroll(rememberScrollState()))) {
-            TextButton(onClick = {
+        Column {
+        Row(Modifier.fillMaxWidth()) {
+            TextButton(modifier=Modifier.weight(1f),onClick = {
                 val current = correctionRoi ?: shownRoi
                 loadedAnchors = activeAnchors.filterNot { it.clipLocalTimeUs == previewLocalUs } + RoiMotionAnchor(
                     previewLocalUs,(current.left+current.right)/2f,(current.top+current.bottom)/2f,1f,current.width,current.height,true)
                 correctionRoi = null; vm.clearPreviewOnly()
             }) { Text(if (activeAnchors.any { it.manual && it.clipLocalTimeUs == previewLocalUs }) "Update correction" else "Add correction") }
-            TextButton(onClick = {
-                val previous = activeAnchors.filter { it.manual && it.clipLocalTimeUs < studioLocalUs }.lastOrNull()
-                previous?.let { studioLocalUs = it.clipLocalTimeUs; vm.clearPreviewOnly() }
-            }) { Text("Previous correction") }
-            TextButton(onClick = {
-                activeAnchors.firstOrNull { it.manual && it.clipLocalTimeUs > studioLocalUs }?.let { studioLocalUs = it.clipLocalTimeUs; vm.clearPreviewOnly() }
-            }) { Text("Next correction") }
-            TextButton(onClick = {
+            TextButton(modifier=Modifier.weight(1f),onClick = {
                 loadedAnchors = activeAnchors.filterNot { it.clipLocalTimeUs == previewLocalUs }
                 vm.clearDraftResults(); correctionRoi = null
             }) { Text("Delete correction") }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            TextButton(modifier=Modifier.weight(1f),onClick = {
+                val previous = activeAnchors.filter { it.manual && it.clipLocalTimeUs < studioLocalUs }.lastOrNull()
+                previous?.let { studioLocalUs = it.clipLocalTimeUs; vm.clearPreviewOnly() }
+            }) { Text("Previous correction") }
+            TextButton(modifier=Modifier.weight(1f),onClick = {
+                activeAnchors.firstOrNull { it.manual && it.clipLocalTimeUs > studioLocalUs }?.let { studioLocalUs = it.clipLocalTimeUs; vm.clearPreviewOnly() }
+            }) { Text("Next correction") }
+        }
         }
         Text("${activeAnchors.count { it.manual }} manual corrections")
         val confidence = state.trackingConfidence ?: activeAnchors.takeIf { it.isNotEmpty() }?.map { it.confidence }?.average()?.toFloat()

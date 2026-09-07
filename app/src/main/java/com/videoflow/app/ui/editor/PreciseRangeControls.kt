@@ -51,18 +51,22 @@ fun PreciseRangeControls(durationUs: Long, startUs: Long, endUs: Long, playheadU
                 val nextStart=(value.toDouble()*moveLimit).roundToLong().coerceIn(0L,moveLimit)
                 onRange(nextStart,nextStart+rangeLength)
             },modifier=Modifier.semantics { contentDescription="Move entire effect range" })
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
-            TextButton(onClick = { zoom = (zoom * 2).coerceAtMost(4096) }) { Text("Zoom in") }
-            TextButton(onClick = { zoom = (zoom / 2).coerceAtLeast(1) }) { Text("Zoom out") }
-            TextButton(onClick = { onSeek((playheadUs - span/4).coerceAtLeast(0)) }) { Text("Earlier") }
-            TextButton(onClick = { onSeek((playheadUs + span/4).coerceAtMost(durationUs-1)) }) { Text("Later") }
+        Row(Modifier.fillMaxWidth()) {
+            TextButton(modifier=Modifier.weight(1f),onClick = { zoom = (zoom * 2).coerceAtMost(4096) }) { Text("Zoom in") }
+            TextButton(modifier=Modifier.weight(1f),onClick = { zoom = (zoom / 2).coerceAtLeast(1) }) { Text("Zoom out") }
         }
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
-            TextButton(enabled = playheadUs < endUs, onClick = { onRange(playheadUs.coerceAtLeast(0), endUs) }) { Text("Set Start") }
-            TextButton(enabled = playheadUs > startUs, onClick = { onRange(startUs, playheadUs.coerceAtMost(durationUs)) }) { Text("Set End") }
-            TextButton(onClick = { onSeek(startUs) }) { Text("Jump to start") }
-            TextButton(onClick = { onSeek((endUs-1).coerceAtLeast(startUs)) }) { Text("Jump to end") }
-            TextButton(onClick = { onRange(0L, durationUs) }) { Text("Full clip") }
+        Row(Modifier.fillMaxWidth()) {
+            TextButton(modifier=Modifier.weight(1f),onClick = { onSeek((playheadUs - span/4).coerceAtLeast(0)) }) { Text("Earlier") }
+            TextButton(modifier=Modifier.weight(1f),onClick = { onSeek((playheadUs + span/4).coerceAtMost(durationUs-1)) }) { Text("Later") }
         }
+        Row(Modifier.fillMaxWidth()) {
+            TextButton(modifier=Modifier.weight(1f),enabled = playheadUs < endUs, onClick = { onRange(playheadUs.coerceAtLeast(0), endUs) }) { Text("Set Start") }
+            TextButton(modifier=Modifier.weight(1f),enabled = playheadUs > startUs, onClick = { onRange(startUs, playheadUs.coerceAtMost(durationUs)) }) { Text("Set End") }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            TextButton(modifier=Modifier.weight(1f),onClick = { onSeek(startUs) }) { Text("Jump to start") }
+            TextButton(modifier=Modifier.weight(1f),onClick = { onSeek((endUs-1).coerceAtLeast(startUs)) }) { Text("Jump to end") }
+        }
+        TextButton(onClick = { onRange(0L, durationUs) }) { Text("Full clip") }
     }
 }

@@ -1,6 +1,10 @@
 package com.videoflow.app.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -26,13 +30,13 @@ class ProfessionalToolControlsTest {
     @Test fun preciseRangeKeepsHourScaleTimeAndSetStartEnd() {
         var start by mutableLongStateOf(0L); var end by mutableLongStateOf(7_200_000_000L)
         var playhead by mutableLongStateOf(3_600_123_000L)
-        rule.setContent { MaterialTheme { PreciseRangeControls(7_200_000_000L,start,end,playhead,{a,b->start=a;end=b},{playhead=it}) } }
-        rule.onNodeWithText("Set Start").performClick()
+        rule.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { PreciseRangeControls(7_200_000_000L,start,end,playhead,{a,b->start=a;end=b},{playhead=it}) } } }
+        rule.onNodeWithText("Set Start").performScrollTo().performClick()
         assertEquals(3_600_123_000L,start)
         rule.runOnIdle { playhead=5_400_456_000L }
         rule.onNodeWithText("Set End").performScrollTo().performClick()
         assertEquals(5_400_456_000L,end)
-        rule.onNodeWithText("Zoom in").performClick()
+        rule.onNodeWithText("Zoom in").performScrollTo().performClick()
         assertEquals(3_600_123_000L,start)
         rule.onNodeWithText("Full clip").performScrollTo().performClick()
         assertEquals(0L,start);assertEquals(7_200_000_000L,end)
