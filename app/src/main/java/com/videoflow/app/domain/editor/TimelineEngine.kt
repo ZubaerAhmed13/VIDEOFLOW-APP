@@ -114,14 +114,22 @@ object TimelineEngine {
 }
 
 object KeyframeEvaluator {
-    fun evaluate(baseValue: Float, localTimeUs: Long, keyframes: List<Keyframe>): Float {
-        if (keyframes.isEmpty()) return baseValue
-        val sorted = keyframes.sortedBy { it.timeUs }
+    fun evaluate(baseValue: Float, localTimeUs: Long, keyframes: List<Keyframe>): Float =
+        evaluateSorted(baseValue, localTimeUs, keyframes.sortedBy { it.timeUs })
+
+    /** The caller owns an immutable ascending-time list; useful for per-PCM-sample automation. */
+    fun evaluateSorted(baseValue: Float, localTimeUs: Long, sorted: List<Keyframe>): Float {
+        if (sorted.isEmpty()) return baseValue
         if (localTimeUs < sorted.first().timeUs) return baseValue
         if (localTimeUs == sorted.first().timeUs) return sorted.first().value
         if (localTimeUs >= sorted.last().timeUs) return sorted.last().value
-
-        val rightIndex = sorted.indexOfFirst { it.timeUs >= localTimeUs }
+        var low = 0
+        var high = sorted.lastIndex
+        while (low < high) {
+            val mid = low + (high - low) / 2
+            if (sorted[mid].timeUs < localTimeUs) low = mid + 1 else high = mid
+        }
+        val rightIndex = low
         val right = sorted[rightIndex]
         if (right.timeUs == localTimeUs) return right.value
         val left = sorted[rightIndex - 1]

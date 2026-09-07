@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Run by the tester only after software certification; never declares visual acceptance."""
-import argparse, datetime, hashlib, json, pathlib, subprocess, sys
+import argparse, datetime, hashlib, json, pathlib, shlex, subprocess, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
 APK_NAMES = ('VideoFlow_Step5_Review.apk', 'VideoFlow_Step5_Debug.apk', 'VideoFlow_Step5_Debug-androidTest.apk')
 
 def adb(*args, output=None, check=True):
-    command=['adb']+list(args)
+    # adb shell joins its arguments for a remote shell; quote user-supplied URI values there too.
+    command=['adb','shell',shlex.join(args[1:])] if args and args[0]=='shell' else ['adb']+list(args)
     if output:
         with output.open('wb') as stream:
             return subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT, check=check)

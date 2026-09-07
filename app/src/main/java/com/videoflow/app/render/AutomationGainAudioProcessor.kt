@@ -32,6 +32,7 @@ class AutomationGainAudioProcessor(
     private val gainKeyframes: List<Keyframe>,
     private val outputChannelCount: Int
 ) : BaseAudioProcessor() {
+    private val sortedGainKeyframes = gainKeyframes.filter { it.property == KeyframeProperty.AUDIO_GAIN }.sortedBy { it.timeUs }
     private var inputFramesProcessed = 0L
     private var mixingMatrix: ChannelMixingMatrix? = null
 
@@ -106,10 +107,10 @@ class AutomationGainAudioProcessor(
     }
 
     private fun gainFactor(timeUs: Long): Float {
-        val db = KeyframeEvaluator.evaluate(
+        val db = KeyframeEvaluator.evaluateSorted(
             baseGainDb,
             timeUs,
-            gainKeyframes.filter { it.property == KeyframeProperty.AUDIO_GAIN }
+            sortedGainKeyframes
         )
         val base = 10.0.pow(db.toDouble() / 20.0).toFloat()
         val fadeIn = if (fadeInUs <= 0) 1f else {

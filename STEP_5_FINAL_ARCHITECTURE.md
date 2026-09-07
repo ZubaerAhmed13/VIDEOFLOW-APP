@@ -33,3 +33,5 @@ See the long-media report for supported checkpoint combinations. Settings expose
 ## Resource bounds
 
 Final LaMa remains fixed 512, one inference worker plus at most two queued tasks. Temporal checkpoint data is capped at 128 MiB during writes and runtime updates; finished regions are pruned. Full frames stay in the GPU path; CPU work uses bounded ROI tiles. Smart Copy uses a bounded 1–64 MiB sample buffer; checkpoint assembly uses 16 MiB and rejects oversized encoded samples. Fingerprinting uses 256 KiB chunks and three 4 MiB regions. Thermal stress slows worker pressure without changing model, dimensions or FPS. Android may stop background processing after its platform time allowance; that is distinct from supported input duration.
+
+Audio gain automation pre-sorts immutable keyframes once and performs logarithmic lookup per PCM sample. The dense-keyframe gate checks 1,000 lookups against 2,000 keys beyond the one-hour offset, with fewer than 20,000 indexed reads and explicit base/HOLD/duplicate/endpoint semantics.
