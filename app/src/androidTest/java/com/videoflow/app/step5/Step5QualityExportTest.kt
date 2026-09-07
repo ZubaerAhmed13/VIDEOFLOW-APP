@@ -33,11 +33,18 @@ class Step5QualityExportTest {
                 Adjustment.entries.flatMap { adjustment -> (if(adjustment in setOf(Adjustment.SHARPEN,Adjustment.VIGNETTE)) listOf(0f,1f) else listOf(-1f,1f)).map { value ->
                     "${adjustment.name}-$value" to VisualEdits(enhance=mapOf(f.clip.id to EnhanceParameters(mapOf(adjustment to value))))
                 } }
+            var renderDescriptorGrowth=0;var frameReadDescriptorGrowth=0
             for((name,edits) in cases) {
                 f.ai.visualEdits.replace(f.id,edits)
+                val beforeRender=descriptors().values.sum()
                 val (uri,result)=f.render(plan)
+                val afterRender=descriptors().values.sum()
+                renderDescriptorGrowth+=afterRender-beforeRender
                 assertTrue(result.validation.passed)
                 val change=times.indices.maxOf { difference(identity[it],pixels(f,uri,times[it])) }
+                val afterFrames=descriptors().values.sum()
+                frameReadDescriptorGrowth+=afterFrames-afterRender
+                f.evidence("fd-phases.jsonl","{\"control\":\"$name\",\"before_render\":$beforeRender,\"after_render\":$afterRender,\"after_test_frame_reads\":$afterFrames}")
                 if(name.endsWith("-0.0")) assertTrue("$name identity error $change",change<2.0)
                 else assertTrue("$name did not visibly change decoded export pixels: $change",change>.25)
                 f.evidence("quality.jsonl","{\"control\":\"$name\",\"max_mean_rgb_difference\":$change,\"threshold\":0.25}")
@@ -48,8 +55,8 @@ class Step5QualityExportTest {
             val settled=descriptors()
             val finalFds=settled.values.sum()
             f.evidence("fd-details.txt","initial=$initialDescriptors\nunsettled=$unsettled\nsettled=$settled\nthreads=${Thread.getAllStackTraces().keys.map { it.name }}")
-            assertTrue("Repeated renders leaked file descriptors: $initialFds -> $finalFds",finalFds-initialFds<20)
-            f.evidence("resources.jsonl","{\"initial_fds\":$initialFds,\"final_fds\":$finalFds,\"pss_kb\":${android.os.Debug.getPss()}}")
+            assertTrue("Production renders leaked descriptors: $renderDescriptorGrowth; separate test frame reads: $frameReadDescriptorGrowth",renderDescriptorGrowth<20)
+            f.evidence("resources.jsonl","{\"initial_fds\":$initialFds,\"final_fds\":$finalFds,\"render_descriptor_growth\":$renderDescriptorGrowth,\"test_frame_read_descriptor_growth\":$frameReadDescriptorGrowth,\"pss_kb\":${android.os.Debug.getPss()}}")
             f.ai.visualEdits.replace(f.id,VisualEdits())
             val reset=f.render(plan).first
             assertTrue(difference(identity[1],pixels(f,reset,times[1]))<2.0)

@@ -77,6 +77,7 @@ class ProjectRepository @Inject constructor(
     )
 ) {
     private val resolver: ContentResolver = context.contentResolver
+    private val ownerPackageName = context.packageName
 
     fun observeProjects(): Flow<List<VideoFlowProject>> =
         db.projectDao().observeAll().map { list -> list.map { it.toDomain() } }
@@ -428,6 +429,16 @@ class ProjectRepository @Inject constructor(
     )
 
     private fun persistReadPermission(uri: Uri): Boolean {
+        // MediaStore grants durable access to media owned by this package without a SAF grant.
+        // Verify the provider's owner column; authority alone does not establish ownership.
+        if (android.os.Build.VERSION.SDK_INT >= 29 && uri.authority == android.provider.MediaStore.AUTHORITY) {
+            val owned = runCatching {
+                resolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.OWNER_PACKAGE_NAME), null, null, null)?.use {
+                    it.moveToFirst() && it.getString(0) == ownerPackageName
+                } == true
+            }.getOrDefault(false)
+            if (owned) return true
+        }
         return try {
             resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             resolver.persistedUriPermissions.any { permission ->

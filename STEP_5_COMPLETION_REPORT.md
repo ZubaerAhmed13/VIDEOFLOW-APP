@@ -16,7 +16,7 @@ Software release-candidate status is determined by the exact-head workflow gates
 
 ## Resolved problems
 
-Destination alias safety; foreground queue ownership/cancellation/Android timeout handling; abandoned-job recovery and partial-output cleanup; duplicate start protection; negative AAC priming and bounded encrypted-sample checks; atomic sidecar concurrency; retryable history after restore failure; project-derived cleanup; checkpoint size awareness and safe explicit clearing; long-timeline coordinate collapse, navigation and zoom; configuration draft preservation; full video duration/audio format and opening/middle/end cadence validation; stale checkpoint chain rejection and static-overlay resume; bounded temporal state pruning; diagnostic URI/path redaction; expanded actual-pixel, A/V, security, lifecycle and integrated product certification.
+Destination alias safety; verified durable ownership for app-created MediaStore sources; fractional compositor cadence and audio resampling/fade timing; foreground queue ownership/cancellation/Android timeout handling; abandoned-job recovery and partial-output cleanup; duplicate start protection; negative AAC priming and bounded encrypted-sample checks; atomic sidecar concurrency; retryable history after restore failure; project-derived cleanup; checkpoint size awareness and safe explicit clearing; long-timeline coordinate collapse, navigation and zoom; configuration draft preservation; full video duration/audio format and opening/middle/end cadence validation; stale checkpoint chain rejection and static-overlay resume; bounded temporal state pruning; diagnostic URI/path redaction; expanded actual-pixel, A/V, security, lifecycle and integrated product certification.
 
 ## Completion matrix
 

@@ -74,29 +74,70 @@ class Step5AudioVideoSyncTest {
             for(speed in listOf(.5,2.0)) {
                 val clip=f.clip.copy(sourceStartUs=200_000L,sourceEndUs=1_800_000L,speed=speed,fadeInUs=200_000L,fadeOutUs=200_000L)
                 val output=f.render(f.plan(source,clip)).first
-                val ranges=listOf(40_000L..80_000L,(clip.timelineDurationUs/2-50_000L)..(clip.timelineDurationUs/2+50_000L),
-                    (clip.timelineDurationUs-80_000L)..(clip.timelineDurationUs-40_000L))
-                val sum=DoubleArray(3);val count=IntArray(3)
-                audioEvents(f,output) { time,value -> ranges.forEachIndexed { index,range -> if(time in range) { sum[index]+=value;count[index]++ } } }
-                val means=sum.indices.map { assertTrue(count[it]>0);sum[it]/count[it] }
-                assertTrue("Missing audible middle at speed $speed: $means",means[1]>500.0)
-                for(index in listOf(0,2)) assertTrue("Fade used source time twice at speed $speed: $means",means[index]/means[1] in .15.. .45)
-                f.evidence("audio-fades.jsonl","{\"speed\":$speed,\"early_amplitude\":${means[0]},\"middle_amplitude\":${means[1]},\"late_amplitude\":${means[2]}}")
+                // Fit decoded amplitude to the requested timeline envelope, allowing at most
+                // two AAC frames of codec priming. This still rejects speed-scaled fade lengths.
+                val binUs=20_000L;val sums=DoubleArray((clip.timelineDurationUs/binUs).toInt());val counts=IntArray(sums.size)
+                audioEvents(f,output) { time,value -> val i=(time/binUs).toInt();if(time>=0 && i in sums.indices) { sums[i]+=value;counts[i]++ } }
+                val means=sums.indices.map { if(counts[it]>0) sums[it]/counts[it] else 0.0 }
+                val middle=means.slice((means.size/3)..(means.size*2/3)).average()
+                assertTrue("Missing audible middle at speed $speed",middle>500.0)
+                fun error(delayUs: Long): Pair<Double,Double> {
+                    val errors=means.indices.filter { counts[it]>0 }.map { i ->
+                        val time=(i+.5)*binUs-delayUs
+                        val expected=minOf(1.0,(time/clip.fadeInUs).coerceAtLeast(0.0),((clip.timelineDurationUs-time)/clip.fadeOutUs).coerceAtLeast(0.0))
+                        abs(means[i]/middle-expected)
+                    }
+                    return errors.average() to errors.max()
+                }
+                val delay=(-42_000L..42_000L step 1_000L).minBy { error(it).first }
+                val (mae,maxError)=error(delay)
+                f.evidence("audio-fades.jsonl","{\"speed\":$speed,\"aac_delay_us\":$delay,\"envelope_mean_error\":$mae,\"envelope_max_error\":$maxError,\"fade_duration_us\":200000}")
+                f.preserve(output,"fade-output-$speed.mp4")
+                assertTrue("Wrong timeline fade at speed $speed: delay=$delay mean=$mae max=$maxError",mae<.07 && maxError<.15)
+
             }
         } finally { f.close() }
     }
     private fun videoEvents(f: Step5MediaFixture,uri: Uri,duration: Long): List<Long> {
-        val retriever=MediaMetadataRetriever();val events=mutableListOf<Long>();var active=false
+        // Sequential YUV decoding avoids MediaMetadataRetriever's seek/cache behavior on
+        // encoded files whose audio track precedes video. Use actual frame PTS, not seek times.
+        val extractor=MediaExtractor();var codec: MediaCodec?=null
+        val events=mutableListOf<Long>();var active=false
         try {
-            retriever.setDataSource(f.context,uri)
-            var time=0L
-            while(time<duration) {
-                val b=checkNotNull(retriever.getFrameAtTime(time,MediaMetadataRetriever.OPTION_CLOSEST))
-                val white=try { (b.getPixel(b.width/2,b.height/2) and 255)>100 } finally { b.recycle() }
-                if(white && !active) events+=time
-                active=white;time+=16_667L
+            extractor.setDataSource(f.context,uri,null)
+            val track=(0 until extractor.trackCount).first { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)!!.startsWith("video/") }
+            val format=extractor.getTrackFormat(track);extractor.selectTrack(track)
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+            val decoder=MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!);codec=decoder
+            decoder.configure(format,null,null,0);decoder.start()
+            var inputDone=false;var done=false;val info=MediaCodec.BufferInfo()
+            val deadline=android.os.SystemClock.elapsedRealtime()+30_000L
+            while(!done) {
+                check(android.os.SystemClock.elapsedRealtime()<deadline) { "Video decoder stalled" }
+                if(!inputDone) {
+                    val index=decoder.dequeueInputBuffer(10_000)
+                    if(index>=0) {
+                        val buffer=decoder.getInputBuffer(index)!!;buffer.clear();val n=extractor.readSampleData(buffer,0)
+                        if(n<0) { decoder.queueInputBuffer(index,0,0,0,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputDone=true }
+                        else { decoder.queueInputBuffer(index,0,n,extractor.sampleTime,0);extractor.advance() }
+                    }
+                }
+                val index=decoder.dequeueOutputBuffer(info,10_000)
+                if(index>=0) {
+                    if(info.size>0) {
+                        val decoded=checkNotNull(decoder.getOutputImage(index)) { "YUV output image unavailable" }
+                        val white=try {
+                            val crop=decoded.cropRect;val plane=decoded.planes[0]
+                            (plane.buffer.get(plane.buffer.position()+(crop.top+crop.height()/2)*plane.rowStride+(crop.left+crop.width()/2)*plane.pixelStride).toInt() and 255)>128
+                        } finally { decoded.close() }
+                        if(info.presentationTimeUs in 0 until duration && white && !active) events+=info.presentationTimeUs
+                        active=white
+                    }
+                    done=info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                    decoder.releaseOutputBuffer(index,false)
+                }
             }
-        } finally { retriever.release() }
+        } finally { codec?.stop();codec?.release();extractor.release() }
         return events
     }
     private fun audioEvents(f: Step5MediaFixture,uri: Uri,onSample: ((Long,Int)->Unit)?=null): List<Long> {
