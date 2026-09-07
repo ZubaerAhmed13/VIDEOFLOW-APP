@@ -162,6 +162,9 @@ private class LamaTileProcessor(
     private var configuredReadHeight = min(512, expectedHeight)
     private val temporalKey = "${effect.id}:$tileIndex"
     private var previousCore: ByteArray? = runtime.temporal?.patches?.get(temporalKey)
+    private val storedShape = runtime.temporal?.patches?.get("$temporalKey:shape")?.let { ByteBuffer.wrap(it) }
+    private var previousWidth = storedShape?.int ?: -1
+    private var previousHeight = storedShape?.int ?: -1
 
     override fun configure(inputWidth: Int, inputHeight: Int): Size {
         frameWidth = inputWidth
@@ -276,7 +279,7 @@ private class LamaTileProcessor(
 
         val output = runtime.inferPacked(packed)
         val coreTopLeft = ByteArray(tile.core.width * tile.core.height * 4)
-        val previous = previousCore?.takeIf { it.size == coreTopLeft.size }
+        val previous = previousCore?.takeIf { it.size == coreTopLeft.size && previousWidth == tile.core.width && previousHeight == tile.core.height }
         val stability = effect.temporalStability
         for (cy in 0 until tile.core.height) {
             val srcY = coreLocalTop + cy
@@ -309,8 +312,10 @@ private class LamaTileProcessor(
                 coreTopLeft[outIndex + 3] = 0xFF.toByte()
             }
         }
+        previousWidth = tile.core.width; previousHeight = tile.core.height
         previousCore = coreTopLeft.copyOf()
         runtime.temporal?.patches?.set(temporalKey, requireNotNull(previousCore))
+        runtime.temporal?.patches?.set("$temporalKey:shape", ByteBuffer.allocate(8).putInt(previousWidth).putInt(previousHeight).array())
 
         val glBuffer = ByteBuffer.allocateDirect(coreTopLeft.size).order(ByteOrder.nativeOrder())
         for (glY in 0 until tile.core.height) {

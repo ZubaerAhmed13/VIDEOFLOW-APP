@@ -1,6 +1,7 @@
 @file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 package com.videoflow.app.ui.effects
 
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,6 +23,7 @@ import java.util.UUID
 fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip: TimelineClip, asset: MediaAsset,
     onClose: () -> Unit, onApplied: () -> Unit, vm: ProfessionalToolsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
+    val previewHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .25f).dp.coerceIn(72.dp,220.dp)
     var selectedId by remember(tool) { mutableStateOf<String?>(null) }
     var positionUs by remember(tool) { mutableLongStateOf(0L) }
     var before by remember(tool) { mutableStateOf(false) }
@@ -33,7 +35,7 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
     val isAudio = tool is ProfessionalEditorTool.AudioExtract
     val isEnhance = tool is ProfessionalEditorTool.Enhance
     val title = if (isAudio) "Audio" else if (isEnhance) "Enhance" else "Effects"
-    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(title, style = MaterialTheme.typography.titleLarge)
             TextButton(onClick = { vm.cancel(); onClose() }) { Text("Cancel") }
@@ -41,7 +43,7 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
         val effects = remember(state.draft, before, clip.id, clip.sourceStartUs, clip.speed) {
             if (before) emptyList() else VisualEffectPipeline.create(state.draft, clip.id, clip.sourceStartUs, clip.speed)
         }
-        NativeVideoPlayer(asset.sourceUri, Modifier.fillMaxWidth().height(220.dp),
+        NativeVideoPlayer(asset.sourceUri, Modifier.fillMaxWidth().height(previewHeight),
             startPositionMs = (clip.sourceStartUs + (positionUs.toDouble()*clip.speed).toLong())/1000,
             showControls = true, videoEffects = effects)
         if (!isAudio) {
@@ -53,6 +55,7 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
             Slider(value = (positionUs.toDouble()/clip.timelineDurationUs).toFloat().coerceIn(0f,1f),
                 onValueChange = { positionUs = (it.toDouble()*clip.timelineDurationUs).toLong().coerceAtMost(clip.timelineDurationUs-1) })
         }
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement=Arrangement.spacedBy(8.dp)) {
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (isAudio) {
@@ -107,6 +110,7 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
                     }) { Text("Duplicate") }
                 }
             }
+        }
         }
         if (!isAudio) Button(enabled = state.loaded && !state.busy,
             onClick = { vm.apply(projectId,title) { onApplied(); onClose() } }, modifier = Modifier.fillMaxWidth()) { Text("Done") }

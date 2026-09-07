@@ -1,6 +1,8 @@
 package com.videoflow.app.ui.ai
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Canvas
@@ -80,6 +82,7 @@ fun WatermarkStudioPanel(
     vm: WatermarkStudioViewModel = hiltViewModel()
 ) {
     val state by vm.state.collectAsState()
+    val previewHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .23f).dp.coerceIn(72.dp,200.dp)
     val clip = editor.timeline.clips.firstOrNull { it.id == clipId }
     val asset = project?.mediaAssets?.firstOrNull { it.id == clip?.assetId }
     if (clip == null || asset == null) {
@@ -93,6 +96,8 @@ fun WatermarkStudioPanel(
     var roi by remember(clipId) { mutableStateOf(NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)) }
     var startUs by remember(clipId) { mutableStateOf(0L) }
     var endUs by remember(clipId) { mutableStateOf(durationUs) }
+    var diagnosticsExpanded by remember(clipId) { mutableStateOf(false) }
+    var stage by remember(clipId) { mutableStateOf(0) }
     var detailedPreview by remember(clipId) { mutableStateOf(false) }
     var showBefore by remember(clipId) { mutableStateOf(false) }
     var correctionRoi by remember(clipId, studioLocalUs) { mutableStateOf<NormalizedRoi?>(null) }
@@ -102,7 +107,7 @@ fun WatermarkStudioPanel(
     var editingEffectId by remember(clipId) { mutableStateOf<String?>(null) }
     var loadedAnchors by remember(clipId) { mutableStateOf<List<RoiMotionAnchor>>(emptyList()) }
 
-    val previewLocalUs = studioLocalUs.coerceIn(startUs, endUs - 1L)
+    val previewLocalUs = studioLocalUs.coerceIn(0L, durationUs - 1L)
     val sourceTimeUs = clip.sourceStartUs + (previewLocalUs.toDouble() * clip.speed).roundToLong()
     val activeAnchors = (state.trackedAnchors + loadedAnchors).associateBy { it.clipLocalTimeUs }.values.sortedBy { it.clipLocalTimeUs }
     val draftEffect = remember(projectId, clipId, startUs, endUs, roi, activeAnchors, contextPx, featherPx, stability) {
@@ -130,6 +135,7 @@ fun WatermarkStudioPanel(
 
     fun resetNewDraft() {
         editingEffectId = null
+        stage = 0
         loadedAnchors = emptyList()
         roi = NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)
         startUs = 0L; endUs = durationUs; correctionRoi = null
@@ -139,14 +145,51 @@ fun WatermarkStudioPanel(
         vm.clearDraftResults()
     }
 
+    fun changeRoi(next: NormalizedRoi) {
+        if (activeAnchors.isNotEmpty()) {
+            loadedAnchors = activeAnchors.filterNot { it.clipLocalTimeUs == previewLocalUs } + RoiMotionAnchor(
+                previewLocalUs,(next.left+next.right)/2f,(next.top+next.bottom)/2f,1f,next.width,next.height,true)
+        } else roi = next
+        vm.clearPreviewOnly()
+    }
+
     LaunchedEffect(projectId, clipId) { vm.bind(projectId, clipId) }
     LaunchedEffect(asset.sourceUri, sourceTimeUs) {
         vm.loadSourceFrame(asset.sourceUri, sourceTimeUs.coerceIn(clip.sourceStartUs, clip.sourceEndUs - 1L))
     }
 
-    StudioHeader("AI Watermark Studio", "Local • Offline • original-resolution final render")
+    Column(Modifier.fillMaxSize()) {
+    StudioHeader("AI Watermark Studio", "Offline • Original-quality export", onDismiss)
+        Text("Drag inside the box to move it. Drag a corner to resize it around the watermark.", color = VideoFlowEditorColors.SecondaryText)
+        if (shownBitmap != null) {
+            InteractiveRoiPreview(
+                bitmap = shownBitmap,
+                roi = shownRoi,
+                onRoiChange = ::changeRoi,
+                modifier = Modifier.fillMaxWidth().height(previewHeight)
+            )
+        } else {
+            Box(
+                Modifier.fillMaxWidth().height(150.dp).background(VideoFlowEditorColors.TimelineBackground),
+                contentAlignment = Alignment.Center
+            ) { Text("Loading source preview…", color = VideoFlowEditorColors.SecondaryText) }
+        }
+
+        Row {
+            TextButton(enabled = state.aiPreview != null, onClick = { showBefore = true }) { Text("Before") }
+            TextButton(enabled = state.aiPreview != null, onClick = { showBefore = false }) { Text("After") }
+        }
+    Text("${com.videoflow.app.domain.editor.TrimTimecode.formatUs(studioLocalUs)} / ${com.videoflow.app.domain.editor.TrimTimecode.formatUs(durationUs)}", modifier=Modifier.padding(horizontal=18.dp))
+    Slider(value=(studioLocalUs.toDouble()/durationUs).toFloat(), onValueChange={
+        studioLocalUs=(it.toDouble()*durationUs).roundToLong().coerceIn(0L,durationUs-1L); vm.clearPreviewOnly()
+    },modifier=Modifier.padding(horizontal=18.dp).semantics { contentDescription="AI preview playhead" })
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=12.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+        listOf("Select","Time","Track","Preview","Apply").forEachIndexed { index,label ->
+            androidx.compose.material3.FilterChip(stage==index,{stage=index},{Text(label)})
+        }
+    }
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+        Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         val statusText = when (asset.sourceStatus) {
@@ -157,10 +200,9 @@ fun WatermarkStudioPanel(
             "$statusText • ${asset.width ?: "?"}×${asset.height ?: "?"} • ${asset.displayName}",
             color = if (asset.sourceStatus == SourceStatus.AVAILABLE) VideoFlowEditorColors.SecondaryText else VideoFlowEditorColors.WarningColor
         )
-        Text(
-            if (state.runtimeReady) "✓ ${state.runtimeDetail}" else state.runtimeDetail,
-            color = if (state.runtimeReady) VideoFlowEditorColors.SuccessColor else VideoFlowEditorColors.SecondaryText
-        )
+        Text(if (state.runtimeReady) "Local AI ready" else "Preparing local AI",color=VideoFlowEditorColors.SecondaryText)
+        TextButton(onClick={diagnosticsExpanded=!diagnosticsExpanded}) { Text(if(diagnosticsExpanded) "Hide details" else "Device details") }
+        if(diagnosticsExpanded) Text(state.runtimeDetail,color=VideoFlowEditorColors.SecondaryText)
         state.error?.let { Text(it, color = VideoFlowEditorColors.ErrorColor) }
         if (state.busy != WatermarkStudioBusy.IDLE) {
             LinearProgressIndicator(
@@ -182,32 +224,26 @@ fun WatermarkStudioPanel(
             }
         }
 
-        StepTitle("1", "Mask and timing")
-        Text("Drag inside the box to move it. Drag a corner to resize it around the watermark.", color = VideoFlowEditorColors.SecondaryText)
-        if (shownBitmap != null) {
-            InteractiveRoiPreview(
-                bitmap = shownBitmap,
-                roi = shownRoi,
-                onRoiChange = { next ->
-                    if (activeAnchors.isNotEmpty()) correctionRoi = next else roi = next
-                    vm.clearPreviewOnly()
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-        } else {
-            Box(
-                Modifier.fillMaxWidth().height(150.dp).background(VideoFlowEditorColors.TimelineBackground),
-                contentAlignment = Alignment.Center
-            ) { Text("Loading source preview…", color = VideoFlowEditorColors.SecondaryText) }
+        if (stage == 0) {
+            StepTitle("1", "Mask and timing")
+            Text("Move or resize the box in the preview, then choose Time or Track.")
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                val cx=(shownRoi.left+shownRoi.right)/2f; val cy=(shownRoi.top+shownRoi.bottom)/2f
+                TextButton(onClick={changeRoi(shownRoi.translated(cx-.005f,cy))}) {Text("Move left")}
+                TextButton(onClick={changeRoi(shownRoi.translated(cx+.005f,cy))}) {Text("Move right")}
+                TextButton(onClick={changeRoi(shownRoi.translated(cx,cy-.005f))}) {Text("Move up")}
+                TextButton(onClick={changeRoi(shownRoi.translated(cx,cy+.005f))}) {Text("Move down")}
+                TextButton(onClick={changeRoi(NormalizedRoi(0f,0f,(shownRoi.width+.01f).coerceAtMost(1f),(shownRoi.height+.01f).coerceAtMost(1f)).translated(cx,cy))}) {Text("Larger")}
+                TextButton(onClick={changeRoi(NormalizedRoi(0f,0f,(shownRoi.width-.01f).coerceAtLeast(.01f),(shownRoi.height-.01f).coerceAtLeast(.01f)).translated(cx,cy))}) {Text("Smaller")}
+            }
         }
-        Row {
-            TextButton(enabled = state.aiPreview != null, onClick = { showBefore = true }) { Text("Before") }
-            TextButton(enabled = state.aiPreview != null, onClick = { showBefore = false }) { Text("After") }
-        }
+        if (stage == 1) {
         com.videoflow.app.ui.editor.PreciseRangeControls(durationUs,startUs,endUs,studioLocalUs,
             onRange = { a,b -> startUs = a; endUs = b; vm.clearPreviewOnly() },
             onSeek = { studioLocalUs = it; vm.clearPreviewOnly() })
 
+        }
+        if (stage == 2) {
         StepTitle("2", "Track movement")
         Text("Tracking samples small local frames and creates motion anchors; no video is uploaded.", color = VideoFlowEditorColors.SecondaryText)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -251,6 +287,8 @@ fun WatermarkStudioPanel(
             )
         }
 
+        }
+        if (stage == 3) {
         StepTitle("3", "AI Preview")
         Row {
             androidx.compose.material3.FilterChip(!detailedPreview,{ detailedPreview=false; vm.clearPreviewOnly() },{ Text("Fast preview") })
@@ -277,7 +315,7 @@ fun WatermarkStudioPanel(
                     )
                 }
             },
-            enabled = state.runtimeReady && state.busy == WatermarkStudioBusy.IDLE && asset.width != null && asset.height != null
+            enabled = state.runtimeReady && state.busy == WatermarkStudioBusy.IDLE && asset.width != null && asset.height != null && previewLocalUs in startUs until endUs
         ) { Text(if (state.aiPreview == null) "Generate AI Preview" else "Refresh AI Preview") }
         state.previewProvider?.let { Text("Preview inference: $it", color = VideoFlowEditorColors.SuccessColor) }
 
@@ -306,6 +344,8 @@ fun WatermarkStudioPanel(
             modifier = Modifier.semantics { contentDescription = "Watermark temporal stability" }
         )
 
+        }
+        if (stage == 4) {
         StepTitle("4", "Apply non-destructively")
         Text("Apply stores an editable AI effect. Source media is never overwritten and Smart Copy is automatically disabled for this pixel-changing edit.", color = VideoFlowEditorColors.SecondaryText)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -344,6 +384,7 @@ fun WatermarkStudioPanel(
                     },
                     onEdit = {
                         editingEffectId = effect.id
+                        stage = 0
                         roi = effect.roi
                         startUs = effect.clipLocalStartUs.coerceAtMost(durationUs-1)
                         endUs = effect.clipLocalEndUs.coerceIn(startUs+1,durationUs)
@@ -356,14 +397,19 @@ fun WatermarkStudioPanel(
                 )
             }
         }
+        }
         Spacer(Modifier.height(8.dp))
+    }
     }
 }
 
 @Composable
-private fun StudioHeader(title: String, subtitle: String) {
+private fun StudioHeader(title: String, subtitle: String, onClose: (() -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)) {
-        Text(title, color = VideoFlowEditorColors.PrimaryText)
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+            Text(title, color = VideoFlowEditorColors.PrimaryText)
+            if (onClose != null) TextButton(onClick=onClose) { Text("Close") }
+        }
         Text(subtitle, color = VideoFlowEditorColors.SecondaryText)
     }
 }

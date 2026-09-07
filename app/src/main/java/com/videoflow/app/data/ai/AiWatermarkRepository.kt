@@ -100,8 +100,8 @@ class AiWatermarkRepository @Inject constructor(
     private fun readEffects(projectId: String): List<AiWatermarkEffect> {
         requireSafeId(projectId)
         val file = fileFor(projectId)
-        if (!file.isFile) return emptyList()
-        return decodeState(projectId, JSONObject(file.readText(Charsets.UTF_8)))
+        if (!file.isFile && !File(file.path + ".bak").isFile) return emptyList()
+        return android.util.AtomicFile(file).openRead().bufferedReader(Charsets.UTF_8).use { decodeState(projectId, JSONObject(it.readText())) }
     }
 
     private fun write(projectId: String, effects: List<AiWatermarkEffect>) {
@@ -118,16 +118,14 @@ class AiWatermarkRepository @Inject constructor(
 
         root.mkdirs()
         val target = fileFor(projectId)
-        val temp = File(root, ".${target.name}.tmp-${System.nanoTime()}")
-        val payload = encodeState(projectId, effects).toString()
-        temp.outputStream().buffered().use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-        if (target.exists() && !target.delete()) {
-            temp.delete()
-            error("Could not replace AI Watermark sidecar.")
-        }
-        if (!temp.renameTo(target)) {
-            temp.delete()
-            error("Could not atomically persist AI Watermark sidecar.")
+        val atomic = android.util.AtomicFile(target)
+        val output = atomic.startWrite()
+        try {
+            output.write(encodeState(projectId,effects).toString().toByteArray(Charsets.UTF_8))
+            atomic.finishWrite(output)
+        } catch (failure: Throwable) {
+            atomic.failWrite(output)
+            throw failure
         }
         cleanupTempFiles(projectId)
         _changes.tryEmit(projectId)
@@ -161,7 +159,8 @@ class AiWatermarkRepository @Inject constructor(
 
     private fun deleteStateFiles(projectId: String) {
         val target = fileFor(projectId)
-        if (target.exists() && !target.delete()) {
+        android.util.AtomicFile(target).delete()
+        if (target.exists()) {
             error("Could not delete AI Watermark sidecar.")
         }
         cleanupTempFiles(projectId)

@@ -49,7 +49,13 @@ class SegmentedAiRenderEngine @Inject constructor(
     override suspend fun prepare(plan: FinalRenderPlan, destination: OutputDestination, settings: ResolvedExportSettings): RenderPreparationResult {
         val prepared = delegate.prepare(plan,destination,settings)
         if (prepared.ready && eligible(plan,settings)) {
-            val required = AiLongJobPlan(plan.durationUs).storageBytes(settings.videoBitrate.toLong())
+            val schedule = AiLongJobPlan(plan.durationUs,checkpointIntervalUs)
+            val clip = plan.editorPlan.clips.first { it.enabled }
+            val source = plan.originalSources.getValue(clip.assetId)
+            val framePixels = Math.multiplyExact((source.width ?: settings.size.width).toLong(),(source.height ?: settings.size.height).toLong())
+            val effectCount = ai.load(plan.editorPlan.projectId).count { it.enabled && it.clipId == clip.id }.toLong()
+            val temporalBytes = Math.multiplyExact(Math.multiplyExact(framePixels,4L),effectCount)
+            val required = Math.addExact(schedule.storageBytes(settings.videoBitrate.toLong()),Math.multiplyExact(schedule.count,temporalBytes))
             if (context.filesDir.usableSpace < required) return RenderPreparationResult(null,prepared.warnings,
                 listOf(ExportProblem(ExportFailureCode.STORAGE_FULL,"Checkpointed AI export needs $required bytes of temporary storage.")))
         }
@@ -90,7 +96,7 @@ class SegmentedAiRenderEngine @Inject constructor(
             val checkpoint = AtomicFile(File(directory,"checkpoint.json"))
             val schedule = AiLongJobPlan(plan.durationUs,checkpointIntervalUs)
             val temporal = com.videoflow.app.ai.watermark.AiTemporalCheckpoint()
-            var sampledPeakPssKb = 0
+            var sampledPeakPssKb = 0L
             var completedUs = 0L
             fun save(state: AiLongJobState) {
                 sampledPeakPssKb = maxOf(sampledPeakPssKb,android.os.Debug.getPss())

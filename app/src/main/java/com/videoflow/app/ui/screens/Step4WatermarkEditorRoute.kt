@@ -90,7 +90,7 @@ fun Step4WatermarkEditorRoute(
                     color = VideoFlowEditorColors.EditorSurfaceElevated,
                     tonalElevation = 12.dp
                 ) {
-                    Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    Box(Modifier.fillMaxSize()) {
                         if (activeTool is com.videoflow.app.ui.editor.ProfessionalEditorTool.AiWatermark) {
                         WatermarkStudioPanel(
                             projectId = id,
