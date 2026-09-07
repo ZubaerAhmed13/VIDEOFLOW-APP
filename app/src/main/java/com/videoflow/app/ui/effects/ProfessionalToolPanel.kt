@@ -26,11 +26,27 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
     val previewHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .25f).dp.coerceIn(72.dp,220.dp)
     var selectedId by remember(tool) { mutableStateOf((tool as? ProfessionalEditorTool.Effects)?.effectId) }
     var positionUs by remember(tool) { mutableLongStateOf(0L) }
+    var playing by remember(tool) { mutableStateOf(false) }
     var before by remember(tool) { mutableStateOf(false) }
     var mute by remember(tool) { mutableStateOf(false) }
     var category by remember(tool) { mutableStateOf("Basic") }
     var adjustment by remember(tool) { mutableStateOf(Adjustment.EXPOSURE) }
     LaunchedEffect(projectId, tool) { vm.open(projectId) }
+    LaunchedEffect(state.loaded,tool) {
+        if(state.loaded) (tool as? ProfessionalEditorTool.Effects)?.effectId?.let { id ->
+            state.draft.effects.firstOrNull { it.id==id }?.let { positionUs=it.startUs.coerceAtMost(clip.timelineDurationUs-1L) }
+        }
+    }
+    LaunchedEffect(playing) {
+        var previous=android.os.SystemClock.elapsedRealtimeNanos()
+        while(playing) {
+            kotlinx.coroutines.delay(33)
+            val now=android.os.SystemClock.elapsedRealtimeNanos()
+            positionUs=(positionUs+(now-previous)/1000L).coerceAtMost(clip.timelineDurationUs-1L)
+            previous=now
+            if(positionUs>=clip.timelineDurationUs-1L) playing=false
+        }
+    }
     DisposableEffect(tool) { onDispose { vm.cancel() } }
     val isAudio = tool is ProfessionalEditorTool.AudioExtract
     val isEnhance = tool is ProfessionalEditorTool.Enhance
@@ -45,15 +61,16 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
         }
         NativeVideoPlayer(asset.sourceUri, Modifier.fillMaxWidth().height(previewHeight),
             startPositionMs = (clip.sourceStartUs + (positionUs.toDouble()*clip.speed).toLong())/1000,
-            showControls = true, videoEffects = effects)
+            showControls = isAudio, playWhenReady=playing, speed=clip.speed.toFloat(), videoEffects = effects)
         if (!isAudio) {
             Row {
-                FilterChip(before, { before = true }, { Text("Before") })
+                TextButton(onClick={ if(positionUs>=clip.timelineDurationUs-1L) positionUs=0L; playing=!playing }) { Text(if(playing) "Pause" else "Play") }
+                FilterChip(before, { playing=false; before = true }, { Text("Before") })
                 Spacer(Modifier.width(8.dp))
-                FilterChip(!before, { before = false }, { Text("After") })
+                FilterChip(!before, { playing=false; before = false }, { Text("After") })
             }
             Slider(value = (positionUs.toDouble()/clip.timelineDurationUs).toFloat().coerceIn(0f,1f),
-                onValueChange = { positionUs = (it.toDouble()*clip.timelineDurationUs).toLong().coerceAtMost(clip.timelineDurationUs-1) })
+                onValueChange = { playing=false; positionUs = (it.toDouble()*clip.timelineDurationUs).toLong().coerceAtMost(clip.timelineDurationUs-1) })
         }
         Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement=Arrangement.spacedBy(8.dp)) {
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
