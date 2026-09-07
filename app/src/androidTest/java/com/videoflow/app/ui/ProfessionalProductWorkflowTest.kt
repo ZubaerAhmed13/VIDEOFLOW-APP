@@ -89,8 +89,7 @@ class ProfessionalProductWorkflowTest {
 
             rule.runOnIdle { tool=ProfessionalEditorTool.Enhance(clip.id) }
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
-            // First slider seeks the preview; second adjusts Exposure.
-            rule.onAllNodes(hasSetProgressAction())[1].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.2f) }
+            rule.onNodeWithContentDescription("Exposure adjustment").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.2f) }
             assertEquals(.2f,toolsVm.state.value.draft.enhance.getValue(clip.id)[Adjustment.EXPOSURE],.001f)
             screenshot("enhance")
             rule.onNodeWithText("Done").performClick()

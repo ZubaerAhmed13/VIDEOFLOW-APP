@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.videoflow.app.domain.editor.TimelineClip
@@ -88,6 +90,7 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
             }
             Text("${adjustment.label} ${(parameters[adjustment]*100).toInt()}")
             Slider(parameters[adjustment], { value -> vm.draft(state.draft.copy(enhance = state.draft.enhance + (clip.id to parameters.with(adjustment,value)))) },
+                modifier=Modifier.semantics { contentDescription="${adjustment.label} adjustment" },
                 enabled = !state.busy, valueRange = if (adjustment in setOf(Adjustment.SHARPEN, Adjustment.VIGNETTE)) 0f..1f else -1f..1f)
             Row {
                 TextButton(enabled = !state.busy, onClick = { vm.autoEnhance(clip.id,asset.sourceUri,clip.sourceStartUs,clip.sourceEndUs) }) { Text("Auto Enhance") }

@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: professional-upgrade-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   step4-build:
