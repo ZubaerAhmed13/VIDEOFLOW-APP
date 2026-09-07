@@ -179,7 +179,8 @@ class Media3CompositionBuilder(
                     fadeInUs = clip.fadeInUs,
                     fadeOutUs = clip.fadeOutUs,
                     timelineDurationUs = clip.timelineDurationUs,
-                    speed = clip.speed,
+                    // EditedMediaItem applies speed before user audio effects in Media3 1.11.
+                    speed = 1.0,
                     gainKeyframes = keyframesByOwner[clip.id].orEmpty().filter { it.property == KeyframeProperty.AUDIO_GAIN },
                     outputChannelCount = settings.audioChannels
                 )
@@ -254,7 +255,8 @@ class Media3CompositionBuilder(
         settings: ResolvedExportSettings
     ): EditedMediaItemSequence {
         // The primary image sequence is the compositor clock. Media3's image rate is Int;
-        // speed-adjust that clock to preserve requested rational rates such as 30000/1001.
+        // ImageAssetLoader bypasses ExoPlayer speed conversion. Adjust image timestamps in
+        // the GL chain to preserve requested rational rates such as 30000/1001.
         val clockRate=kotlin.math.ceil(settings.frameRate.fps).toInt().coerceAtLeast(1)
         val clockSpeed=(settings.frameRate.fps/clockRate).toFloat()
         val inputDurationUs=(durationUs.toDouble()*clockSpeed).toLong().coerceAtLeast(1L)
@@ -266,7 +268,8 @@ class Media3CompositionBuilder(
         val item = EditedMediaItem.Builder(media)
             .setDurationUs(inputDurationUs)
             .setFrameRate(clockRate)
-            .setSpeed(ConstantSpeedProvider(clockSpeed))
+            .setEffects(Effects(emptyList(), if(clockSpeed == 1f) emptyList() else
+                listOf(androidx.media3.effect.SpeedChangeEffect(clockSpeed))))
             .setRemoveAudio(true)
             .build()
         return EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO)).apply {

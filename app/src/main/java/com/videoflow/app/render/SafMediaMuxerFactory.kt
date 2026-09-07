@@ -40,7 +40,7 @@ class SafMediaMuxerFactory(
         return try {
             val pfd = contentResolver.openFileDescriptor(destinationUri, "rwt")
                 ?: throw IllegalStateException("Destination file descriptor is unavailable")
-            SafMediaMuxer(pfd)
+            try { SafMediaMuxer(pfd) } catch (failure: Throwable) { pfd.close(); throw failure }
         } catch (t: Throwable) {
             throw MuxerException("Could not open SAF destination for MP4 muxing.", t)
         }

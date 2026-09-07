@@ -18,6 +18,8 @@ class Step5AudioVideoSyncTest {
         val f=Step5MediaFixture()
         try {
             val source=f.source("step5-sync.mp4")
+            f.evidence("sync-diagnostics.txt","source video events=${videoEvents(f,source,2_000_000L)}")
+            f.preserve(source,"sync-source.mp4")
             for(speed in listOf(1.0,2.0,.5)) {
                 val clip=f.clip.copy(sourceStartUs=200_000L,sourceEndUs=1_800_000L,speed=speed)
                 f.ai.visualEdits.replace(f.id,VisualEdits(
@@ -26,6 +28,8 @@ class Step5AudioVideoSyncTest {
                 val output=f.render(f.plan(source,clip)).first
                 val video=videoEvents(f,output,clip.timelineDurationUs)
                 val audio=audioEvents(f,output)
+                f.evidence("sync-diagnostics.txt","speed=$speed video=$video audio=$audio")
+                f.preserve(output,"sync-output-$speed.mp4")
                 assertEquals("video event count at speed $speed: $video",2,video.size)
                 assertEquals("audio event count at speed $speed: $audio",2,audio.size)
                 for(i in 0..1) {
@@ -63,6 +67,24 @@ class Step5AudioVideoSyncTest {
             }
         } finally { f.close() }
     }
+    @Test fun fadesFollowTimelineTimeAfterUpstreamSpeedConversion()=runBlocking {
+        val f=Step5MediaFixture()
+        try {
+            val source=f.source()
+            for(speed in listOf(.5,2.0)) {
+                val clip=f.clip.copy(sourceStartUs=200_000L,sourceEndUs=1_800_000L,speed=speed,fadeInUs=200_000L,fadeOutUs=200_000L)
+                val output=f.render(f.plan(source,clip)).first
+                val ranges=listOf(40_000L..80_000L,(clip.timelineDurationUs/2-50_000L)..(clip.timelineDurationUs/2+50_000L),
+                    (clip.timelineDurationUs-80_000L)..(clip.timelineDurationUs-40_000L))
+                val sum=DoubleArray(3);val count=IntArray(3)
+                audioEvents(f,output) { time,value -> ranges.forEachIndexed { index,range -> if(time in range) { sum[index]+=value;count[index]++ } } }
+                val means=sum.indices.map { assertTrue(count[it]>0);sum[it]/count[it] }
+                assertTrue("Missing audible middle at speed $speed: $means",means[1]>500.0)
+                for(index in listOf(0,2)) assertTrue("Fade used source time twice at speed $speed: $means",means[index]/means[1] in .15.. .45)
+                f.evidence("audio-fades.jsonl","{\"speed\":$speed,\"early_amplitude\":${means[0]},\"middle_amplitude\":${means[1]},\"late_amplitude\":${means[2]}}")
+            }
+        } finally { f.close() }
+    }
     private fun videoEvents(f: Step5MediaFixture,uri: Uri,duration: Long): List<Long> {
         val retriever=MediaMetadataRetriever();val events=mutableListOf<Long>();var active=false
         try {
@@ -77,7 +99,7 @@ class Step5AudioVideoSyncTest {
         } finally { retriever.release() }
         return events
     }
-    private fun audioEvents(f: Step5MediaFixture,uri: Uri): List<Long> {
+    private fun audioEvents(f: Step5MediaFixture,uri: Uri,onSample: ((Long,Int)->Unit)?=null): List<Long> {
         val extractor=MediaExtractor();var codec: MediaCodec?=null
         val events=mutableListOf<Long>();var lastLoud=-1_000_000L
         try {
@@ -112,6 +134,7 @@ class Step5AudioVideoSyncTest {
                     while(buffer.remaining()>=2) {
                         val value=abs(buffer.short.toInt())
                         val time=info.presentationTimeUs+(sample/channels).toLong()*1_000_000L/rate
+                        onSample?.invoke(time,value)
                         if(value>5000) { if(time-lastLoud>100_000L) events+=time;lastLoud=time }
                         sample++
                     }

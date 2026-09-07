@@ -43,6 +43,10 @@ internal class Step5MediaFixture {
         check(preparation.ready) { preparation.problems.toString() }
         return uri to engine.render(checkNotNull(preparation.preparation),RenderProgressListener {}).getOrThrow()
     }
+    fun preserve(uri: Uri,name: String) {
+        val target=File(context.getExternalFilesDir(null),"step5-evidence/$name").apply { parentFile!!.mkdirs() }
+        resolver.openInputStream(uri)!!.use { input -> target.outputStream().use { input.copyTo(it,64*1024) } }
+    }
     fun evidence(name: String,text: String) {
         File(context.getExternalFilesDir(null),"step5-evidence/$name").apply { parentFile!!.mkdirs(); appendText(text+"\n") }
     }

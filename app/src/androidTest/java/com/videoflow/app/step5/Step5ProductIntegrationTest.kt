@@ -127,7 +127,7 @@ class Step5ProductIntegrationTest {
             rule.onNodeWithText("Set End").performScrollTo().performClick()
             rule.onNodeWithText("Jump to start").performScrollTo().performClick()
             rule.onNodeWithText("Track",substring=false).performClick()
-            rule.onNodeWithText("Track movement",substring=false).performScrollTo().performClick()
+            rule.onNode(hasText("Track movement",substring=false) and hasClickAction()).performScrollTo().performClick()
             rule.waitUntil(90_000) { aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
             assertTrue("Automatic tracking produced no anchors",aiVm.state.value.trackedAnchors.isNotEmpty())
             rule.onNodeWithText("Add correction").performScrollTo().performClick()

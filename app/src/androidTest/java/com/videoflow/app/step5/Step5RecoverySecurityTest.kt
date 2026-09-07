@@ -24,13 +24,13 @@ import java.security.MessageDigest
 
 @RunWith(AndroidJUnit4::class)
 class Step5RecoverySecurityTest {
-    @Test fun destinationAndHardLinkAliasesNeverTruncateOriginalMedia() = runBlocking {
+    @Test fun destinationAndDescriptorAliasesNeverTruncateOriginalMedia() = runBlocking {
         val f=Step5MediaFixture();val dir=File(f.context.filesDir,"extracted-audio/${f.id}").apply { mkdirs() }
         try {
             val file=File(dir,"original.mp4");f.instrumentation.context.assets.open("sample_av.mp4").use { input -> file.outputStream().use { input.copyTo(it,64*1024) } }
-            val alias=File(dir,"alias.mp4");Os.link(file.path,alias.path)
+            val alias=file // Distinct content/file URIs expose the same inode without requiring privileged hard-link creation.
             val source=FileProvider.getUriForFile(f.context,"${f.context.packageName}.derived",file)
-            val destination=FileProvider.getUriForFile(f.context,"${f.context.packageName}.derived",alias)
+            val destination=Uri.fromFile(alias)
             val plan=f.plan(source);val before=hash(file)
             val engine=Media3RenderEngine(f.context,f.ai,AiModelPackManager(f.context))
             for(uri in listOf(source,source.buildUpon().fragment("alias").build(),destination,Uri.fromFile(alias))) {
@@ -73,6 +73,39 @@ class Step5RecoverySecurityTest {
             assertEquals("Retryable edit",history.state.value.undoLabel)
             assertFalse(history.state.value.canRedo)
         } finally { if(db.isOpen) db.close();f.close() }
+    }
+    @Test fun deletingProjectCleansRealDerivedMediaAndKeepsOriginalAndUnrelatedCaches()=runBlocking {
+        val f=Step5MediaFixture();val db=Room.inMemoryDatabaseBuilder(f.context,VideoFlowDatabase::class.java).build()
+        var projectId: String?=null
+        val unrelated=File(f.context.cacheDir,"waveforms/unrelated-${f.id}.vfwp").apply { parentFile!!.mkdirs();writeText("retain") }
+        try {
+            val source=f.source()
+            fun originalHash(): String = f.resolver.openInputStream(source)!!.use { input ->
+                val digest=MessageDigest.getInstance("SHA-256");val buffer=ByteArray(64*1024)
+                while(true) { val n=input.read(buffer);if(n<0) break;digest.update(buffer,0,n) }
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+            val before=originalHash()
+            val projects=com.videoflow.app.data.project.ProjectRepository(db,f.context,com.videoflow.app.data.media.MediaAnalyzer(f.context),
+                com.videoflow.app.data.media.UriFingerprintService(f.context),com.videoflow.app.data.diagnostics.LocalDiagnosticLog())
+            val id=projects.createProject("Derived lifecycle");projectId=id
+            val asset=(projects.addMedia(id,source) as com.videoflow.app.data.project.AddMediaResult.Added).asset
+            val editor=EditorRepository(db);val clip=editor.addClip(id,asset.id,0L)
+            val audio=com.videoflow.app.data.audio.AudioExtractionService(f.context,db,editor,projects,EditHistoryService(db,f.ai)).extract(id,clip.id,false) {}
+            assertNotNull(com.videoflow.app.data.media.ThumbnailService(f.context,db).loadOrGenerate(asset.id))
+            assertTrue(com.videoflow.app.data.audio.WaveformService(f.context,db).loadOrGenerate(audio,128).peaks.any { it>0 })
+            val derived=File(f.context.filesDir,"extracted-audio/$id");assertTrue(derived.listFiles()!!.isNotEmpty())
+            val cacheDirs=listOf("waveforms","step2-thumbnails").map { File(f.context.cacheDir,it) }
+            val ids=listOf(asset.id,audio)
+            assertTrue(cacheDirs.flatMap { it.listFiles().orEmpty().toList() }.any { file -> ids.any { file.name.startsWith("$it-") } })
+            com.videoflow.app.data.project.ProjectDeletionService(db,f.ai).deleteProject(id)
+            assertNull(db.projectDao().get(id));assertFalse(derived.exists())
+            assertTrue(cacheDirs.flatMap { it.listFiles().orEmpty().toList() }.none { file -> ids.any { file.name.startsWith("$it-") } })
+            assertTrue(unrelated.exists());assertEquals(before,originalHash())
+        } finally {
+            projectId?.let { File(f.context.filesDir,"extracted-audio/$it").deleteRecursively() }
+            unrelated.delete();db.close();f.close()
+        }
     }
     private fun hash(file: File): String {
         val digest=MessageDigest.getInstance("SHA-256");val buffer=ByteArray(64*1024)

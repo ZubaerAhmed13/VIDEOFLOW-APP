@@ -304,6 +304,9 @@ class Media3RenderEngine @Inject constructor(
             val wrapped = if (t is RenderPipelineException) t else mapFailure(t)
             Result.failure(wrapped)
         } finally {
+            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                runCatching { transformerForCleanup?.cancel() }
+            }
             activeTransformer = null
             activeCompletion = null
             activeAiRuntime = null
