@@ -38,9 +38,12 @@
             android:authorities="${applicationId}.derived" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/derived_paths" />
         </provider>
+        <!-- Heavy codec/GL/ONNX export work is intentionally isolated from the editor process.
+             All job inputs/state are persisted and rebuilt through repositories in this process. -->
         <service
             android:name=".export.ExportForegroundService"
             android:exported="false"
+            android:process=":export"
             android:foregroundServiceType="dataSync|mediaProcessing" />
     </application>
 </manifest>
