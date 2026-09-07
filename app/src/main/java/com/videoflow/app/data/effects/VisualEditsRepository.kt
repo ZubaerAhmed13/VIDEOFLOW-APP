@@ -14,7 +14,7 @@ import java.io.File
 /** Versioned parameter-only sidecar. AtomicFile retains the old document if a write is interrupted. */
 class VisualEditsRepository(context: Context) {
     private val root = File(context.filesDir, "visual-edits")
-    private val mutex = Mutex()
+    private val mutex = visualStateMutex
     private fun file(id: String): AtomicFile {
         require(id.matches(Regex("[A-Za-z0-9_-]+"))) { "Unsafe project ID" }
         return AtomicFile(File(root, "$id.json"))
@@ -68,3 +68,5 @@ class VisualEditsRepository(context: Context) {
         }
     }
 }
+
+private val visualStateMutex=Mutex()

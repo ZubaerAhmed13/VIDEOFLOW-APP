@@ -11,7 +11,7 @@ data class NormalizedRoi(
     val top: Float,
     val right: Float,
     val bottom: Float
-) {
+) : java.io.Serializable {
     init {
         require(listOf(left, top, right, bottom).all { it.isFinite() })
         require(left in 0f..1f && top in 0f..1f && right in 0f..1f && bottom in 0f..1f)
@@ -48,7 +48,7 @@ data class RoiMotionAnchor(
     val centerY: Float,
     val confidence: Float = 1f,
     val width: Float? = null, val height: Float? = null, val manual: Boolean = false
-) {
+) : java.io.Serializable {
     init {
         require(clipLocalTimeUs >= 0L)
         require(centerX in 0f..1f && centerY in 0f..1f)

@@ -35,6 +35,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.videoflow.app.ui.editor.hostActivity
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -93,20 +95,20 @@ fun WatermarkStudioPanel(
     }
 
     val durationUs = clip.timelineDurationUs.coerceAtLeast(1L)
-    var studioLocalUs by remember(clipId) { mutableStateOf((playheadUs - clip.timelineStartUs).coerceIn(0L, durationUs - 1L)) }
-    var roi by remember(clipId) { mutableStateOf(NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)) }
-    var startUs by remember(clipId) { mutableStateOf(0L) }
-    var endUs by remember(clipId) { mutableStateOf(durationUs) }
-    var diagnosticsExpanded by remember(clipId) { mutableStateOf(false) }
-    var stage by remember(clipId) { mutableStateOf(0) }
-    var detailedPreview by remember(clipId) { mutableStateOf(false) }
-    var showBefore by remember(clipId) { mutableStateOf(false) }
-    var correctionRoi by remember(clipId, studioLocalUs) { mutableStateOf<NormalizedRoi?>(null) }
-    var featherPx by remember(clipId) { mutableFloatStateOf(8f) }
-    var contextPx by remember(clipId) { mutableFloatStateOf(48f) }
-    var stability by remember(clipId) { mutableFloatStateOf(0.12f) }
-    var editingEffectId by remember(clipId) { mutableStateOf<String?>(null) }
-    var loadedAnchors by remember(clipId) { mutableStateOf<List<RoiMotionAnchor>>(emptyList()) }
+    var studioLocalUs by rememberSaveable(clipId) { mutableStateOf((playheadUs - clip.timelineStartUs).coerceIn(0L, durationUs - 1L)) }
+    var roi by rememberSaveable(clipId) { mutableStateOf(NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)) }
+    var startUs by rememberSaveable(clipId) { mutableStateOf(0L) }
+    var endUs by rememberSaveable(clipId) { mutableStateOf(durationUs) }
+    var diagnosticsExpanded by rememberSaveable(clipId) { mutableStateOf(false) }
+    var stage by rememberSaveable(clipId) { mutableStateOf(0) }
+    var detailedPreview by rememberSaveable(clipId) { mutableStateOf(false) }
+    var showBefore by rememberSaveable(clipId) { mutableStateOf(false) }
+    var correctionRoi by rememberSaveable(clipId, studioLocalUs) { mutableStateOf<NormalizedRoi?>(null) }
+    var featherPx by rememberSaveable(clipId) { mutableFloatStateOf(8f) }
+    var contextPx by rememberSaveable(clipId) { mutableFloatStateOf(48f) }
+    var stability by rememberSaveable(clipId) { mutableFloatStateOf(0.12f) }
+    var editingEffectId by rememberSaveable(clipId) { mutableStateOf<String?>(null) }
+    var loadedAnchors by rememberSaveable(clipId) { mutableStateOf<List<RoiMotionAnchor>>(emptyList()) }
 
     val previewLocalUs = studioLocalUs.coerceIn(0L, durationUs - 1L)
     val sourceTimeUs = clip.sourceStartUs + (previewLocalUs.toDouble() * clip.speed).roundToLong()
@@ -154,7 +156,7 @@ fun WatermarkStudioPanel(
         vm.clearPreviewOnly()
     }
 
-    var initialLoaded by remember(initialEffectId) { mutableStateOf(false) }
+    var initialLoaded by rememberSaveable(initialEffectId) { mutableStateOf(false) }
     LaunchedEffect(initialEffectId,state.existingEffects) {
         if (!initialLoaded && initialEffectId != null) state.existingEffects.firstOrNull { it.id==initialEffectId }?.let { effect ->
             editingEffectId=effect.id; roi=effect.roi
@@ -164,8 +166,9 @@ fun WatermarkStudioPanel(
             loadedAnchors=effect.motionAnchors; studioLocalUs=startUs; initialLoaded=true
         }
     }
+    val activity=androidx.compose.ui.platform.LocalContext.current.hostActivity()
     LaunchedEffect(projectId, clipId) { vm.bind(projectId, clipId) }
-    androidx.compose.runtime.DisposableEffect(projectId,clipId) { onDispose { vm.closeSession() } }
+    androidx.compose.runtime.DisposableEffect(projectId,clipId) { onDispose { if(activity?.isChangingConfigurations != true) vm.closeSession() } }
     LaunchedEffect(asset.sourceUri, sourceTimeUs) {
         vm.loadSourceFrame(asset.sourceUri, sourceTimeUs.coerceIn(clip.sourceStartUs, clip.sourceEndUs - 1L))
     }

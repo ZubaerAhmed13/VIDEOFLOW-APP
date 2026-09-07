@@ -80,6 +80,7 @@ class WatermarkStudioViewModel @Inject constructor(
     }
 
     fun bind(projectId: String, clipId: String) {
+        if(boundProjectId==projectId && boundClipId==clipId) return
         historyService.activateProject(projectId)
         frameJob?.cancel(); workJob?.cancel()
         replaceAiPreview(null); replaceSourceFrame(null)
@@ -357,7 +358,9 @@ class WatermarkStudioViewModel @Inject constructor(
     }
 
     fun closeSession() {
+        boundProjectId=null; boundClipId=null
         modelJob?.cancel(); frameJob?.cancel(); cancelWork()
+        replaceAiPreview(null); replaceSourceFrame(null)
     }
 
     private suspend fun refreshEffects(projectId: String, clipId: String) {

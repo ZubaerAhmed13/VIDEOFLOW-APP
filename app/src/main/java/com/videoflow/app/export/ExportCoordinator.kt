@@ -33,6 +33,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import com.videoflow.app.render.ExportDestinationSafety
 
 @Singleton
 class ExportCoordinator @Inject constructor(
@@ -43,12 +48,19 @@ class ExportCoordinator @Inject constructor(
     private val aiRepository: AiWatermarkRepository
 ) {
     private val queueMutex = Mutex()
+    @Volatile private var activeJobId: String? = null
+    @Volatile private var cancelledJobId: String? = null
 
     suspend fun execute(
         jobId: String,
         onProgress: (ExportJobStatus, Float) -> Unit = { _, _ -> }
-    ): ExportJobStatus = queueMutex.withLock {
+    ): ExportJobStatus = withContext(Dispatchers.IO) { queueMutex.withLock {
         val job = repository.getJob(jobId) ?: return@withLock ExportJobStatus.FAILED
+        if(job.status!=ExportJobStatus.QUEUED) return@withLock job.status
+        activeJobId=jobId
+        cancelledJobId=null
+        var outputStarted=false
+        var cleanupPlan: com.videoflow.app.domain.export.FinalRenderPlan?=null
         try {
             update(jobId, ExportJobStatus.PREPARING, 0.01f, onProgress)
             val compile = repository.compileFinalPlan(job.projectId)
@@ -61,6 +73,11 @@ class ExportCoordinator @Inject constructor(
                     problem?.message ?: "Final RenderPlan could not be compiled.",
                     onProgress
                 )
+            }
+
+            cleanupPlan=plan
+            ExportDestinationSafety.problem(context,plan,Uri.parse(job.destinationUri))?.let { message ->
+                return@withLock fail(jobId,ExportFailureCode.DESTINATION_IO,message,onProgress)
             }
 
             val aiEffects = AiReconstructionExportPolicy.activeForProject(
@@ -96,6 +113,8 @@ class ExportCoordinator @Inject constructor(
                         onProgress
                     )
                 }
+                checkCancellation(jobId)
+                outputStarted=true
                 return@withLock executeSmartCopy(jobId, job.destinationUri, plan, resolved, onProgress)
             }
 
@@ -115,7 +134,9 @@ class ExportCoordinator @Inject constructor(
                 )
             }
 
+            checkCancellation(jobId)
             update(jobId, ExportJobStatus.RENDERING, 0.03f, onProgress)
+            outputStarted=true
             val result = coroutineScope {
                 val progress = Channel<Float>(Channel.CONFLATED)
                 val writer = launch {
@@ -138,13 +159,17 @@ class ExportCoordinator @Inject constructor(
             }
 
             val execution = result.getOrElse { error ->
-                val code = (error as? RenderPipelineException)?.failureCode ?: ExportFailureCode.UNKNOWN
+                val code = if(cancelledJobId==jobId) ExportFailureCode.CANCELLED else (error as? RenderPipelineException)?.failureCode ?: ExportFailureCode.UNKNOWN
                 val status = if (code == ExportFailureCode.CANCELLED) ExportJobStatus.CANCELLED else ExportJobStatus.FAILED
-                repository.updateJob(jobId, status, 0f, code, error.message ?: "Native export failed.")
+                withContext(NonCancellable) {
+                    clearPartial(plan,job.destinationUri)
+                    repository.updateJob(jobId, status, 0f, code, error.message ?: "Native export failed.")
+                }
                 onProgress(status, 0f)
                 return@withLock status
             }
             if (!execution.validation.passed) {
+                clearPartial(plan,job.destinationUri)
                 return@withLock fail(
                     jobId,
                     ExportFailureCode.VALIDATION_FAILED,
@@ -183,16 +208,26 @@ class ExportCoordinator @Inject constructor(
             ExportJobStatus.COMPLETED
         } catch (t: Throwable) {
             val code = when (t) {
+                is CancellationException -> ExportFailureCode.CANCELLED
                 is RenderPipelineException -> t.failureCode
-                is SmartCopyException -> ExportFailureCode.VALIDATION_FAILED
+                is SmartCopyException -> if(cancelledJobId==jobId) ExportFailureCode.CANCELLED else ExportFailureCode.VALIDATION_FAILED
                 else -> ExportFailureCode.UNKNOWN
             }
-            val status = if (code == ExportFailureCode.CANCELLED) ExportJobStatus.CANCELLED else ExportJobStatus.FAILED
-            repository.updateJob(jobId, status, 0f, code, t.message ?: t::class.java.simpleName)
+            val status = if(t is CancellationException) ExportJobStatus.INTERRUPTED else if (code == ExportFailureCode.CANCELLED) ExportJobStatus.CANCELLED else ExportJobStatus.FAILED
+            withContext(NonCancellable) {
+                if(t is CancellationException) { smartCopyEngine.cancel(); renderEngine.cancel() }
+                if(outputStarted) cleanupPlan?.let { clearPartial(it,job.destinationUri) }
+                repository.updateJob(jobId, status, 0f, code,
+                    if(status==ExportJobStatus.INTERRUPTED) "Android interrupted export. Reopen export to safely restart or reuse validated checkpoints."
+                    else t.message ?: "Export could not complete. See Diagnostics for details.")
+            }
             onProgress(status, 0f)
             status
+        } finally {
+            activeJobId=null
+            cancelledJobId=null
         }
-    }
+    } }
 
     private suspend fun executeSmartCopy(
         jobId: String,
@@ -216,6 +251,7 @@ class ExportCoordinator @Inject constructor(
         val copied = try {
             smartCopyEngine.copy(plan, destination)
         } catch (error: SmartCopyException) {
+            if(cancelledJobId==jobId) throw RenderPipelineException(ExportFailureCode.CANCELLED,"Smart Copy cancelled.",error)
             return fail(jobId, ExportFailureCode.VALIDATION_FAILED, error.message ?: "Smart Copy failed.", onProgress)
         }
         update(jobId, ExportJobStatus.VALIDATING, 0.95f, onProgress)
@@ -233,6 +269,7 @@ class ExportCoordinator @Inject constructor(
             expectedColour = OutputColourExpectation(profile.colorStandard, profile.colorRange, profile.colorTransfer)
         )
         if (!validation.passed) {
+            clearPartial(plan,destinationUri)
             return fail(
                 jobId,
                 ExportFailureCode.VALIDATION_FAILED,
@@ -270,9 +307,21 @@ class ExportCoordinator @Inject constructor(
         return ExportJobStatus.COMPLETED
     }
 
-    suspend fun cancel() {
+    suspend fun cancel(jobId: String? = null) {
+        if(jobId!=null && jobId!=activeJobId) return
+        cancelledJobId=activeJobId
         smartCopyEngine.cancel()
         renderEngine.cancel()
+    }
+
+    private fun checkCancellation(jobId: String) {
+        if(cancelledJobId==jobId) throw RenderPipelineException(ExportFailureCode.CANCELLED,"Export cancelled.")
+    }
+
+    private fun clearPartial(plan: com.videoflow.app.domain.export.FinalRenderPlan, destination: String) {
+        val uri=Uri.parse(destination)
+        if(ExportDestinationSafety.problem(context,plan,uri)==null)
+            runCatching { context.contentResolver.openFileDescriptor(uri,"rwt")?.close() }
     }
 
     private suspend fun update(

@@ -23,7 +23,7 @@ private data class EffectIndicator(val id: String,val clip: TimelineClip,val lab
 /** Separate selectable edit rows, with a bounded viewport and no frame-dependent UI objects. */
 @Composable
 fun TimedEffectIndicators(clips: List<TimelineClip>, revision: Long, scroll: ScrollState, width: Dp, pixelsPerSecond: Float,
-    onSelect: (EditorSelection)->Unit, onSeek: (Long)->Unit, onOpen: (ProfessionalEditorTool)->Unit) {
+    onSelect: (EditorSelection)->Unit, onSeek: (Long)->Unit, onOpen: (ProfessionalEditorTool)->Unit, originUs: Long = 0L, windowEndUs: Long = Long.MAX_VALUE) {
     val context=LocalContext.current
     val indicators by produceState<List<EffectIndicator>>(emptyList(),clips,revision) {
         val projectId=clips.firstOrNull()?.projectId
@@ -37,10 +37,11 @@ fun TimedEffectIndicators(clips: List<TimelineClip>, revision: Long, scroll: Scr
             }
         }
     }
-    if(indicators.isEmpty()) return
+    val visible=indicators.filter { it.clip.timelineStartUs+it.endUs>originUs && it.clip.timelineStartUs+it.startUs<windowEndUs }
+    if(visible.isEmpty()) return
     Row(Modifier.fillMaxWidth().heightIn(max=144.dp).verticalScroll(rememberScrollState())) {
-        Column(Modifier.width(84.dp)) {
-            indicators.forEach { effect ->
+        Column(Modifier.width(96.dp)) {
+            visible.forEach { effect ->
                 Text(effect.label, maxLines=1, modifier=Modifier.height(48.dp).fillMaxWidth().clickable {
                     onSelect(EditorSelection.Clip(effect.clip.id));onSeek(effect.clip.timelineStartUs+effect.startUs)
                     onOpen(if(effect.ai) ProfessionalEditorTool.AiWatermark(effect.clip.id,effect.id) else ProfessionalEditorTool.Effects(effect.clip.id,effect.id))
@@ -48,13 +49,13 @@ fun TimedEffectIndicators(clips: List<TimelineClip>, revision: Long, scroll: Scr
             }
         }
         Column(Modifier.weight(1f).horizontalScroll(scroll).width(width)) {
-            indicators.forEach { effect ->
+            visible.forEach { effect ->
                 val start=effect.clip.timelineStartUs+effect.startUs
                 val end=effect.clip.timelineStartUs+minOf(effect.endUs,effect.clip.timelineDurationUs)
                 Box(Modifier.width(width).height(48.dp)) {
                     if(end>start) Text(if(effect.enabled) effect.label else "${effect.label} (off)", maxLines=1,
-                        modifier=Modifier.offset(x=(start.toDouble()/1_000_000*pixelsPerSecond).toFloat().dp)
-                            .width(((end-start).toDouble()/1_000_000*pixelsPerSecond).toFloat().dp.coerceAtLeast(48.dp))
+                        modifier=Modifier.offset(x=((maxOf(start,originUs)-originUs).toDouble()/1_000_000*pixelsPerSecond).toFloat().dp)
+                            .width(((minOf(end,windowEndUs)-maxOf(start,originUs)).toDouble()/1_000_000*pixelsPerSecond).toFloat().dp.coerceAtLeast(48.dp))
                             .height(48.dp).background(VideoFlowEditorColors.SelectionAccent.copy(alpha=if(effect.enabled) .35f else .15f))
                             .semantics { contentDescription="${effect.label} ${com.videoflow.app.domain.editor.TrimTimecode.formatUs(effect.startUs)} to ${com.videoflow.app.domain.editor.TrimTimecode.formatUs(effect.endUs)}" }
                             .clickable { onSelect(EditorSelection.Clip(effect.clip.id));onSeek(start)

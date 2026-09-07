@@ -29,7 +29,11 @@ class ProfessionalToolsViewModel @Inject constructor(
     val state = mutable.asStateFlow()
     private var task: Job? = null
     private var before = VisualEdits()
-    fun open(projectId: String) {
+    private var session: String?=null
+    fun open(projectId: String, tool: String = "") {
+        val nextSession="$projectId:$tool"
+        if(session==nextSession) return
+        session=nextSession
         history.activateProject(projectId)
         task?.cancel()
         mutable.value = ProfessionalToolState(busy = true)
@@ -41,13 +45,16 @@ class ProfessionalToolsViewModel @Inject constructor(
         }
     }
     fun draft(value: VisualEdits) { mutable.value = mutable.value.copy(draft = value, error = null) }
-    fun cancel() { task?.cancel(); mutable.value = ProfessionalToolState() }
+    fun cancel() { session=null; task?.cancel(); mutable.value = ProfessionalToolState() }
     fun apply(projectId: String, label: String, done: () -> Unit) = work {
         val next = mutable.value.draft
         withContext(NonCancellable) {
-            repository.visualEdits.replace(projectId, next)
-            history.touchProject(projectId)
-            history.record(VisualEditsHistoryEntry(projectId, label, before, next))
+            if(next != before) {
+                repository.visualEdits.replace(projectId, next)
+                history.touchProject(projectId)
+                history.record(VisualEditsHistoryEntry(projectId, label, before, next))
+                before=next
+            }
         }
         done()
     }

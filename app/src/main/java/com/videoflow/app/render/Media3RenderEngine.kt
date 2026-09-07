@@ -76,6 +76,9 @@ class Media3RenderEngine @Inject constructor(
         destination: OutputDestination,
         settings: ResolvedExportSettings
     ): RenderPreparationResult = withContext(Dispatchers.IO) {
+        ExportDestinationSafety.problem(context,plan,destination.uri)?.let { message ->
+            return@withContext RenderPreparationResult(null,emptyList(),listOf(ExportProblem(ExportFailureCode.DESTINATION_IO,message)))
+        }
         val sourceHasHdr = sourceHasHdr(plan)
         val capability = ExportCapabilityValidator.validate(settings, sourceHasHdr, AndroidEncoderCapabilitySource())
         val problems = capability.problems.toMutableList()
@@ -191,6 +194,9 @@ class Media3RenderEngine @Inject constructor(
         preparation: RenderPreparation,
         listener: RenderProgressListener
     ): Result<RenderExecutionResult> = renderMutex.withLock {
+        ExportDestinationSafety.problem(context,preparation.plan,preparation.destination.uri)?.let { message ->
+            return@withLock Result.failure(RenderPipelineException(ExportFailureCode.DESTINATION_IO,message))
+        }
         val startedAt = System.currentTimeMillis()
         val jobRoot = File(exportRoot, "job-${startedAt}-${Thread.currentThread().id}")
         val rasterRoot = File(jobRoot, "raster")

@@ -9,6 +9,8 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -34,63 +36,75 @@ class AiWatermarkRepository @Inject constructor(
     /** Emits the project id after every successful AI-sidecar replacement or removal. */
     val changes: SharedFlow<String> = _changes.asSharedFlow()
 
-    suspend fun load(projectId: String): List<AiWatermarkEffect> = withContext(Dispatchers.IO) {
+    suspend fun load(projectId: String): List<AiWatermarkEffect> = withContext(Dispatchers.IO) { aiStateMutex.withLock {
         requireSafeId(projectId)
         readEffects(projectId)
-    }
+    } }
 
     suspend fun effectsForClip(projectId: String, clipId: String): List<AiWatermarkEffect> =
         load(projectId).filter { it.clipId == clipId }
 
-    suspend fun upsert(effect: AiWatermarkEffect) = withContext(Dispatchers.IO) {
+    suspend fun upsert(effect: AiWatermarkEffect) = withContext(Dispatchers.IO) { aiStateMutex.withLock {
         val current = readEffects(effect.projectId).associateBy { it.id }.toMutableMap()
         current[effect.id] = effect
         write(effect.projectId, current.values.toList())
-    }
+    } }
 
-    suspend fun remove(projectId: String, effectId: String) = withContext(Dispatchers.IO) {
+    suspend fun remove(projectId: String, effectId: String) = withContext(Dispatchers.IO) { aiStateMutex.withLock {
         write(projectId, readEffects(projectId).filterNot { it.id == effectId })
-    }
+    } }
 
-    suspend fun removeForClip(projectId: String, clipId: String) = withContext(Dispatchers.IO) {
+    suspend fun removeForClip(projectId: String, clipId: String) = withContext(Dispatchers.IO) { aiStateMutex.withLock {
         write(projectId, readEffects(projectId).filterNot { it.clipId == clipId })
-    }
+    } }
 
-    suspend fun replaceProjectEffects(projectId: String, effects: List<AiWatermarkEffect>) = withContext(Dispatchers.IO) {
+    suspend fun replaceProjectEffects(projectId: String, effects: List<AiWatermarkEffect>) = withContext(Dispatchers.IO) { aiStateMutex.withLock {
         requireSafeId(projectId)
         require(effects.all { it.projectId == projectId })
         write(projectId, effects)
-    }
+    } }
 
     /**
      * Returns a complete, versioned AI state document for project snapshots and rollback. The
      * returned document is valid even when the project currently has no AI effects.
      */
-    suspend fun exportProjectStateJson(projectId: String): String = withContext(Dispatchers.IO) {
+    suspend fun exportProjectStateJson(projectId: String): String = withContext(Dispatchers.IO) { aiStateMutex.withLock {
         requireSafeId(projectId)
         encodeState(projectId, readEffects(projectId)).toString()
-    }
+    } }
 
     /** Restores an exact state previously produced by [exportProjectStateJson]. */
-    suspend fun restoreProjectStateJson(projectId: String, payloadJson: String) = withContext(Dispatchers.IO) {
+    suspend fun restoreProjectStateJson(projectId: String, payloadJson: String) = withContext(Dispatchers.IO) { aiStateMutex.withLock {
         requireSafeId(projectId)
         val effects = decodeState(projectId, JSONObject(payloadJson))
         write(projectId, effects)
-    }
+    } }
 
     /**
      * Deletes all persistent AI state owned by a project, including interrupted atomic-write temp
      * files. This is the canonical cleanup operation for project deletion.
      */
-    suspend fun deleteProjectState(projectId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteProjectState(projectId: String) = withContext(Dispatchers.IO) { aiStateMutex.withLock {
         requireSafeId(projectId)
         deleteStateFiles(projectId)
         _changes.tryEmit(projectId)
-    }
+    } }
 
-    suspend fun cleanupDerivedMedia(projectId: String) = withContext(Dispatchers.IO) {
+    suspend fun cleanupDerivedMedia(projectId: String, assetIds: List<String> = emptyList(), proxyPaths: List<String> = emptyList()) = withContext(Dispatchers.IO) {
         require(projectId.matches(Regex("[A-Za-z0-9_-]+")))
         File(context.filesDir,"extracted-audio/$projectId").takeIf { it.isDirectory }?.deleteRecursively()
+        val proxyRoot=File(context.filesDir,"proxies").canonicalFile
+        proxyPaths.forEach { path ->
+            val file=File(path)
+            if(file.canonicalFile.parentFile==proxyRoot) file.delete()
+        }
+        val prefixes=assetIds.filter { it.matches(Regex("[A-Za-z0-9_-]+")) }.map { "$it-" }
+        listOf("waveforms","step2-thumbnails").forEach { name ->
+            val cache=File(context.cacheDir,name)
+            cache.listFiles()?.filter { file -> file.isFile && prefixes.any(file.name::startsWith) }?.forEach { file ->
+                if(file.canonicalFile.parentFile==cache.canonicalFile) file.delete()
+            }
+        }
         File(context.filesDir,"ai-jobs").listFiles()?.filter { it.isDirectory && it.name.matches(Regex("[0-9a-f]{64}")) }?.forEach { directory ->
             val owned = runCatching { JSONObject(File(directory,"checkpoint.json").readText()).optString("project") == projectId }.getOrDefault(false)
             if (owned) directory.deleteRecursively()
@@ -269,3 +283,5 @@ class AiWatermarkRepository @Inject constructor(
             .thenBy { it.id }
     }
 }
+
+private val aiStateMutex=Mutex()

@@ -68,7 +68,7 @@ class SegmentedAiRenderEngine @Inject constructor(
         val clip = clips.singleOrNull() ?: return false
         val source = plan.originalSources.getValue(clip.assetId)
         if (clip.timelineStartUs != 0L || clip.speed != 1.0 || clip.gainDb != 0f || clip.fadeInUs != 0L || clip.fadeOutUs != 0L) return false
-        if (plan.editorPlan.keyframes.isNotEmpty() || plan.editorPlan.textOverlays.isNotEmpty() || plan.editorPlan.imageOverlays.isNotEmpty()) return false
+        if (plan.editorPlan.keyframes.isNotEmpty() || plan.durationUs != clip.timelineDurationUs) return false
         val track = plan.editorPlan.tracks.firstOrNull { it.id == clip.trackId } ?: return false
         if (track.type != TrackType.VIDEO || track.muted || track.solo || track.gainDb != 0f) return false
         if (source.audioCodecMime != null && (source.audioCodecMime != MediaFormat.MIMETYPE_AUDIO_AAC || source.audioChannelCount != settings.audioChannels || source.audioSampleRate != settings.audioSampleRate)) return false
@@ -76,6 +76,9 @@ class SegmentedAiRenderEngine @Inject constructor(
     }
 
     override suspend fun render(preparation: RenderPreparation, listener: RenderProgressListener): Result<RenderExecutionResult> = mutex.withLock {
+        ExportDestinationSafety.problem(context,preparation.plan,preparation.destination.uri)?.let { message ->
+            return@withLock Result.failure(RenderPipelineException(ExportFailureCode.DESTINATION_IO,message))
+        }
         cancelled.set(false)
         completedSegmentCount=0L; resumedSegmentCount=0L
         if (!eligible(preparation.plan,preparation.settings)) return@withLock delegate.render(preparation,listener)
@@ -90,7 +93,7 @@ class SegmentedAiRenderEngine @Inject constructor(
                 original.durationUs,original.width,original.height)
             if (original.fingerprintSha256?.matches(Regex("[0-9a-fA-F]{64}")) == true)
                 require(original.fingerprintSha256 == fingerprint.sha256) { "Original media changed; reconnect and review the source before resuming." }
-            val signature = sha(("segmented-v2-$checkpointIntervalUs-${fingerprint.sha256}"+plan.toString()+preparation.settings.toString()+effects.toString()+VisualEditsRepository.encode(visual)+AiModelCatalog.FINAL_512.sha256).toByteArray())
+            val signature = sha(("segmented-v3-static-overlays-$checkpointIntervalUs-${fingerprint.sha256}"+plan.toString()+preparation.settings.toString()+effects.toString()+VisualEditsRepository.encode(visual)+AiModelCatalog.FINAL_512.sha256).toByteArray())
             val directory = File(context.filesDir,"ai-jobs/$signature")
             directory.mkdirs()
             val checkpoint = AtomicFile(File(directory,"checkpoint.json"))
@@ -111,21 +114,32 @@ class SegmentedAiRenderEngine @Inject constructor(
             }
             try {
                 save(AiLongJobState.PREPARING)
+                var reuseChain=true
                 for (segment in schedule.segments()) {
                     currentCoroutineContext().ensureActive(); checkCancelled()
                     val file = File(directory,"segment-${segment.index}.mp4")
                     val digest = File(directory,"segment-${segment.index}.sha256")
                     val temporalFile = File(directory,"segment-${segment.index}.temporal")
                     val temporalHash = File(directory,"segment-${segment.index}.temporal.sha256")
-                    val valid = file.isFile && digest.isFile && digest.readText() == hashFile(file) &&
+                    val valid = reuseChain && file.isFile && digest.isFile && digest.readText() == hashFile(file) &&
                         temporalFile.isFile && temporalHash.isFile && temporalHash.readText() == hashFile(temporalFile)
-                    if (valid) {
-                        temporal.read(temporalFile)
+                    val restored=valid && runCatching { temporal.read(temporalFile); true }.getOrDefault(false)
+                    if (restored) {
                         resumedSegmentCount++
                     } else {
+                        reuseChain=false
+                        temporalFile.delete(); temporalHash.delete()
                         file.delete(); digest.delete()
                         val shortClip = clip.copy(timelineStartUs=0L,sourceStartUs=clip.sourceStartUs+segment.startUs,sourceEndUs=clip.sourceStartUs+segment.endUs)
-                        val shortPlan = plan.copy(editorPlan=plan.editorPlan.copy(clips=listOf(shortClip)),
+                        val shortPlan = plan.copy(editorPlan=plan.editorPlan.copy(clips=listOf(shortClip),
+                            textOverlays=plan.editorPlan.textOverlays.filter { it.timelineStartUs<segment.endUs && it.timelineEndUs>segment.startUs }.map {
+                                it.copy(timelineStartUs=maxOf(it.timelineStartUs,segment.startUs)-segment.startUs,
+                                    timelineEndUs=minOf(it.timelineEndUs,segment.endUs)-segment.startUs)
+                            },
+                            imageOverlays=plan.editorPlan.imageOverlays.filter { it.timelineStartUs<segment.endUs && it.timelineEndUs>segment.startUs }.map {
+                                it.copy(timelineStartUs=maxOf(it.timelineStartUs,segment.startUs)-segment.startUs,
+                                    timelineEndUs=minOf(it.timelineEndUs,segment.endUs)-segment.startUs)
+                            }),
                             originalSources=plan.originalSources.mapValues { (_, source) -> source.copy(audioCodecMime=null) },durationUs=segment.durationUs)
                         val shortAi = effects.filter { it.clipId == clip.id && it.enabled && it.clipLocalStartUs < segment.endUs && it.clipLocalEndUs > segment.startUs }.map { effect ->
                             val anchors = (listOf(segment.startUs,segment.endUs-1L)+effect.motionAnchors.map { it.clipLocalTimeUs }.filter { it in segment.startUs until segment.endUs }).distinct().sorted().map { time ->
@@ -216,7 +230,7 @@ class SegmentedAiRenderEngine @Inject constructor(
                     }
                     if(hasAudio) {
                         audio.selectTrack(audioTrack); audio.seekTo(clip.sourceStartUs,MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                        while(audio.sampleTime>=0 && audio.sampleTime<clip.sourceEndUs) {
+                        while(audio.sampleTrackIndex>=0 && audio.sampleTime<clip.sourceEndUs) {
                             checkCancelled(); currentCoroutineContext().ensureActive()
                             if(audio.sampleTime>=clip.sourceStartUs) {
                                 require(android.os.Build.VERSION.SDK_INT < 28 || audio.sampleSize<=buffer.capacity())

@@ -23,7 +23,9 @@ data class OutputTrackInfo(
     val colorStandard: Int?,
     val colorRange: Int?,
     val colorTransfer: Int?,
-    val measuredFrameRate: Double? = null
+    val measuredFrameRate: Double? = null,
+    val sampleRate: Int? = null,
+    val channelCount: Int? = null
 )
 
 data class OutputColourExpectation(
@@ -157,11 +159,16 @@ class OutputValidator(private val contentResolver: ContentResolver) {
             } else if (!FrameCadenceVerifier.matches(measured, expected.frameRate)) {
                 problems += FrameCadenceVerifier.mismatchMessage(measured, expected.frameRate)
             }
+            val tolerance=maxOf(50_000L,(2_000_000.0/expected.frameRate.fps).toLong())
+            if(info.durationUs==null || abs(info.durationUs-expectedDurationUs)>tolerance)
+                problems += "Video track duration ${info.durationUs} us does not cover the requested $expectedDurationUs us."
             validateHdr(info, expected, expectedHdr, problems)
             validateColour(info, expectedColour, problems)
         }
         if (expectAudio && audio == null) problems += "Output is missing expected audio."
         audio?.let {
+            if(it.sampleRate != expected.audioSampleRate || it.channelCount != expected.audioChannels)
+                problems += "Output audio format ${it.sampleRate} Hz / ${it.channelCount} channels differs from the requested format."
             if (it.mimeType != expected.audioCodec.mimeType) {
                 problems += "Output audio MIME ${it.mimeType} does not match ${expected.audioCodec.mimeType}."
             }
@@ -255,7 +262,9 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         rotationDegrees = intOrNull(MediaFormat.KEY_ROTATION),
         colorStandard = intOrNull(MediaFormat.KEY_COLOR_STANDARD),
         colorRange = intOrNull(MediaFormat.KEY_COLOR_RANGE),
-        colorTransfer = intOrNull(MediaFormat.KEY_COLOR_TRANSFER)
+        colorTransfer = intOrNull(MediaFormat.KEY_COLOR_TRANSFER),
+        sampleRate = intOrNull(MediaFormat.KEY_SAMPLE_RATE),
+        channelCount = intOrNull(MediaFormat.KEY_CHANNEL_COUNT)
     )
 
     private fun MediaFormat.stringOrNull(key: String): String? = if (containsKey(key)) getString(key) else null

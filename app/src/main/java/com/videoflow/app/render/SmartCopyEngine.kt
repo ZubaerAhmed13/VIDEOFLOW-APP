@@ -72,6 +72,7 @@ class SmartCopyEngine @Inject constructor(
     }
 
     fun copy(plan: FinalRenderPlan, destination: Uri): SmartCopyResult {
+        ExportDestinationSafety.problem(context,plan,destination)?.let { throw SmartCopyException(it) }
         cancelled.set(false)
         val check = preflight(plan)
         if (!check.eligible) throw SmartCopyException("Smart Copy is unavailable: ${check.reasons.joinToString(" ")}")
@@ -113,10 +114,13 @@ class SmartCopyEngine @Inject constructor(
                     while (true) {
                         if (cancelled.get()) throw SmartCopyException("Smart Copy was cancelled.")
                         val sampleTime = extractor.sampleTime
-                        if (sampleTime < 0L || sampleTime >= clip.sourceEndUs) break
                         val sourceTrack = extractor.sampleTrackIndex
                         if (sourceTrack < 0) break
+                        if (sampleTime < 0L) { extractor.advance(); continue }
+                        if (sampleTime >= clip.sourceEndUs) break
                         if (sampleTime >= clip.sourceStartUs) {
+                            require(android.os.Build.VERSION.SDK_INT < 28 || extractor.sampleSize<=buffer.capacity()) { "Encoded packet exceeds the bounded copy buffer." }
+                            require(extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_ENCRYPTED == 0) { "Encrypted samples cannot be copied." }
                             buffer.clear()
                             val size = extractor.readSampleData(buffer, 0)
                             if (size < 0) break
@@ -146,6 +150,8 @@ class SmartCopyEngine @Inject constructor(
             val bytes = pfd.statSize.takeIf { it >= 0L } ?: -1L
             return SmartCopyResult(bytes, plan.durationUs, check)
         } catch (t: Throwable) {
+            runCatching { muxer?.release() }; muxer=null
+            runCatching { android.system.Os.ftruncate(pfd.fileDescriptor,0L) }
             if (t is SmartCopyException) throw t
             throw SmartCopyException("Smart Copy could not safely write the MP4 output: ${t.message ?: t::class.java.simpleName}", t)
         } finally {

@@ -15,11 +15,12 @@ class VideoFlowApplication : Application() {
     @Inject lateinit var exportRepository: ExportRepository
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val processStartedAt=System.currentTimeMillis()
 
     override fun onCreate() {
         super.onCreate()
         appScope.launch {
-            exportRepository.markInterruptedAfterProcessRestart()
+            exportRepository.markInterruptedAfterProcessRestart(processStartedAt)
         }
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(

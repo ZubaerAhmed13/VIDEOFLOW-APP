@@ -50,6 +50,7 @@ import kotlin.math.max
 
 data class ExportUiState(
     val loading: Boolean = true,
+    val starting: Boolean = false,
     val requested: ExportSettings = ExportSettings(),
     val resolved: ResolvedExportSettings? = null,
     val estimate: ExportEstimate? = null,
@@ -64,7 +65,7 @@ data class ExportUiState(
     val message: String? = null
 ) {
     val canStart: Boolean
-        get() = !loading && resolved != null && destinationUri != null && problems.isEmpty() &&
+        get() = !loading && !starting && resolved != null && destinationUri != null && problems.isEmpty() &&
             (requested.mode != ExportMode.SMART_COPY || smartCopyAvailable) &&
             jobs.none { it.status in ACTIVE_STATUSES }
 
@@ -170,20 +171,27 @@ class ExportViewModel @Inject constructor(
         val destination = snapshot.destinationUri ?: return
         if (!snapshot.canStart) return
         val safeName = sanitizeExportFileName(displayName)
+        _state.value=_state.value.copy(starting=true)
         viewModelScope.launch {
+            var queuedId: String?=null
             runCatching {
                 val job = repository.createJob(id, destination.toString(), safeName, snapshot.requested)
+                queuedId=job.id
                 ExportForegroundService.start(context, job.id)
                 _state.value = _state.value.copy(message = "Export started. You can leave this screen while Android allows the active export service to run.")
             }.onFailure {
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    queuedId?.let { jobId -> repository.updateJob(jobId,ExportJobStatus.FAILED,0f,ExportFailureCode.UNKNOWN,"Android could not start the export service. Open VideoFlow and retry.") }
+                }
                 _state.value = _state.value.copy(message = "VideoFlow could not start the export.")
             }
+            _state.value=_state.value.copy(starting=false)
         }
     }
 
     fun cancelActiveExport() {
-        smartCopyEngine.cancel()
-        viewModelScope.launch { coordinator.cancel() }
+        val jobId=state.value.activeJob?.id ?: return
+        viewModelScope.launch { coordinator.cancel(jobId) }
     }
 
     fun clearMessage() {

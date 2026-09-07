@@ -98,7 +98,7 @@ interface ExportDao {
         failureMessage: String?
     )
 
-    @Query("UPDATE export_jobs SET status = 'INTERRUPTED', failureCode = 'UNKNOWN', failureMessage = :message, completedAt = :now WHERE status IN ('PREPARING','RENDERING','FINALIZING','VALIDATING')")
+    @Query("UPDATE export_jobs SET status = 'INTERRUPTED', failureCode = 'UNKNOWN', failureMessage = :message, completedAt = :now WHERE createdAt < :now AND status IN ('QUEUED','PREPARING','RENDERING','FINALIZING','VALIDATING')")
     suspend fun markInterruptedJobs(now: Long, message: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

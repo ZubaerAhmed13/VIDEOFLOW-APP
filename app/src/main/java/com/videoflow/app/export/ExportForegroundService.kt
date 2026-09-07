@@ -21,45 +21,102 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.channels.Channel
+import com.videoflow.app.data.export.ExportRepository
+import com.videoflow.app.domain.export.ExportFailureCode
 
 @AndroidEntryPoint
 class ExportForegroundService : Service() {
     @Inject lateinit var coordinator: ExportCoordinator
+    @Inject lateinit var repository: ExportRepository
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var activeJobId: String? = null
+    private val requests=Channel<String>(16)
+    private val pending=linkedSetOf<String>()
+    private var worker: Job?=null
+    private var latestStartId=0
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        worker=serviceScope.launch {
+            try {
+                for(jobId in requests) {
+                    activeJobId=jobId
+                    val status=coordinator.execute(jobId) { state, progress -> updateNotification(state,progress) }
+                    if(status==ExportJobStatus.COMPLETED) updateNotification(status,1f,"Export completed")
+                    pending.remove(jobId)
+                    activeJobId=null
+                    if(pending.isEmpty()) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelfResult(latestStartId)
+                    }
+                }
+            } finally {
+                // Queue ownership remains in this service; interrupted queued work must not look active.
+                val interrupted=pending.toList()
+                withContext(NonCancellable + Dispatchers.IO) {
+                    interrupted.forEach { id ->
+                        val job=repository.getJob(id)
+                        if(job?.status in setOf(ExportJobStatus.QUEUED,ExportJobStatus.PREPARING,ExportJobStatus.RENDERING,ExportJobStatus.FINALIZING,ExportJobStatus.VALIDATING))
+                            repository.updateJob(id,ExportJobStatus.INTERRUPTED,job?.progress ?: 0f,ExportFailureCode.CANCELLED,
+                                "Android stopped the export service. Restart export to recover validated checkpoints where supported.")
+                    }
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_CANCEL) {
-            updateNotification(ExportJobStatus.RENDERING, 0f, "Cancelling export…")
-            serviceScope.launch { coordinator.cancel() }
+        latestStartId=startId
+        val jobId=intent?.getStringExtra(EXTRA_JOB_ID)
+        if(intent?.action==ACTION_CANCEL) {
+            if(jobId!=null) serviceScope.launch {
+                if(jobId==activeJobId) {
+                    updateNotification(ExportJobStatus.RENDERING,0f,"Cancelling export…")
+                    coordinator.cancel(jobId)
+                } else if(jobId in pending) repository.updateJob(jobId,ExportJobStatus.CANCELLED,0f,ExportFailureCode.CANCELLED,"Queued export cancelled.")
+            }
             return START_NOT_STICKY
         }
-
-        val jobId = intent?.getStringExtra(EXTRA_JOB_ID) ?: return START_NOT_STICKY
-        activeJobId = jobId
-        startAsForeground(jobId, ExportJobStatus.PREPARING, 0f, "Preparing native export…")
-        serviceScope.launch {
-            val finalStatus = coordinator.execute(jobId) { status, progress ->
-                updateNotification(status, progress)
+        if(jobId==null) { if(pending.isEmpty()) stopSelf(startId); return START_NOT_STICKY }
+        if(jobId in pending) return START_NOT_STICKY
+        if(activeJobId==null) {
+            try { startAsForeground(jobId,ExportJobStatus.PREPARING,0f,"Preparing native export…") }
+            catch(error: RuntimeException) {
+                serviceScope.launch {
+                    try { repository.updateJob(jobId,ExportJobStatus.FAILED,0f,ExportFailureCode.UNKNOWN,
+                        "Android could not start background export. Keep VideoFlow open and try again after other processing finishes.") }
+                    finally { stopSelf(startId) }
+                }
+                return START_NOT_STICKY
             }
-            if (finalStatus == ExportJobStatus.COMPLETED) {
-                updateNotification(finalStatus, 1f, "Export completed")
-            }
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf(startId)
+        }
+        pending.add(jobId)
+        if(requests.trySend(jobId).isFailure) {
+            pending.remove(jobId)
+            serviceScope.launch { repository.updateJob(jobId,ExportJobStatus.FAILED,0f,ExportFailureCode.UNKNOWN,
+                "The export queue is full. Wait for an active export to finish, then try again.") }
         }
         return START_NOT_STICKY
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android 15 allows only a few seconds to stop. Coroutine cleanup retains validated work.
+        worker?.cancel(CancellationException("Android background media-processing time allowance ended"))
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        requests.close()
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -68,6 +125,8 @@ class ExportForegroundService : Service() {
         val notification = buildNotification(jobId, status, progress, text)
         if (Build.VERSION.SDK_INT >= 35) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+        } else if(Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIFICATION_ID,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }

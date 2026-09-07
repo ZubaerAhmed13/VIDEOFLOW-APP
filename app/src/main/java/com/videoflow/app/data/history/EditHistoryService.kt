@@ -15,6 +15,7 @@ import com.videoflow.app.domain.editor.TextOverlay
 import com.videoflow.app.domain.editor.TimelineClip
 import com.videoflow.app.domain.editor.TimelineTrack
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
@@ -112,6 +113,7 @@ class EditHistoryService @Inject constructor(
     private val db: VideoFlowDatabase,
     private val aiWatermarkRepository: AiWatermarkRepository
 ) {
+    private val replayMutex=kotlinx.coroutines.sync.Mutex()
     private val undo = ArrayDeque<HistoryEntry>()
     private val redo = ArrayDeque<HistoryEntry>()
     private val _state = MutableStateFlow(HistoryState())
@@ -120,6 +122,7 @@ class EditHistoryService @Inject constructor(
     private var lastCoalesceKey: String? = null
     private var lastCoalesceAtMs: Long = 0L
 
+    @Synchronized
     fun activateProject(projectId: String) {
         if (activeProjectId != projectId) {
             activeProjectId = projectId
@@ -131,11 +134,13 @@ class EditHistoryService @Inject constructor(
         }
     }
 
+    @Synchronized
     fun record(entry: HistoryEntry) {
         append(entry)
         lastCoalesceKey = null
     }
 
+    @Synchronized
     fun recordCoalesced(entry: HistoryEntry, key: String, nowMs: Long = System.currentTimeMillis()) {
         activateProject(entry.projectId)
         val previous = undo.lastOrNull()
@@ -156,23 +161,35 @@ class EditHistoryService @Inject constructor(
         }
     }
 
-    suspend fun undo(): String? = withContext(Dispatchers.IO) {
-        val entry = undo.removeLastOrNull() ?: return@withContext null
-        apply(entry, before = true)
-        redo.addLast(entry)
-        lastCoalesceKey = null
-        publish()
-        entry.label
+    suspend fun undo(): String? = replayMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val entry=synchronized(this@EditHistoryService) { undo.lastOrNull() } ?: return@withContext null
+            apply(entry,before=true)
+            synchronized(this@EditHistoryService) {
+                if(activeProjectId != entry.projectId) return@synchronized
+                if(undo.lastOrNull()===entry) { undo.removeLast(); redo.addLast(entry) }
+                else { undo.remove(entry); redo.clear() }
+                lastCoalesceKey=null
+                publish()
+            }
+            entry.label
+        }
     }
 
-    suspend fun redo(): String? = withContext(Dispatchers.IO) {
-        val entry = redo.removeLastOrNull() ?: return@withContext null
-        apply(entry, before = false)
-        undo.addLast(entry)
-        while (undo.size > MAX_HISTORY) undo.removeFirst()
-        lastCoalesceKey = null
-        publish()
-        entry.label
+    suspend fun redo(): String? = replayMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val entry=synchronized(this@EditHistoryService) { redo.lastOrNull() } ?: return@withContext null
+            apply(entry,before=false)
+            synchronized(this@EditHistoryService) {
+                if(activeProjectId != entry.projectId) return@synchronized
+                redo.remove(entry)
+                undo.addLast(entry)
+                while(undo.size>MAX_HISTORY) undo.removeFirst()
+                lastCoalesceKey=null
+                publish()
+            }
+            entry.label
+        }
     }
 
     private fun append(entry: HistoryEntry) {

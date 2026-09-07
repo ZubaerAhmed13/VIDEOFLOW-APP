@@ -40,6 +40,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.Slider
+import com.videoflow.app.domain.editor.TimelineViewport
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -73,7 +78,7 @@ import com.videoflow.app.util.formatDurationUs
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
-private val TrackHeaderWidth = 84.dp
+private val TrackHeaderWidth = 96.dp
 private val TimelineTrimHandleWidth = 18.dp
 
 @Composable
@@ -108,13 +113,37 @@ fun TimelineWorkspace(
     val horizontal = rememberScrollState()
     val vertical = rememberScrollState()
     val safeDuration = maxOf(durationUs, 5_000_000L)
-    val totalWidth = timelineWidth(safeDuration, pixelsPerSecond)
+    var originUs by rememberSaveable { mutableLongStateOf(0L) }
+    val windowDurationUs = minOf(safeDuration,TimelineViewport.durationUs(pixelsPerSecond))
+    val windowEndUs = minOf(safeDuration,originUs+windowDurationUs)
+    val totalWidth = timelineWidth(windowDurationUs, pixelsPerSecond)
+    val density = LocalDensity.current
+    fun zoomTo(next: Float, anchorDp: Double = with(density) { horizontal.value.toDp().value.toDouble() } + 120.0) {
+        originUs=TimelineViewport.zoomOrigin(originUs,anchorDp,pixelsPerSecond,next,safeDuration)
+        onZoom(next)
+    }
+    LaunchedEffect(playheadUs, pixelsPerSecond, safeDuration) {
+        if(playheadUs < originUs || playheadUs >= windowEndUs) {
+            originUs=TimelineViewport.centeredOrigin(playheadUs,pixelsPerSecond,safeDuration)
+            horizontal.scrollTo(0)
+        }
+    }
     val hasTimelineItems = clips.isNotEmpty() || textOverlays.isNotEmpty() || imageOverlays.isNotEmpty()
 
     Surface(modifier = modifier, color = VideoFlowEditorColors.TimelineBackground) {
         Column(Modifier.fillMaxSize()) {
+            if(safeDuration>windowDurationUs) {
+                Slider(value=(playheadUs.toDouble()/safeDuration).toFloat().coerceIn(0f,1f),
+                    onValueChange={ fraction ->
+                        val time=(fraction.toDouble()*safeDuration).roundToLong()
+                        originUs=TimelineViewport.centeredOrigin(time,pixelsPerSecond,safeDuration)
+                        onSeek(time)
+                    }, modifier=Modifier.fillMaxWidth().height(48.dp).semantics {
+                        contentDescription="Navigate whole project, playhead ${formatDurationUs(playheadUs)}"
+                    })
+            }
             Row(
-                Modifier.fillMaxWidth().height(34.dp),
+                Modifier.fillMaxWidth().height(48.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
@@ -123,14 +152,14 @@ fun TimelineWorkspace(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     IconButton(
-                        onClick = { onZoom((pixelsPerSecond / 1.3f).coerceAtLeast(12f)) },
-                        modifier = Modifier.width(34.dp)
+                        onClick = { zoomTo((pixelsPerSecond / 1.3f).coerceAtLeast(12f)) },
+                        modifier = Modifier.width(48.dp)
                     ) {
                         Icon(Icons.Default.ZoomOut, contentDescription = "Zoom out timeline", tint = VideoFlowEditorColors.SecondaryText)
                     }
                     IconButton(
-                        onClick = { onZoom((pixelsPerSecond * 1.3f).coerceAtMost(240f)) },
-                        modifier = Modifier.width(34.dp)
+                        onClick = { zoomTo((pixelsPerSecond * 1.3f).coerceAtMost(240f)) },
+                        modifier = Modifier.width(48.dp)
                     ) {
                         Icon(Icons.Default.ZoomIn, contentDescription = "Zoom in timeline", tint = VideoFlowEditorColors.SecondaryText)
                     }
@@ -141,14 +170,14 @@ fun TimelineWorkspace(
                         .fillMaxHeight()
                         .horizontalScroll(horizontal)
                         .pointerInput(pixelsPerSecond) {
-                            detectTransformGestures { _, _, zoom, _ ->
+                            detectTransformGestures { centroid, _, zoom, _ ->
                                 if (zoom.isFinite() && zoom > 0f) {
-                                    onZoom((pixelsPerSecond * zoom).coerceIn(12f, 240f))
+                                    zoomTo((pixelsPerSecond * zoom).coerceIn(12f, 240f), with(density) { (horizontal.value+centroid.x).toDp().value.toDouble() })
                                 }
                             }
                         }
                 ) {
-                    TimelineRuler(safeDuration, pixelsPerSecond, totalWidth)
+                    TimelineRuler(windowEndUs, pixelsPerSecond, totalWidth, originUs)
                 }
             }
 
@@ -166,10 +195,12 @@ fun TimelineWorkspace(
                         .weight(1f)
                         .verticalScroll(vertical)
                 ) {
-                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool)
+                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)
                     tracks.sortedBy { it.orderIndex }.forEach { track ->
                         TrackRow(
                             track = track,
+                            originUs = originUs,
+                            windowEndUs = windowEndUs,
                             clips = clips.filter { it.trackId == track.id },
                             textOverlays = textOverlays.filter { it.trackId == track.id },
                             imageOverlays = imageOverlays.filter { it.trackId == track.id },
@@ -203,6 +234,8 @@ fun TimelineWorkspace(
 @Composable
 private fun TrackRow(
     track: TimelineTrack,
+    originUs: Long,
+    windowEndUs: Long,
     clips: List<TimelineClip>,
     textOverlays: List<TextOverlay>,
     imageOverlays: List<ImageOverlay>,
@@ -227,7 +260,7 @@ private fun TrackRow(
     onTrackSettings: () -> Unit
 ) {
     val density = LocalDensity.current
-    val laneHeight = 78.dp
+    val laneHeight = 104.dp
     Row(Modifier.fillMaxWidth().height(laneHeight)) {
         Surface(color = VideoFlowEditorColors.TimelineTrackHeader, modifier = Modifier.width(TrackHeaderWidth).fillMaxHeight()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -239,13 +272,13 @@ private fun TrackRow(
                         maxLines = 1,
                         modifier = Modifier.weight(1f).padding(start = 7.dp)
                     )
-                    IconButton(onClick = onTrackSettings, modifier = Modifier.width(28.dp).height(28.dp)) {
+                    IconButton(onClick = onTrackSettings, modifier = Modifier.width(48.dp).height(48.dp)) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings", tint = VideoFlowEditorColors.SecondaryText)
                     }
                 }
                 Row {
                     if (track.type == TrackType.AUDIO) {
-                        IconButton(onClick = onToggleMute, modifier = Modifier.width(30.dp).height(30.dp)) {
+                        IconButton(onClick = onToggleMute, modifier = Modifier.width(48.dp).height(48.dp)) {
                             Icon(
                                 if (track.muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
                                 contentDescription = if (track.muted) "Unmute ${track.name}" else "Mute ${track.name}",
@@ -253,7 +286,7 @@ private fun TrackRow(
                             )
                         }
                     } else {
-                        IconButton(onClick = onToggleVisible, modifier = Modifier.width(30.dp).height(30.dp)) {
+                        IconButton(onClick = onToggleVisible, modifier = Modifier.width(48.dp).height(48.dp)) {
                             Icon(
                                 if (track.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = if (track.visible) "Hide ${track.name}" else "Show ${track.name}",
@@ -261,7 +294,7 @@ private fun TrackRow(
                             )
                         }
                     }
-                    IconButton(onClick = onToggleLock, modifier = Modifier.width(30.dp).height(30.dp)) {
+                    IconButton(onClick = onToggleLock, modifier = Modifier.width(48.dp).height(48.dp)) {
                         Icon(
                             if (track.locked) Icons.Default.Lock else Icons.Default.LockOpen,
                             contentDescription = if (track.locked) "Unlock ${track.name}" else "Lock ${track.name}",
@@ -274,6 +307,8 @@ private fun TrackRow(
 
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
             val viewportWidthPx = with(density) { maxWidth.toPx() }
+            val visibleStart = TimelineViewport.timeAt(originUs,with(density) { horizontal.value.toDp().value.toDouble() },pixelsPerSecond)
+            val visibleEnd = minOf(windowEndUs,TimelineViewport.timeAt(visibleStart,maxWidth.value.toDouble(),pixelsPerSecond))
             Box(
                 Modifier
                     .fillMaxSize()
@@ -289,13 +324,15 @@ private fun TrackRow(
                             detectTapGestures { offset ->
                                 val xDp = with(density) { offset.x.toDp().value }
                                 onClearSelection()
-                                onSeek(((xDp / pixelsPerSecond) * 1_000_000f).roundToLong().coerceAtLeast(0L))
+                                onSeek(TimelineViewport.timeAt(originUs,xDp.toDouble(),pixelsPerSecond).coerceIn(originUs,windowEndUs))
                             }
                         }
                 ) {
-                    clips.forEach { clip ->
+                    clips.filter { TimelineViewport.intersects(it.timelineStartUs,it.timelineStartUs+it.timelineDurationUs,visibleStart,visibleEnd) }.forEach { clip ->
                         TimelineClipCard(
                             clip = clip,
+                            originUs = originUs,
+                            windowEndUs = windowEndUs,
                             name = mediaNames[clip.assetId] ?: "Clip",
                             selected = selection == EditorSelection.Clip(clip.id),
                             pixelsPerSecond = pixelsPerSecond,
@@ -311,30 +348,30 @@ private fun TrackRow(
                             onTrimEnd = { onTrimClipEnd(clip.id, it) }
                         )
                     }
-                    textOverlays.forEach { overlay ->
+                    textOverlays.filter { TimelineViewport.intersects(it.timelineStartUs,it.timelineEndUs,visibleStart,visibleEnd) }.forEach { overlay ->
                         OverlayBlock(
                             label = overlay.content.ifBlank { "Text" },
-                            startUs = overlay.timelineStartUs,
-                            endUs = overlay.timelineEndUs,
+                            startUs = maxOf(overlay.timelineStartUs,originUs)-originUs,
+                            endUs = minOf(overlay.timelineEndUs,windowEndUs)-originUs,
                             pixelsPerSecond = pixelsPerSecond,
                             selected = selection == EditorSelection.TextOverlay(overlay.id),
                             keyframes = keyframes.filter { it.ownerId == overlay.id },
                             onSelect = { onSelect(EditorSelection.TextOverlay(overlay.id)) }
                         )
                     }
-                    imageOverlays.forEach { overlay ->
+                    imageOverlays.filter { TimelineViewport.intersects(it.timelineStartUs,it.timelineEndUs,visibleStart,visibleEnd) }.forEach { overlay ->
                         OverlayBlock(
                             label = mediaNames[overlay.assetId] ?: "Image",
-                            startUs = overlay.timelineStartUs,
-                            endUs = overlay.timelineEndUs,
+                            startUs = maxOf(overlay.timelineStartUs,originUs)-originUs,
+                            endUs = minOf(overlay.timelineEndUs,windowEndUs)-originUs,
                             pixelsPerSecond = pixelsPerSecond,
                             selected = selection == EditorSelection.ImageOverlay(overlay.id),
                             keyframes = keyframes.filter { it.ownerId == overlay.id },
                             onSelect = { onSelect(EditorSelection.ImageOverlay(overlay.id)) }
                         )
                     }
-                    val playheadX = timeWidth(playheadUs, pixelsPerSecond)
-                    Box(
+                    val playheadX = timeWidth(playheadUs-originUs, pixelsPerSecond)
+                    if(playheadUs in originUs..windowEndUs) Box(
                         Modifier
                             .offset(x = playheadX)
                             .width(2.dp)
@@ -351,6 +388,8 @@ private fun TrackRow(
 @Composable
 private fun TimelineClipCard(
     clip: TimelineClip,
+    originUs: Long,
+    windowEndUs: Long,
     name: String,
     selected: Boolean,
     pixelsPerSecond: Float,
@@ -369,10 +408,12 @@ private fun TimelineClipCard(
     var movePx by remember(clip.id) { mutableFloatStateOf(0f) }
     var startTrimPx by remember(clip.id) { mutableFloatStateOf(0f) }
     var endTrimPx by remember(clip.id) { mutableFloatStateOf(0f) }
-    val baseWidthDp = timeWidth(clip.timelineDurationUs, pixelsPerSecond).coerceAtLeast(72.dp)
+    val shownStartUs=maxOf(originUs,clip.timelineStartUs)
+    val shownEndUs=minOf(windowEndUs,clip.timelineStartUs+clip.timelineDurationUs)
+    val baseWidthDp = timeWidth(shownEndUs-shownStartUs, pixelsPerSecond).coerceAtLeast(72.dp)
     val baseWidthPx = with(density) { baseWidthDp.toPx() }
     val minWidthPx = with(density) { 48.dp.toPx() }
-    val baseStartPx = with(density) { timeWidth(clip.timelineStartUs, pixelsPerSecond).toPx() }
+    val baseStartPx = with(density) { timeWidth(shownStartUs-originUs, pixelsPerSecond).toPx() }
     val visualWidthPx = (baseWidthPx + endTrimPx - startTrimPx).coerceAtLeast(minWidthPx)
     val visualWidthDp = with(density) { visualWidthPx.toDp() }
     val visualStartDp = with(density) { (baseStartPx + startTrimPx).toDp() }
@@ -381,7 +422,7 @@ private fun TimelineClipCard(
 
     fun timelineDeltaUs(deltaPx: Float): Long {
         val deltaDp = with(density) { deltaPx.toDp().value }
-        return ((deltaDp / pixelsPerSecond) * 1_000_000f).roundToLong()
+        return ((deltaDp.toDouble() / pixelsPerSecond) * 1_000_000.0).roundToLong()
     }
 
     fun autoScroll(pointerTimelinePx: Float) {
@@ -430,19 +471,19 @@ private fun TimelineClipCard(
         ) {
             Column(Modifier.padding(horizontal = if (selected) 20.dp else 5.dp, vertical = 5.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    CachedThumbnailPreview(thumbnail, Modifier.width(34.dp).height(24.dp))
+                    CachedThumbnailPreview(thumbnail, Modifier.width(48.dp).height(24.dp))
                     Spacer(Modifier.width(4.dp))
                     Text(name, color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                 }
                 if (waveform != null) {
                     WaveformPreview(waveform, Modifier.fillMaxWidth().height(22.dp), VideoFlowEditorColors.SelectionAccent)
                 }
-                KeyframeStrip(keyframes, clip.timelineDurationUs, Modifier.fillMaxWidth().height(12.dp))
+                KeyframeStrip(keyframes.filter { it.timeUs in (shownStartUs-clip.timelineStartUs)..(shownEndUs-clip.timelineStartUs) }.map { it.copy(timeUs=it.timeUs-(shownStartUs-clip.timelineStartUs)) }, shownEndUs-shownStartUs, Modifier.fillMaxWidth().height(12.dp))
             }
         }
 
         if (selected && !locked) {
-            TimelineTrimHandle(
+            if(shownStartUs==clip.timelineStartUs) TimelineTrimHandle(
                 description = "Trim clip start",
                 modifier = Modifier.align(Alignment.CenterStart),
                 onDrag = { amount, pointerLocalX ->
@@ -456,7 +497,7 @@ private fun TimelineClipCard(
                     if (deltaUs != 0L) onTrimStart(deltaUs)
                 }
             )
-            TimelineTrimHandle(
+            if(shownEndUs==clip.timelineStartUs+clip.timelineDurationUs) TimelineTrimHandle(
                 description = "Trim clip end",
                 modifier = Modifier.align(Alignment.CenterEnd),
                 onDrag = { amount, pointerLocalX ->
@@ -536,21 +577,22 @@ private fun OverlayBlock(
 }
 
 @Composable
-private fun TimelineRuler(durationUs: Long, pixelsPerSecond: Float, width: Dp) {
+private fun TimelineRuler(durationUs: Long, pixelsPerSecond: Float, width: Dp, originUs: Long) {
     val intervalSeconds = when {
         pixelsPerSecond < 28f -> 10
         pixelsPerSecond < 65f -> 5
         else -> 1
     }
-    val ticks = ((durationUs / 1_000_000L) / intervalSeconds + 2L).coerceAtMost(500L).toInt()
-    Box(Modifier.width(width).height(34.dp).clearAndSetSemantics { }) {
+    val firstSecond = (originUs/1_000_000L/intervalSeconds)*intervalSeconds
+    val ticks = (((durationUs-originUs) / 1_000_000L) / intervalSeconds + 2L).coerceAtMost(1500L).toInt()
+    Box(Modifier.width(width).height(48.dp).clearAndSetSemantics { }) {
         repeat(ticks) { index ->
-            val second = index * intervalSeconds
+            val second = firstSecond+index * intervalSeconds
             Text(
-                "${second}s",
+                formatDurationUs(second*1_000_000L),
                 color = VideoFlowEditorColors.SecondaryText,
                 style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.offset(x = (second * pixelsPerSecond).dp, y = 7.dp)
+                modifier = Modifier.offset(x = TimelineViewport.positionDp(second*1_000_000L,originUs,pixelsPerSecond).toFloat().dp, y = 7.dp)
             )
         }
     }
@@ -580,9 +622,9 @@ private fun KeyframeStrip(frames: List<Keyframe>, ownerDurationUs: Long, modifie
 }
 
 private fun timelineWidth(durationUs: Long, pixelsPerSecond: Float): Dp {
-    val calculated = ((durationUs.toDouble() / 1_000_000.0) * pixelsPerSecond).toFloat().coerceAtMost(50_000f)
+    val calculated = ((durationUs.toDouble() / 1_000_000.0) * pixelsPerSecond).toFloat().coerceAtMost(12_000f)
     return calculated.coerceAtLeast(360f).dp
 }
 
 private fun timeWidth(durationUs: Long, pixelsPerSecond: Float): Dp =
-    ((durationUs.toDouble() / 1_000_000.0) * pixelsPerSecond).toFloat().coerceIn(0f, 50_000f).dp
+    ((durationUs.toDouble() / 1_000_000.0) * pixelsPerSecond).toFloat().coerceIn(0f, 12_000f).dp

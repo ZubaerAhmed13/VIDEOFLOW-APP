@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.videoflow.app.ui.editor.hostActivity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -25,18 +27,20 @@ import java.util.UUID
 fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip: TimelineClip, asset: MediaAsset,
     onClose: () -> Unit, onApplied: () -> Unit, vm: ProfessionalToolsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
+    val activity=androidx.compose.ui.platform.LocalContext.current.hostActivity()
     val previewHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .25f).dp.coerceIn(72.dp,220.dp)
-    var selectedId by remember(tool) { mutableStateOf((tool as? ProfessionalEditorTool.Effects)?.effectId) }
-    var positionUs by remember(tool) { mutableLongStateOf(0L) }
-    var playing by remember(tool) { mutableStateOf(false) }
-    var before by remember(tool) { mutableStateOf(false) }
-    var mute by remember(tool) { mutableStateOf(false) }
-    var category by remember(tool) { mutableStateOf("Basic") }
-    var adjustment by remember(tool) { mutableStateOf(Adjustment.EXPOSURE) }
-    LaunchedEffect(projectId, tool) { vm.open(projectId) }
+    var selectedId by rememberSaveable(tool) { mutableStateOf((tool as? ProfessionalEditorTool.Effects)?.effectId) }
+    var positionUs by rememberSaveable(tool) { mutableLongStateOf(0L) }
+    var playing by rememberSaveable(tool) { mutableStateOf(false) }
+    var before by rememberSaveable(tool) { mutableStateOf(false) }
+    var mute by rememberSaveable(tool) { mutableStateOf(false) }
+    var category by rememberSaveable(tool) { mutableStateOf("Basic") }
+    var adjustment by rememberSaveable(tool) { mutableStateOf(Adjustment.EXPOSURE) }
+    LaunchedEffect(projectId, tool) { vm.open(projectId,tool.toString()) }
+    var positioned by rememberSaveable(tool) { mutableStateOf(false) }
     LaunchedEffect(state.loaded,tool) {
-        if(state.loaded) (tool as? ProfessionalEditorTool.Effects)?.effectId?.let { id ->
-            state.draft.effects.firstOrNull { it.id==id }?.let { positionUs=it.startUs.coerceAtMost(clip.timelineDurationUs-1L) }
+        if(state.loaded && !positioned) (tool as? ProfessionalEditorTool.Effects)?.effectId?.let { id ->
+            state.draft.effects.firstOrNull { it.id==id }?.let { positionUs=it.startUs.coerceAtMost(clip.timelineDurationUs-1L); positioned=true }
         }
     }
     LaunchedEffect(playing) {
@@ -49,7 +53,7 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
             if(positionUs>=clip.timelineDurationUs-1L) playing=false
         }
     }
-    DisposableEffect(tool) { onDispose { vm.cancel() } }
+    DisposableEffect(tool) { onDispose { if(activity?.isChangingConfigurations != true) vm.cancel() } }
     val isAudio = tool is ProfessionalEditorTool.AudioExtract
     val isEnhance = tool is ProfessionalEditorTool.Enhance
     val title = if (isAudio) "Audio" else if (isEnhance) "Enhance" else "Effects"

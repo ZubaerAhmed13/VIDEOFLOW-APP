@@ -54,10 +54,10 @@ fun Step4WatermarkEditorRoute(
     val asset = project?.mediaAssets?.firstOrNull { it.id == selected?.assetId }
     val isVideoSelection = selected != null && asset != null &&
         (asset.videoCodecMime != null || asset.mimeType?.startsWith("video/") == true)
-    var activeTool by androidx.compose.runtime.remember { mutableStateOf<com.videoflow.app.ui.editor.ProfessionalEditorTool?>(null) }
+    var activeTool by rememberSaveable { mutableStateOf<com.videoflow.app.ui.editor.ProfessionalEditorTool?>(null) }
 
     LaunchedEffect(selectedId, isVideoSelection) {
-        if (!isVideoSelection || activeTool?.clipId != selectedId) activeTool = null
+        if (currentEditor != null && project != null && (!isVideoSelection || activeTool?.clipId != selectedId)) activeTool = null
     }
 
     Box(Modifier.fillMaxSize()) {
