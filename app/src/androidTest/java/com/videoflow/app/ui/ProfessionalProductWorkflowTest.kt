@@ -170,7 +170,8 @@ class ProfessionalProductWorkflowTest {
     }
     private fun waitForPreviewChange(before: IntArray) {
         rule.waitUntil(30_000) {
-            pixelDifference(before,previewPixels())>3.0
+            val after=previewPixels()
+            visiblePixels(after) && pixelDifference(before,after)>3.0
         }
     }
     private fun stablePreviewPixels(): IntArray {
@@ -178,8 +179,7 @@ class ProfessionalProductWorkflowTest {
         var stable=0
         rule.waitUntil(30_000) {
             val current=previewPixels()
-            val visible=current.sumOf { pixel -> listOf(0,8,16).sumOf { shift -> (pixel ushr shift) and 255 } }.toDouble()/(current.size*3)>20.0
-            stable=if(visible && previous?.let { pixelDifference(it,current)<.5 }==true) stable+1 else 0
+            stable=if(visiblePixels(current) && previous?.let { pixelDifference(it,current)<.5 }==true) stable+1 else 0
             previous=current
             stable>=2
         }
@@ -190,6 +190,9 @@ class ProfessionalProductWorkflowTest {
             kotlin.math.abs(((before[index] ushr shift) and 255)-((after[index] ushr shift) and 255))
         }
     }.toDouble()/(before.size*3)
+    private fun visiblePixels(pixels: IntArray): Boolean = pixels.sumOf { pixel ->
+        listOf(0,8,16).sumOf { shift -> (pixel ushr shift) and 255 }
+    }.toDouble()/(pixels.size*3)>20.0
     private fun screenshot(label: String) {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val file=File(context.getExternalFilesDir(null),"professional-screenshots/$label.png")
