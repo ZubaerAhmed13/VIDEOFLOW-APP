@@ -79,10 +79,13 @@ class ProfessionalProductWorkflowTest {
 
             rule.runOnIdle { tool=ProfessionalEditorTool.Effects(clip.id) }
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
+            waitForVideoFrame()
+            val originalPreview=previewPixels()
             rule.onNodeWithText("Film",substring=false).performScrollTo().performClick()
             rule.onNodeWithText("Sepia").performScrollTo().performClick()
             assertTrue(ai.visualEdits.load(id).effects.isEmpty()) // Draft does not persist on selection.
             waitForVideoFrame()
+            waitForPreviewChange(originalPreview)
             screenshot("effects")
             rule.onNodeWithText("Done").performClick()
             rule.waitUntil(30_000) { tool==null }
@@ -90,9 +93,12 @@ class ProfessionalProductWorkflowTest {
 
             rule.runOnIdle { tool=ProfessionalEditorTool.Enhance(clip.id) }
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
+            waitForVideoFrame()
+            val beforeExposure=previewPixels()
             rule.onNodeWithContentDescription("Exposure adjustment").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.2f) }
             assertEquals(.2f,toolsVm.state.value.draft.enhance.getValue(clip.id)[Adjustment.EXPOSURE],.001f)
             waitForVideoFrame()
+            waitForPreviewChange(beforeExposure)
             screenshot("enhance")
             rule.onNodeWithText("Done").performClick()
             rule.waitUntil(30_000) { tool==null }
@@ -144,6 +150,28 @@ class ProfessionalProductWorkflowTest {
             rule.onAllNodesWithTag("native-video-preview").fetchSemanticsNodes().any {
                 it.config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription] == "Video preview ready"
             }
+        }
+    }
+    private fun previewPixels(): IntArray {
+        val bounds=rule.onNodeWithTag("native-video-preview").fetchSemanticsNode().boundsInRoot
+        val bitmap=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            ?: error("Could not capture preview pixels")
+        // Sample well inside the video surface, away from its edges and surrounding controls.
+        // The fixture remains paused, so changing controls alone cannot satisfy this check.
+        return try { IntArray(64) { index ->
+            val x=(bounds.left+bounds.width*(.25f+(index%8)/14f)).toInt().coerceIn(0,bitmap.width-1)
+            val y=(bounds.top+bounds.height*(.25f+(index/8)/14f)).toInt().coerceIn(0,bitmap.height-1)
+            bitmap.getPixel(x,y)
+        } } finally { bitmap.recycle() }
+    }
+    private fun waitForPreviewChange(before: IntArray) {
+        rule.waitUntil(30_000) {
+            val after=previewPixels()
+            before.indices.sumOf { index ->
+                listOf(0,8,16).sumOf { shift ->
+                    kotlin.math.abs(((before[index] ushr shift) and 255)-((after[index] ushr shift) and 255))
+                }
+            }.toDouble()/(before.size*3)>3.0
         }
     }
     private fun screenshot(label: String) {
