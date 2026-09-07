@@ -77,7 +77,7 @@ class ExportForegroundService : Service() {
                 withContext(NonCancellable + Dispatchers.IO) {
                     interrupted.forEach { id ->
                         val job = repository.getJob(id)
-                        if (job?.status in setOf(
+                        if (job != null && job.status in setOf(
                                 ExportJobStatus.QUEUED,
                                 ExportJobStatus.PREPARING,
                                 ExportJobStatus.RENDERING,
