@@ -12,7 +12,7 @@ import androidx.media3.exoplayer.video.VideoFrameReleaseControl
 import androidx.media3.exoplayer.video.VideoRendererEventListener
 
 /** Native preview renderer with Media3's bounded last-frame cache for paused effect changes. */
-@androidx.annotation.OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(UnstableApi::class, androidx.media3.common.util.ExperimentalApi::class)
 internal class EditorPreviewRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
     override fun buildVideoRenderers(
         context: Context,
