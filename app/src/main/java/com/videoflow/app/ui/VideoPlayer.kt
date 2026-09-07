@@ -57,7 +57,7 @@ fun NativeVideoPlayer(
     // Player identity follows the actual preview source only. Playhead/UI recomposition must not
     // recreate the decoder/surface lifecycle.
     val player = remember(uri) {
-        ExoPlayer.Builder(context).build().apply {
+        ExoPlayer.Builder(context, EditorPreviewRenderersFactory(context)).build().apply {
             setMediaItem(MediaItem.fromUri(mediaUri))
             setVideoEffects(videoEffects)
             val frameHandler=android.os.Handler(android.os.Looper.getMainLooper())
