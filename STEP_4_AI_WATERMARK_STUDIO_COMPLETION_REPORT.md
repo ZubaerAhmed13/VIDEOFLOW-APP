@@ -46,7 +46,7 @@ The Step-4 API-35 workflow contains a dedicated `Step4AiFinalExportInstrumentedT
 
 ## AI Undo/Redo integration
 
-AI mutations now use the same `EditHistoryService` stack as other editor operations.
+AI mutations use the same `EditHistoryService` stack as other editor operations.
 
 Covered mutations:
 
@@ -56,11 +56,53 @@ Covered mutations:
 - Disable AI Watermark
 - Remove AI Watermark
 
-Each history record stores deterministic before/after project-sidecar snapshots. Undo restores the exact previous sidecar state; Redo restores the exact following state. The AI sidecar is not falsely wrapped inside a Room transaction. Instead, its own atomic file replacement is performed first and the project metadata touch uses a real Room transaction.
+Each history record stores deterministic before/after project-sidecar states. Undo restores the exact previous sidecar state; Redo restores the exact following state. The AI sidecar is not falsely wrapped inside a Room-only transaction. Its own atomic file replacement remains authoritative for AI persistence.
 
-`AiWatermarkRepository` emits local change notifications after successful atomic replacement, allowing an already-open Watermark Studio to refresh after editor Undo/Redo.
+`AiWatermarkRepository` emits local change notifications after successful replacement/removal, allowing an already-open Watermark Studio to refresh after editor Undo/Redo.
 
-The API-35 runtime suite includes a real sidecar history round trip that performs Apply state → Undo → exact previous state → Redo → exact applied state.
+The API-35 runtime suite contains a real sidecar history round trip that performs Apply state → Undo → exact previous state → Redo → exact applied state.
+
+## Snapshots include complete AI state
+
+Project snapshots now include Step-4 AI state instead of capturing only Room editor entities.
+
+- Snapshot payload format is **3** for newly created snapshots.
+- The nested `aiWatermark` document uses the same versioned codec as normal `AiWatermarkRepository` persistence.
+- Effect IDs, project/clip ownership, timing, normalized ROI, motion anchors/confidence, context padding, feathering, temporal stability, model ID, and enabled state are all preserved.
+- Restore replaces the current project AI state with the exact snapshot AI state.
+- Legacy format-2 snapshots remain readable. Because format 2 predates AI state, restoring one explicitly clears newer AI effects instead of incorrectly leaking post-snapshot AI edits into the restored project.
+- Restore keeps a pre-restore AI backup and compensates it if the combined Room/sidecar restore fails.
+- Empty AI state removes the sidecar rather than persisting an empty orphan file.
+
+The API-35 runtime suite performs a real format-3 snapshot round trip, mutates the AI state, restores the snapshot and requires exact data-class equality. The same test constructs a legacy format-2 snapshot and proves newer AI state is cleared on restore.
+
+## Project deletion cleans AI sidecar state
+
+Project deletion is now a cross-storage lifecycle operation rather than a Room-row-only delete.
+
+- `ProjectRepository.deleteProject()` delegates to `ProjectDeletionService`.
+- The service captures the exact current AI state, deletes the project sidecar and interrupted atomic-write temp files, then deletes the Room project row.
+- If the database deletion throws after sidecar cleanup, the previous AI state is restored as compensation so a failed project deletion cannot silently destroy editable AI work.
+- Successful deletion leaves neither `<projectId>.json` nor `.<projectId>.json.tmp-*` files under app-private `ai-watermark/projects` storage.
+
+The API-35 runtime suite creates real project AI state plus a simulated interrupted temp file, performs canonical lifecycle deletion, then requires the Room project, sidecar and temp file all to be absent.
+
+## Dependency and model licensing record
+
+`DEPENDENCY_LICENSES.md` has been upgraded from its obsolete Step-1-only note to the current Step-4 dependency/model record.
+
+It now records:
+
+- direct shipped Android dependencies and versions;
+- ONNX Runtime Android `1.29.0` and its MIT upstream license;
+- both exact `g-ronimo/lama` model artifacts, source URLs, byte sizes and SHA-256 values;
+- Apache-2.0 model provenance, including the upstream LaMa project;
+- build/test-only dependencies separately from shipped runtime dependencies;
+- Apache/MIT notice obligations and ONNX Runtime third-party-notice handling;
+- the requirement to archive/review the exact release HEAD's resolved transitive dependency graph before public distribution;
+- the distinction between CI network access and the product's offline/no-network runtime architecture.
+
+A future model/dependency change is incomplete until the code/model catalog, CI checksum source and license record are updated consistently.
 
 ## Moving-ROI final blend correction
 
@@ -103,6 +145,8 @@ The exact-head Step-4 workflow must pass all of the following before automated S
 - exact runtime-bundle checksum verification
 - API-35 local runtime/model/preview/tracking tests
 - API-35 AI Undo/Redo sidecar history test
+- API-35 snapshot AI-state round-trip and legacy-restore test
+- API-35 project-deletion sidecar/temp cleanup test
 - API-35 real FINAL AI export test with `FINAL_AI_EXPORT_CERTIFIED`
 - existing 8 editor/product regression tests
 - Review fresh install
