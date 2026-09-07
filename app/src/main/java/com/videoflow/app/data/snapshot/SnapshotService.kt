@@ -1,6 +1,7 @@
 package com.videoflow.app.data.snapshot
 
 import androidx.room.withTransaction
+import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.data.db.ClipEntity
 import com.videoflow.app.data.db.ImageOverlayEntity
 import com.videoflow.app.data.db.KeyframeEntity
@@ -18,8 +19,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class SnapshotService @Inject constructor(private val db: VideoFlowDatabase) {
+class SnapshotService @Inject constructor(
+    private val db: VideoFlowDatabase,
+    private val aiWatermarkRepository: AiWatermarkRepository
+) {
     suspend fun create(projectId: String, name: String): SnapshotEntity = withContext(Dispatchers.IO) {
+        // Capture the complete AI sidecar with the same canonical codec used by normal AI
+        // persistence. Keeping the sidecar as a nested versioned object avoids codec drift.
+        val aiState = JSONObject(aiWatermarkRepository.exportProjectStateJson(projectId))
         db.withTransaction {
             val settings = db.editorDao().getProjectSettings(projectId) ?: error("Project settings missing")
             val tracks = db.editorDao().getTracks(projectId)
@@ -29,19 +36,20 @@ class SnapshotService @Inject constructor(private val db: VideoFlowDatabase) {
             val ownerIds = clips.map { it.id } + text.map { it.id } + images.map { it.id }
             val keyframes = if (ownerIds.isEmpty()) emptyList() else db.editorDao().getKeyframes(ownerIds)
             val payload = JSONObject()
-                .put("format", 2)
+                .put("format", SNAPSHOT_FORMAT_WITH_AI)
                 .put("settings", settings.toJson())
                 .put("tracks", JSONArray(tracks.map { it.toJson() }))
                 .put("clips", JSONArray(clips.map { it.toJson() }))
                 .put("text", JSONArray(text.map { it.toJson() }))
                 .put("images", JSONArray(images.map { it.toJson() }))
                 .put("keyframes", JSONArray(keyframes.map { it.toJson() }))
+                .put("aiWatermark", aiState)
                 .toString()
             SnapshotEntity(
                 id = UUID.randomUUID().toString(),
                 projectId = projectId,
                 name = name.trim().ifBlank { "Snapshot" },
-                projectFormatVersion = 2,
+                projectFormatVersion = PROJECT_FORMAT_VERSION,
                 payloadJson = payload,
                 createdAt = System.currentTimeMillis()
             ).also { db.snapshotDao().put(it) }
@@ -57,34 +65,71 @@ class SnapshotService @Inject constructor(private val db: VideoFlowDatabase) {
     }
 
     suspend fun restore(snapshotId: String) = withContext(Dispatchers.IO) {
-        db.withTransaction {
-            val snapshot = db.snapshotDao().get(snapshotId) ?: error("Snapshot not found")
-            val root = JSONObject(snapshot.payloadJson)
-            require(root.getInt("format") == 2) { "Unsupported snapshot format" }
-            val projectId = snapshot.projectId
-            val settings = settingsFromJson(root.getJSONObject("settings"))
-            require(settings.projectId == projectId) { "Snapshot belongs to another project" }
-
-            val writable = db.openHelper.writableDatabase
-            writable.execSQL(
-                "DELETE FROM keyframes WHERE ownerId IN (SELECT id FROM clips WHERE projectId=? UNION SELECT id FROM text_overlays WHERE projectId=? UNION SELECT id FROM image_overlays WHERE projectId=?)",
-                arrayOf(projectId, projectId, projectId)
-            )
-            writable.execSQL("DELETE FROM tracks WHERE projectId=?", arrayOf(projectId))
-            writable.execSQL("DELETE FROM project_settings WHERE projectId=?", arrayOf(projectId))
-
-            db.editorDao().putProjectSettings(settings)
-            val tracks = root.getJSONArray("tracks").mapObjects(::trackFromJson)
-            db.editorDao().putTracks(tracks)
-            val clips = root.getJSONArray("clips").mapObjects(::clipFromJson)
-            if (clips.isNotEmpty()) db.editorDao().putClips(clips)
-            root.getJSONArray("text").mapObjects(::textFromJson).forEach { db.editorDao().putTextOverlay(it) }
-            root.getJSONArray("images").mapObjects(::imageFromJson).forEach { db.editorDao().putImageOverlay(it) }
-            root.getJSONArray("keyframes").mapObjects(::keyframeFromJson).forEach { db.editorDao().putKeyframe(it) }
-
-            val project = db.projectDao().get(projectId)?.project ?: error("Project missing")
-            db.projectDao().update(project.copy(projectFormatVersion = 2, updatedAt = System.currentTimeMillis()))
+        val snapshot = db.snapshotDao().get(snapshotId) ?: error("Snapshot not found")
+        val root = JSONObject(snapshot.payloadJson)
+        val format = root.getInt("format")
+        require(format == LEGACY_SNAPSHOT_FORMAT || format == SNAPSHOT_FORMAT_WITH_AI) {
+            "Unsupported snapshot format"
         }
+        val projectId = snapshot.projectId
+        val settings = settingsFromJson(root.getJSONObject("settings"))
+        require(settings.projectId == projectId) { "Snapshot belongs to another project" }
+
+        // Preserve the pre-restore AI state so a database/sidecar failure can be compensated. The
+        // AI mutation is performed before the Room transaction commits; an AI write failure rolls
+        // Room back, while a late Room failure restores this exact sidecar state below.
+        val beforeAiState = aiWatermarkRepository.exportProjectStateJson(projectId)
+        val snapshotAiState = if (format >= SNAPSHOT_FORMAT_WITH_AI) {
+            root.getJSONObject("aiWatermark").toString()
+        } else {
+            null
+        }
+
+        try {
+            db.withTransaction {
+                val writable = db.openHelper.writableDatabase
+                writable.execSQL(
+                    "DELETE FROM keyframes WHERE ownerId IN (SELECT id FROM clips WHERE projectId=? UNION SELECT id FROM text_overlays WHERE projectId=? UNION SELECT id FROM image_overlays WHERE projectId=?)",
+                    arrayOf(projectId, projectId, projectId)
+                )
+                writable.execSQL("DELETE FROM tracks WHERE projectId=?", arrayOf(projectId))
+                writable.execSQL("DELETE FROM project_settings WHERE projectId=?", arrayOf(projectId))
+
+                db.editorDao().putProjectSettings(settings)
+                val tracks = root.getJSONArray("tracks").mapObjects(::trackFromJson)
+                db.editorDao().putTracks(tracks)
+                val clips = root.getJSONArray("clips").mapObjects(::clipFromJson)
+                if (clips.isNotEmpty()) db.editorDao().putClips(clips)
+                root.getJSONArray("text").mapObjects(::textFromJson).forEach { db.editorDao().putTextOverlay(it) }
+                root.getJSONArray("images").mapObjects(::imageFromJson).forEach { db.editorDao().putImageOverlay(it) }
+                root.getJSONArray("keyframes").mapObjects(::keyframeFromJson).forEach { db.editorDao().putKeyframe(it) }
+
+                if (snapshotAiState != null) {
+                    aiWatermarkRepository.restoreProjectStateJson(projectId, snapshotAiState)
+                } else {
+                    // Format-2 snapshots pre-date AI state. Their exact semantic AI state is empty,
+                    // so restoring one must clear later Step-4 effects rather than leave them behind.
+                    aiWatermarkRepository.replaceProjectEffects(projectId, emptyList())
+                }
+
+                val project = db.projectDao().get(projectId)?.project ?: error("Project missing")
+                db.projectDao().update(
+                    project.copy(
+                        projectFormatVersion = PROJECT_FORMAT_VERSION,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+        } catch (failure: Throwable) {
+            runCatching { aiWatermarkRepository.restoreProjectStateJson(projectId, beforeAiState) }
+            throw failure
+        }
+    }
+
+    private companion object {
+        const val LEGACY_SNAPSHOT_FORMAT = 2
+        const val SNAPSHOT_FORMAT_WITH_AI = 3
+        const val PROJECT_FORMAT_VERSION = 2
     }
 }
 
