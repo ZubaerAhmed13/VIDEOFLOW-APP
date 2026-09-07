@@ -21,26 +21,65 @@ adb shell wm size reset
 adb shell wm density reset
 adb shell settings put system font_scale 1.0
 
-# Start a genuine AI export, then keep the editor process alive and kill ONLY :export.
-adb shell am instrument -w -r -e class 'com.videoflow.app.step5.Step5ProcessDeathTest#startRealForegroundAiJob' "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/step5-process-start.txt 2>&1
-cat step4-emulator-reports/step5-process-start.txt
-grep -E -q 'OK \(1 test\)' step4-emulator-reports/step5-process-start.txt
-adb shell am start -W -n "$PACKAGE_ID/.MainActivity" > step4-emulator-reports/step5-main-before-export-kill.txt 2>&1
-MAIN_PID="$(adb shell pidof "$PACKAGE_ID" | tr -d '\r' | awk '{print $1}')"
-EXPORT_PID="$(adb shell pidof "$PACKAGE_ID:export" | tr -d '\r' | awk '{print $1}')"
+# Start a genuine AI export while instrumentation remains alive. The target test publishes an
+# internal ready flag only after the persisted job reaches RENDERING. This avoids allowing the
+# instrumentation lifecycle itself to tear down app processes before the host can prove isolation.
+adb shell run-as "$PACKAGE_ID" sh -c 'rm -f files/ai-jobs/process-death/ready-for-export-kill.flag files/ai-jobs/process-death/export-killed.flag' >/dev/null 2>&1 || true
+adb shell am instrument -w -r -e class 'com.videoflow.app.step5.Step5ProcessDeathTest#startRealForegroundAiJob' "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/step5-process-start.txt 2>&1 &
+PROCESS_TEST_HOST_PID=$!
+MAIN_PID=""
+EXPORT_PID=""
+PROCESS_READY=0
+for attempt in $(seq 1 240); do
+  MAIN_PID="$(adb shell pidof "$PACKAGE_ID" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
+  EXPORT_PID="$(adb shell pidof "$PACKAGE_ID:export" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
+  if [ -n "$MAIN_PID" ] && [ -n "$EXPORT_PID" ] && adb shell run-as "$PACKAGE_ID" sh -c 'test -f files/ai-jobs/process-death/ready-for-export-kill.flag' >/dev/null 2>&1; then
+    PROCESS_READY=1
+    break
+  fi
+  if ! kill -0 "$PROCESS_TEST_HOST_PID" 2>/dev/null; then
+    wait "$PROCESS_TEST_HOST_PID" || true
+    cat step4-emulator-reports/step5-process-start.txt
+    echo "Process-death setup instrumentation exited before the export kill handshake became ready." >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+if [ "$PROCESS_READY" -ne 1 ]; then
+  cat step4-emulator-reports/step5-process-start.txt || true
+  echo "Timed out waiting for simultaneous main/:export PIDs and the real RENDERING handshake." >&2
+  kill "$PROCESS_TEST_HOST_PID" >/dev/null 2>&1 || true
+  wait "$PROCESS_TEST_HOST_PID" || true
+  exit 1
+fi
 test -n "$MAIN_PID"
 test -n "$EXPORT_PID"
 echo "MAIN_PID_BEFORE=$MAIN_PID EXPORT_PID_BEFORE=$EXPORT_PID" | tee -a step4-emulator-reports/step5-process-start.txt
+
+# Kill ONLY :export while the instrumentation process intentionally keeps MainActivity alive.
 adb shell kill -9 "$EXPORT_PID"
-sleep 8
+sleep 2
 MAIN_AFTER="$(adb shell pidof "$PACKAGE_ID" | tr -d '\r' | awk '{print $1}')"
 EXPORT_AFTER="$(adb shell pidof "$PACKAGE_ID:export" | tr -d '\r' | awk '{print $1}')"
 test -n "$MAIN_AFTER"
 test "$MAIN_AFTER" = "$MAIN_PID"
 test -z "$EXPORT_AFTER"
 echo "STEP5_EXPORT_PROCESS_ISOLATION_CERTIFIED main_pid=$MAIN_AFTER killed_export_pid=$EXPORT_PID" | tee step4-emulator-reports/step5-export-process-isolation.txt
+
+# Acknowledge the external kill so the test can close ActivityScenario and finish normally.
+adb shell run-as "$PACKAGE_ID" sh -c 'mkdir -p files/ai-jobs/process-death && touch files/ai-jobs/process-death/export-killed.flag'
+if ! wait "$PROCESS_TEST_HOST_PID"; then
+  cat step4-emulator-reports/step5-process-start.txt
+  exit 1
+fi
+cat step4-emulator-reports/step5-process-start.txt
+! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/step5-process-start.txt || exit 1
+grep -E -q 'OK \(1 test\)' step4-emulator-reports/step5-process-start.txt
+sleep 8
+
 adb shell am instrument -w -r -e class 'com.videoflow.app.step5.Step5ProcessDeathTest#restartRecognizesInterruptedJobAndPreservesEditableProject' "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/step5-process-recovery.txt 2>&1
 cat step4-emulator-reports/step5-process-recovery.txt
+! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/step5-process-recovery.txt || exit 1
 grep -E -q 'OK \(1 test\)' step4-emulator-reports/step5-process-recovery.txt
 
 adb shell am instrument -w -r -e class com.videoflow.app.step5.Step5AiOutsideRoiTest,com.videoflow.app.step5.Step5RecoverySecurityTest,com.videoflow.app.step5.Step5QualityExportTest,com.videoflow.app.step5.Step5CompositionGeometryTest,com.videoflow.app.step5.Step5AudioVideoSyncTest,com.videoflow.app.step5.Step5CheckpointOverlayTest,com.videoflow.app.step5.Step5ProductIntegrationTest "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/step5-integration.txt 2>&1

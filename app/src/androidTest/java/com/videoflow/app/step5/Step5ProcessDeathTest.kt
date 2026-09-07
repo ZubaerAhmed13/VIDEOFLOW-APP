@@ -42,6 +42,8 @@ class Step5ProcessDeathTest {
         val repository=ExportRepository(db,editor)
         val outputFile=privateFixtureFile(f.context,"output-${System.nanoTime()}.mp4")
         val output=privateFixtureUri(f.context,outputFile)
+        val readyFlag=handshakeFlag(f.context,"ready-for-export-kill.flag").apply { delete() }
+        val killedFlag=handshakeFlag(f.context,"export-killed.flag").apply { delete() }
         // Exercise a real foreground AI export in :export at the fixture's native dimensions.
         // The app-owned MediaStore source proves the durable source-authority path; the private
         // FileProvider output stays deterministic across instrumentation, editor and :export.
@@ -62,10 +64,20 @@ class Step5ProcessDeathTest {
             f.instrumentation.runOnMainSync { ExportForegroundService.start(f.context,job.id) }
             withTimeout(120_000L) { while(repository.getJob(job.id)!!.status != ExportJobStatus.RENDERING) {
                 val state=repository.getJob(job.id)!!
-                check(state.status !in setOf(ExportJobStatus.FAILED,ExportJobStatus.COMPLETED)) { state.failureMessage ?: state.status.name }
+                check(state.status !in setOf(ExportJobStatus.FAILED,ExportJobStatus.COMPLETED,ExportJobStatus.CANCELLED,ExportJobStatus.INTERRUPTED)) {
+                    state.failureMessage ?: state.status.name
+                }
                 delay(100)
             } }
             f.evidence("process-death.txt","REAL_FOREGROUND_RENDERING job=${job.id}")
+            check(readyFlag.createNewFile()) { "Could not publish export-process kill readiness." }
+            // Keep instrumentation + MainActivity alive while the host shell captures both PIDs,
+            // kills only :export, verifies the main PID is unchanged, then acknowledges the kill.
+            // This is test synchronization only; no production delay or latch is introduced.
+            withTimeout(45_000L) {
+                while(!killedFlag.exists()) delay(50)
+            }
+            readyFlag.delete();killedFlag.delete()
         }
         db.close()
     }
@@ -85,6 +97,8 @@ class Step5ProcessDeathTest {
             ProjectDeletionService(db,AiWatermarkRepository(context)).deleteProject(id)
             runCatching { context.contentResolver.delete(Uri.parse(prefs.getString("source",null)),null,null) }
             prefs.getString("outputPath",null)?.let { path -> runCatching { File(path).delete() } }
+            handshakeFlag(context,"ready-for-export-kill.flag").delete()
+            handshakeFlag(context,"export-killed.flag").delete()
             prefs.edit().clear().commit()
             Unit
         } finally { db.close() }
@@ -95,6 +109,9 @@ class Step5ProcessDeathTest {
             parentFile?.mkdirs()
             if(!exists()) check(createNewFile()) { "Could not create process-death fixture $absolutePath" }
         }
+
+    private fun handshakeFlag(context: Context,name: String): File =
+        File(context.filesDir,"ai-jobs/process-death/$name").apply { parentFile?.mkdirs() }
 
     private fun privateFixtureUri(context: Context,file: File): Uri =
         FileProvider.getUriForFile(context,"${context.packageName}.derived",file)
