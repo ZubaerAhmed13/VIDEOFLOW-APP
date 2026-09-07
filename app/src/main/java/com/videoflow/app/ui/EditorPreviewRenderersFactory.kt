@@ -37,6 +37,11 @@ internal class EditorPreviewRenderersFactory(context: Context) : DefaultRenderer
     }
 
     private class EditorVideoRenderer(builder: MediaCodecVideoRenderer.Builder) : MediaCodecVideoRenderer(builder) {
+        // Media3 1.11 exposes this protected renderer hook but marks its return type library-only.
+        // Until Media3 exposes a player-level replay option, keep this one version-pinned adapter
+        // explicit and cover it with the real paused-frame UI test. No reflection or global lint
+        // exclusion is used. Recheck this adapter when upgrading Media3.
+        @android.annotation.SuppressLint("RestrictedApi")
         override fun createPlaybackVideoGraphWrapper(
             context: Context,
             videoFrameReleaseControl: VideoFrameReleaseControl

@@ -8,6 +8,8 @@ Render order: original source AI → Enhance → creative effects → crop → t
 
 Smart Copy rejects enabled nonzero visual edits. HDR Effects/Enhance preservation is not certified: the renderer requires explicit SDR conversion when these effects are used with HDR. It does not silently discard HDR.
 
+Paused adjustments use Media3's two-frame replay cache, whose allocation is independent of source duration. Media3 1.11.0 exposes a protected renderer graph hook but restricts the graph builder to its library group. `EditorPreviewRenderersFactory` isolates that dependency, with a method-local `RestrictedApi` lint annotation and a required real-frame product test; no reflection or project-wide lint suppression is used. Reaudit this adapter on Media3 upgrades until a public player-level cache option exists.
+
 Effects appear as timeline indicators. The browser supports multiple instances, categories, intensity, exact range, whole-range dragging, reset, enable/disable, duplicate, remove and transient preview. Independent 48-dp effect rows open the exact selected effect. Persistent changes join the existing history stack and format-4 snapshots; legacy snapshots remain readable.
 
 `VisualPreviewFinalParityTest` checks the shared production stage configurations at trim/speed/segment offsets for every effect, including half-open boundaries and disabled identity. Real combined export runs all sixteen shaders. Pixel-level visual fidelity across physical devices and proxy resolutions remains a Step-5 review item.

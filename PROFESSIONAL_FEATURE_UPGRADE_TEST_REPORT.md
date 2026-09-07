@@ -28,6 +28,7 @@ This source document defines the gates. The CI-generated copy in `VideoFlow-Prof
 - Checkpoint telemetry: PSS is a Long, matching Android's API.
 - Temporal restoration: preserve previous tile dimensions and reject mismatched patch geometry.
 - UI/source geometry: keep ROI image and mask in one fitted coordinate space; preserve rotated source aspect in final composition.
+- Paused shader previews: enable Media3's bounded replay cache and interleave redraw requests with frame callbacks. The version-pinned renderer adapter is documented in `VIDEO_EFFECTS_ARCHITECTURE.md` and the product workflow requires a rendered frame.
 
 No existing test was removed or weakened. The snapshot format assertion changed from 3 to 4 because version 4 includes visual sidecar state; restore still accepts formats 2 and 3. New fixtures are generated deterministically in CI. Neural endurance remains a separate configurable real harness.
 
