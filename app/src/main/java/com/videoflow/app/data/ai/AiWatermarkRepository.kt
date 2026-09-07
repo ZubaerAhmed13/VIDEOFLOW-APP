@@ -19,6 +19,9 @@ import org.json.JSONObject
 /**
  * Deterministic Step-4 sidecar persistence. This avoids a destructive Room schema migration while
  * keeping AI edits tied to stable project/clip IDs and fully local to app-private storage.
+ *
+ * The same codec is used for normal persistence, project snapshots and deletion compensation so
+ * those lifecycle paths cannot silently drift apart.
  */
 @Singleton
 class AiWatermarkRepository @Inject constructor(
@@ -27,63 +30,147 @@ class AiWatermarkRepository @Inject constructor(
     private val root = File(context.filesDir, "ai-watermark/projects")
     private val _changes = MutableSharedFlow<String>(extraBufferCapacity = 32)
 
-    /** Emits the project id after every successful atomic AI-sidecar replacement. */
+    /** Emits the project id after every successful AI-sidecar replacement or removal. */
     val changes: SharedFlow<String> = _changes.asSharedFlow()
 
     suspend fun load(projectId: String): List<AiWatermarkEffect> = withContext(Dispatchers.IO) {
         requireSafeId(projectId)
-        val file = fileFor(projectId)
-        if (!file.isFile) return@withContext emptyList()
-        val rootJson = JSONObject(file.readText(Charsets.UTF_8))
-        require(rootJson.optInt("version", 0) == 1) { "Unsupported AI Watermark sidecar version." }
-        val rows = rootJson.optJSONArray("effects") ?: JSONArray()
-        buildList {
-            for (i in 0 until rows.length()) add(effectFromJson(rows.getJSONObject(i)))
-        }.sortedWith(compareBy<AiWatermarkEffect> { it.clipId }.thenBy { it.clipLocalStartUs }.thenBy { it.id })
+        readEffects(projectId)
     }
 
     suspend fun effectsForClip(projectId: String, clipId: String): List<AiWatermarkEffect> =
         load(projectId).filter { it.clipId == clipId }
 
     suspend fun upsert(effect: AiWatermarkEffect) = withContext(Dispatchers.IO) {
-        val current = load(effect.projectId).associateBy { it.id }.toMutableMap()
+        val current = readEffects(effect.projectId).associateBy { it.id }.toMutableMap()
         current[effect.id] = effect
         write(effect.projectId, current.values.toList())
     }
 
     suspend fun remove(projectId: String, effectId: String) = withContext(Dispatchers.IO) {
-        write(projectId, load(projectId).filterNot { it.id == effectId })
+        write(projectId, readEffects(projectId).filterNot { it.id == effectId })
     }
 
     suspend fun removeForClip(projectId: String, clipId: String) = withContext(Dispatchers.IO) {
-        write(projectId, load(projectId).filterNot { it.clipId == clipId })
+        write(projectId, readEffects(projectId).filterNot { it.clipId == clipId })
     }
 
     suspend fun replaceProjectEffects(projectId: String, effects: List<AiWatermarkEffect>) = withContext(Dispatchers.IO) {
+        requireSafeId(projectId)
         require(effects.all { it.projectId == projectId })
         write(projectId, effects)
     }
 
+    /**
+     * Returns a complete, versioned AI state document for project snapshots and rollback. The
+     * returned document is valid even when the project currently has no AI effects.
+     */
+    suspend fun exportProjectStateJson(projectId: String): String = withContext(Dispatchers.IO) {
+        requireSafeId(projectId)
+        encodeState(projectId, readEffects(projectId)).toString()
+    }
+
+    /** Restores an exact state previously produced by [exportProjectStateJson]. */
+    suspend fun restoreProjectStateJson(projectId: String, payloadJson: String) = withContext(Dispatchers.IO) {
+        requireSafeId(projectId)
+        val effects = decodeState(projectId, JSONObject(payloadJson))
+        write(projectId, effects)
+    }
+
+    /**
+     * Deletes all persistent AI state owned by a project, including interrupted atomic-write temp
+     * files. This is the canonical cleanup operation for project deletion.
+     */
+    suspend fun deleteProjectState(projectId: String) = withContext(Dispatchers.IO) {
+        requireSafeId(projectId)
+        deleteStateFiles(projectId)
+        _changes.tryEmit(projectId)
+    }
+
+    private fun readEffects(projectId: String): List<AiWatermarkEffect> {
+        requireSafeId(projectId)
+        val file = fileFor(projectId)
+        if (!file.isFile) return emptyList()
+        return decodeState(projectId, JSONObject(file.readText(Charsets.UTF_8)))
+    }
+
     private fun write(projectId: String, effects: List<AiWatermarkEffect>) {
         requireSafeId(projectId)
+        require(effects.all { it.projectId == projectId })
+
+        // An empty project AI state does not need a persistent sidecar. Removing it also guarantees
+        // Undo/Redo, legacy snapshot restore and project cleanup cannot leave empty orphan files.
+        if (effects.isEmpty()) {
+            deleteStateFiles(projectId)
+            _changes.tryEmit(projectId)
+            return
+        }
+
         root.mkdirs()
         val target = fileFor(projectId)
         val temp = File(root, ".${target.name}.tmp-${System.nanoTime()}")
-        val rows = JSONArray()
-        effects.sortedWith(compareBy<AiWatermarkEffect> { it.clipId }.thenBy { it.clipLocalStartUs }.thenBy { it.id })
-            .forEach { rows.put(effectToJson(it)) }
-        val payload = JSONObject()
-            .put("version", 1)
-            .put("projectId", projectId)
-            .put("effects", rows)
-            .toString()
+        val payload = encodeState(projectId, effects).toString()
         temp.outputStream().buffered().use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-        if (target.exists() && !target.delete()) error("Could not replace AI Watermark sidecar.")
+        if (target.exists() && !target.delete()) {
+            temp.delete()
+            error("Could not replace AI Watermark sidecar.")
+        }
         if (!temp.renameTo(target)) {
             temp.delete()
             error("Could not atomically persist AI Watermark sidecar.")
         }
+        cleanupTempFiles(projectId)
         _changes.tryEmit(projectId)
+    }
+
+    private fun encodeState(projectId: String, effects: List<AiWatermarkEffect>): JSONObject {
+        val rows = JSONArray()
+        effects.sortedWith(EFFECT_ORDER).forEach { rows.put(effectToJson(it)) }
+        return JSONObject()
+            .put("version", SIDECAR_VERSION)
+            .put("projectId", projectId)
+            .put("effects", rows)
+    }
+
+    private fun decodeState(projectId: String, rootJson: JSONObject): List<AiWatermarkEffect> {
+        require(rootJson.optInt("version", 0) == SIDECAR_VERSION) {
+            "Unsupported AI Watermark sidecar version."
+        }
+        require(rootJson.optString("projectId") == projectId) {
+            "AI Watermark sidecar belongs to another project."
+        }
+        val rows = rootJson.optJSONArray("effects") ?: JSONArray()
+        val effects = buildList {
+            for (i in 0 until rows.length()) add(effectFromJson(rows.getJSONObject(i)))
+        }
+        require(effects.all { it.projectId == projectId }) {
+            "AI Watermark sidecar contains an effect owned by another project."
+        }
+        return effects.sortedWith(EFFECT_ORDER)
+    }
+
+    private fun deleteStateFiles(projectId: String) {
+        val target = fileFor(projectId)
+        if (target.exists() && !target.delete()) {
+            error("Could not delete AI Watermark sidecar.")
+        }
+        cleanupTempFiles(projectId)
+        if (root.isDirectory && root.listFiles()?.isEmpty() == true) {
+            // Best-effort parent cleanup only; the project state itself is already gone.
+            runCatching { root.delete() }
+        }
+    }
+
+    private fun cleanupTempFiles(projectId: String) {
+        if (!root.isDirectory) return
+        val prefix = ".${fileFor(projectId).name}.tmp-"
+        root.listFiles()
+            ?.filter { it.name.startsWith(prefix) }
+            ?.forEach { temp ->
+                if (temp.exists() && !temp.delete()) {
+                    error("Could not delete interrupted AI Watermark sidecar temp file.")
+                }
+            }
     }
 
     private fun fileFor(projectId: String) = File(root, "$projectId.json")
@@ -109,11 +196,14 @@ class AiWatermarkRepository @Inject constructor(
             .put("clipId", effect.clipId)
             .put("startUs", effect.clipLocalStartUs)
             .put("endUs", effect.clipLocalEndUs)
-            .put("roi", JSONObject()
-                .put("left", effect.roi.left.toDouble())
-                .put("top", effect.roi.top.toDouble())
-                .put("right", effect.roi.right.toDouble())
-                .put("bottom", effect.roi.bottom.toDouble()))
+            .put(
+                "roi",
+                JSONObject()
+                    .put("left", effect.roi.left.toDouble())
+                    .put("top", effect.roi.top.toDouble())
+                    .put("right", effect.roi.right.toDouble())
+                    .put("bottom", effect.roi.bottom.toDouble())
+            )
             .put("motionAnchors", anchors)
             .put("contextPaddingPx", effect.contextPaddingPx)
             .put("featherPx", effect.featherPx)
@@ -157,5 +247,12 @@ class AiWatermarkRepository @Inject constructor(
             modelId = json.optString("modelId", com.videoflow.app.domain.ai.AiModelCatalog.FINAL_512.id),
             enabled = json.optBoolean("enabled", true)
         )
+    }
+
+    private companion object {
+        const val SIDECAR_VERSION = 1
+        val EFFECT_ORDER = compareBy<AiWatermarkEffect> { it.clipId }
+            .thenBy { it.clipLocalStartUs }
+            .thenBy { it.id }
     }
 }
