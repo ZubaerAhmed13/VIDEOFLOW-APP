@@ -377,7 +377,7 @@ fun WatermarkStudioPanel(
                     }
                 },
                 enabled = state.runtimeReady && state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).semantics { contentDescription="Apply AI removal" }
             ) { Text(if (editingEffectId == null) "Apply" else "Update") }
         }
 

@@ -118,16 +118,19 @@ class ProfessionalProductWorkflowTest {
             screenshot("ai-preview")
             // Stage chip and commit button both say Apply; the chip exists before opening the stage.
             rule.onNodeWithText("Apply",substring=false).performClick()
-            rule.onAllNodesWithText("Apply",substring=false).onLast().performScrollTo().performClick()
-            rule.waitUntil(30_000) { tool==null }
+            rule.onNodeWithContentDescription("Apply AI removal").assertIsEnabled().performScrollTo().performClick()
+            rule.waitUntil(30_000) { tool==null || aiVm.state.value.error!=null }
+            assertNull("AI commit failed",aiVm.state.value.error)
+            assertNull("Applied panel must close",tool)
             val saved=ai.load(id).single()
             assertEquals(clip.timelineDurationUs/4,saved.clipLocalStartUs)
             assertEquals(clip.timelineDurationUs*3/4,saved.clipLocalEndUs)
             assertEquals(1,saved.motionAnchors.count { it.manual })
             assertTrue(saved.motionAnchors.single().centerX < (.68f+.97f)/2f)
             assertEquals(saved,AiWatermarkRepository(context).load(id).single())
-            println("PROFESSIONAL_PRODUCT_PANELS_CERTIFIED audio=${editor.load(id).timeline.clips.size} effects=1 enhance=0.2 aiCorrections=1")
+            instrumentation.sendStatus(0,android.os.Bundle().apply { putString("stream","PROFESSIONAL_PRODUCT_PANELS_CERTIFIED audio=${editor.load(id).timeline.clips.size} effects=1 enhance=0.2 aiCorrections=1\n") })
         } finally {
+            runCatching { screenshot("last-state") }
             instrumentation.runOnMainSync { store.clear() }
             projectId?.let { ai.deleteProjectState(it);ai.visualEdits.delete(it);File(context.filesDir,"extracted-audio/$it").deleteRecursively() }
             db.close();resolver.delete(source,null,null)

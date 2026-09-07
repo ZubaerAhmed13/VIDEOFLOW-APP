@@ -281,6 +281,14 @@ jobs:
             adb install -r step4-runtime/VideoFlow_Professional_Upgrade_Debug.apk
             adb install -r step4-runtime/VideoFlow_Professional_Upgrade_Debug-androidTest.apk
 
+            adb shell am instrument -w -r -e class com.videoflow.app.ui.ProfessionalProductWorkflowTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/product-panels.txt 2>&1
+            adb pull /sdcard/Android/data/com.videoflow.app.debug/files/professional-screenshots step4-emulator-reports/ || true
+            cat step4-emulator-reports/product-panels.txt
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/product-panels.txt
+            grep -E -q 'OK \(1 test\)' step4-emulator-reports/product-panels.txt
+            grep -q 'PROFESSIONAL_PRODUCT_PANELS_CERTIFIED' step4-emulator-reports/product-panels.txt
+            test -s step4-emulator-reports/professional-screenshots/ai-preview.png
+
             adb shell am instrument -w -r -e class com.videoflow.app.ai.Step4AiRuntimeInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/ai-runtime.txt 2>&1
             cat step4-emulator-reports/ai-runtime.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/ai-runtime.txt
@@ -297,14 +305,13 @@ jobs:
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/editor-regression.txt
             grep -E -q 'OK \([0-9]+ tests?\)' step4-emulator-reports/editor-regression.txt
 
-            adb shell am instrument -w -r -e class com.videoflow.app.editor.ProfessionalAudioPersistenceTest,com.videoflow.app.ui.ProfessionalToolControlsTest,com.videoflow.app.ui.ProfessionalProductWorkflowTest,com.videoflow.app.ai.ProfessionalCombinedExportInstrumentedTest,com.videoflow.app.ai.ProfessionalCheckpointExportInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/professional-upgrade.txt 2>&1
+            adb shell am instrument -w -r -e class com.videoflow.app.editor.ProfessionalAudioPersistenceTest,com.videoflow.app.ui.ProfessionalToolControlsTest,com.videoflow.app.ai.ProfessionalCombinedExportInstrumentedTest,com.videoflow.app.ai.ProfessionalCheckpointExportInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/professional-upgrade.txt 2>&1
+            adb pull /sdcard/Android/data/com.videoflow.app.debug/files/professional-screenshots step4-emulator-reports/ || true
             cat step4-emulator-reports/professional-upgrade.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/professional-upgrade.txt
-            grep -E -q 'OK \(6 tests\)' step4-emulator-reports/professional-upgrade.txt
+            grep -E -q 'OK \(5 tests\)' step4-emulator-reports/professional-upgrade.txt
             grep -q 'PROFESSIONAL_COMBINED_EXPORT_CERTIFIED' step4-emulator-reports/professional-upgrade.txt
             grep -q 'PROFESSIONAL_CHECKPOINT_EXPORT_CERTIFIED' step4-emulator-reports/professional-upgrade.txt
-
-            adb pull /sdcard/Android/data/com.videoflow.app.debug/files/professional-screenshots step4-emulator-reports/
 
             adb shell am instrument -w -r -e class com.videoflow.app.db.RoomPersistenceTest,com.videoflow.app.db.Step2MigrationTest,com.videoflow.app.editor.Step2ComplexPersistenceTest,com.videoflow.app.editor.ProxyManagerInstrumentationTest,com.videoflow.app.media.MediaAnalyzerInstrumentationTest,com.videoflow.app.media.PlayerInstrumentationTest,com.videoflow.app.export.NativeRenderEngineInstrumentedTest,com.videoflow.app.export.SafMediaMuxerFactoryInstrumentedTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/retained-product-regression.txt 2>&1
             cat step4-emulator-reports/retained-product-regression.txt
