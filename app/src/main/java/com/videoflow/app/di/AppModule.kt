@@ -25,6 +25,9 @@ object AppModule {
         Room.databaseBuilder(context, VideoFlowDatabase::class.java, "videoflow.db")
             .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .addCallback(Step2DatabaseCallback)
+            // Export runs in :export. Multi-instance invalidation keeps main-process observers in
+            // sync with persisted terminal/progress state without sharing in-memory singletons.
+            .enableMultiInstanceInvalidation()
             .build()
 
     @Provides
