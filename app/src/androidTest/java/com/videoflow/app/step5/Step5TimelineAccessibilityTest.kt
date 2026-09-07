@@ -29,7 +29,7 @@ class Step5TimelineAccessibilityTest {
         val button=rule.onNodeWithContentDescription("Zoom in timeline")
         button.assertHasClickAction().assertIsDisplayed()
         val bounds=button.getUnclippedBoundsInRoot()
-        assertTrue(bounds.right.value-bounds.left.value>=48f && bounds.bottom.value-bounds.top.value>=48f)
+        assertTrue("Zoom target must be at least 48 dp: $bounds",bounds.right.value-bounds.left.value>=48f && bounds.bottom.value-bounds.top.value>=48f)
         rule.onNodeWithContentDescription("Navigate whole project",substring=true)
             .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.99999f) }
         rule.waitUntil(10_000) { rule.onAllNodesWithText("Last second").fetchSemanticsNodes().isNotEmpty() }

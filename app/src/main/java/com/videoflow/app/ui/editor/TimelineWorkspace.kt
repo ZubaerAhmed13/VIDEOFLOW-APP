@@ -173,13 +173,13 @@ fun TimelineWorkspace(
                 ) {
                     IconButton(
                         onClick = { zoomTo((pixelsPerSecond / 1.3f).coerceAtLeast(12f)) },
-                        modifier = Modifier.width(48.dp)
+                        modifier = Modifier.width(48.dp).height(48.dp)
                     ) {
                         Icon(Icons.Default.ZoomOut, contentDescription = "Zoom out timeline", tint = VideoFlowEditorColors.SecondaryText)
                     }
                     IconButton(
                         onClick = { zoomTo((pixelsPerSecond * 1.3f).coerceAtMost(240f)) },
-                        modifier = Modifier.width(48.dp)
+                        modifier = Modifier.width(48.dp).height(48.dp)
                     ) {
                         Icon(Icons.Default.ZoomIn, contentDescription = "Zoom in timeline", tint = VideoFlowEditorColors.SecondaryText)
                     }

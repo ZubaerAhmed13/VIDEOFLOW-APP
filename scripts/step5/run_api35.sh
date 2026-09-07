@@ -7,18 +7,6 @@ adb install -r step4-runtime/VideoFlow_Step5_Debug-androidTest.apk
 adb shell svc wifi disable
 adb shell svc data disable
 adb shell pm grant com.videoflow.app.debug android.permission.POST_NOTIFICATIONS
-adb shell am instrument -w -r -e class com.videoflow.app.step5.Step5AiOutsideRoiTest,com.videoflow.app.step5.Step5RecoverySecurityTest,com.videoflow.app.step5.Step5QualityExportTest,com.videoflow.app.step5.Step5CompositionGeometryTest,com.videoflow.app.step5.Step5AudioVideoSyncTest,com.videoflow.app.step5.Step5CheckpointOverlayTest,com.videoflow.app.step5.Step5ProductIntegrationTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/step5-integration.txt 2>&1
-cat step4-emulator-reports/step5-integration.txt
-adb pull /sdcard/Android/data/com.videoflow.app.debug/files/step5-evidence step4-emulator-reports/ || true
-adb pull /sdcard/Android/data/com.videoflow.app.debug/files/professional-screenshots step4-emulator-reports/ || true
-adb logcat -d -v threadtime > step4-emulator-reports/step5-logcat.txt
-for measurement in fd-details.txt fd-phases.jsonl sync-diagnostics.txt av-sync.jsonl audio-fades.jsonl resources.jsonl; do
-  if [ -f "step4-emulator-reports/step5-evidence/$measurement" ]; then cat "step4-emulator-reports/step5-evidence/$measurement"; fi
-done
-! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/step5-integration.txt || exit 1
-grep -E -q 'OK \(13 tests\)' step4-emulator-reports/step5-integration.txt
-grep -q 'STEP5_OVERLAY_CHECKPOINT_CERTIFIED' step4-emulator-reports/step5-integration.txt
-grep -q 'STEP5_PRODUCT_INTEGRATION_CERTIFIED' step4-emulator-reports/step5-integration.txt
 for configuration in portrait landscape tablet; do
   if [ "$configuration" = landscape ]; then adb shell wm size 1280x720; adb shell wm density 240; fi
   if [ "$configuration" = tablet ]; then adb shell wm size 1920x1200; adb shell wm density 160; fi
@@ -38,6 +26,19 @@ adb shell am force-stop com.videoflow.app.debug
 adb shell am instrument -w -r -e class 'com.videoflow.app.step5.Step5ProcessDeathTest#restartRecognizesInterruptedJobAndPreservesEditableProject' com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/step5-process-recovery.txt 2>&1
 cat step4-emulator-reports/step5-process-recovery.txt
 grep -E -q 'OK \(1 test\)' step4-emulator-reports/step5-process-recovery.txt
+
+adb shell am instrument -w -r -e class com.videoflow.app.step5.Step5AiOutsideRoiTest,com.videoflow.app.step5.Step5RecoverySecurityTest,com.videoflow.app.step5.Step5QualityExportTest,com.videoflow.app.step5.Step5CompositionGeometryTest,com.videoflow.app.step5.Step5AudioVideoSyncTest,com.videoflow.app.step5.Step5CheckpointOverlayTest,com.videoflow.app.step5.Step5ProductIntegrationTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/step5-integration.txt 2>&1
+cat step4-emulator-reports/step5-integration.txt
+adb pull /sdcard/Android/data/com.videoflow.app.debug/files/step5-evidence step4-emulator-reports/ || true
+adb pull /sdcard/Android/data/com.videoflow.app.debug/files/professional-screenshots step4-emulator-reports/ || true
+adb logcat -d -v threadtime > step4-emulator-reports/step5-logcat.txt
+for measurement in fd-details.txt fd-phases.jsonl sync-diagnostics.txt av-sync.jsonl audio-fades.jsonl resources.jsonl; do
+  if [ -f "step4-emulator-reports/step5-evidence/$measurement" ]; then cat "step4-emulator-reports/step5-evidence/$measurement"; fi
+done
+! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/step5-integration.txt || exit 1
+grep -E -q 'OK \(13 tests\)' step4-emulator-reports/step5-integration.txt
+grep -q 'STEP5_OVERLAY_CHECKPOINT_CERTIFIED' step4-emulator-reports/step5-integration.txt
+grep -q 'STEP5_PRODUCT_INTEGRATION_CERTIFIED' step4-emulator-reports/step5-integration.txt
 adb pull /sdcard/Android/data/com.videoflow.app.debug/files/step5-evidence step4-emulator-reports/
 test -s step4-emulator-reports/step5-evidence/quality.jsonl
 test -s step4-emulator-reports/step5-evidence/av-sync.jsonl
