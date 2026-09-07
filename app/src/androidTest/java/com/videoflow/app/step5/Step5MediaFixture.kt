@@ -36,10 +36,10 @@ internal class Step5MediaFixture {
         mapOf("source" to OriginalRenderSource("source",source.toString(),"fixture.mp4","video/mp4",null,2_000_000L,
             320,240,0,30.0,"video/avc","audio/mp4a-latm",48_000,1,null,null,null,null,false,null)),
         edited.timelineStartUs+edited.timelineDurationUs)
-    suspend fun render(plan: FinalRenderPlan): Pair<Uri,RenderExecutionResult> {
+    suspend fun render(plan: FinalRenderPlan,resolved: ResolvedExportSettings=settings): Pair<Uri,RenderExecutionResult> {
         val uri=destination()
         val engine=Media3RenderEngine(context,ai,AiModelPackManager(context))
-        val preparation=engine.prepare(plan,OutputDestination(uri,"test.mp4"),settings)
+        val preparation=engine.prepare(plan,OutputDestination(uri,"test.mp4"),resolved)
         check(preparation.ready) { preparation.problems.toString() }
         return uri to engine.render(checkNotNull(preparation.preparation),RenderProgressListener {}).getOrThrow()
     }

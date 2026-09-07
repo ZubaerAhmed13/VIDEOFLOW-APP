@@ -20,7 +20,7 @@ The final run retains every baseline unit and instrumentation suite, and adds:
 - Step5CheckpointIdentityTest: relevant identity invalidation and bounded temporal lifecycle.
 - Step5RecoverySecurityTest: hard-link source protection, concurrent sidecar updates, failed Undo and earlier-process job recovery.
 - Step5QualityExportTest: actual encoded pixels for 16 effects and 11 Enhance endpoint pairs, identity/reset and repeated-render FD accounting.
-- Step5AudioVideoSyncTest: decoded flash/tone timing after trim and 0.5×/1×/2× visual export.
+- Step5AudioVideoSyncTest: decoded flash/tone timing after trim and 0.5×/1×/2× visual export, real VFR-to-29.97/59.94 normalization and 44.1-to-48 kHz mono/stereo conversion.
 - Step5AiOutsideRoiTest: real final LaMa modifies the target while preserving unrelated-region colour within declared codec bounds.
 - Step5CheckpointOverlayTest: real cancellation and cross-engine resume with a static overlay crossing the segment boundary.
 - Step5ProductIntegrationTest: import, trim/split, extract/edit audio, Effects/Enhance, tracking/manual correction/preview/apply, snapshot restore and real combined final export.

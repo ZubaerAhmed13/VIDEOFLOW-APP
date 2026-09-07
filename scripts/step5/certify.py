@@ -32,7 +32,7 @@ def packaging(folder):
         assert hashes[name]==hashlib.file_digest((root/name).open('rb'),'sha256').hexdigest(), name
         with zipfile.ZipFile(root/name) as apk:
             if 'androidTest' in name:
-                for asset in ('sample_av.mp4','step5-colour.mp4','step5-sync.mp4'): assert apk.getinfo('assets/'+asset).file_size>1024
+                for asset in ('sample_av.mp4','step5-colour.mp4','step5-sync.mp4','step5-vfr.mp4','step5-44100.mp4'): assert apk.getinfo('assets/'+asset).file_size>1024
             else:
                 for asset,(sha,size) in expected.items():
                     assert apk.getinfo(asset).file_size==size
@@ -57,8 +57,8 @@ def report():
         matches=re.findall(r'OK \((\d+) tests?\)',text)
         assert len(matches)==1,name
         counts[name]=int(matches[0])
-    assert counts['step5-integration']==8 and counts['professional-upgrade']==5
-    for name in ('quality.jsonl','av-sync.jsonl','ai-roi-quality.jsonl','resources.jsonl'):
+    assert counts['step5-integration']==10 and counts['professional-upgrade']==5
+    for name in ('quality.jsonl','av-sync.jsonl','ai-roi-quality.jsonl','resources.jsonl','vfr-cadence.jsonl'):
         path=logs/'step5-evidence'/name
         rows=[json.loads(line) for line in path.read_text().splitlines()]
         assert rows,name

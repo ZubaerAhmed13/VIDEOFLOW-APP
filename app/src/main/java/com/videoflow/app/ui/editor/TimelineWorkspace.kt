@@ -371,7 +371,9 @@ private fun TrackRow(
                             endUs = minOf(overlay.timelineEndUs,windowEndUs)-originUs,
                             pixelsPerSecond = pixelsPerSecond,
                             selected = selection == EditorSelection.TextOverlay(overlay.id),
-                            keyframes = keyframes.filter { it.ownerId == overlay.id },
+                            keyframes = keyframes.filter { it.ownerId == overlay.id && it.timeUs in
+                                (maxOf(overlay.timelineStartUs,originUs)-overlay.timelineStartUs)..(minOf(overlay.timelineEndUs,windowEndUs)-overlay.timelineStartUs) }
+                                .map { it.copy(timeUs=it.timeUs-(maxOf(overlay.timelineStartUs,originUs)-overlay.timelineStartUs)) },
                             onSelect = { onSelect(EditorSelection.TextOverlay(overlay.id)) }
                         )
                     }
@@ -383,7 +385,9 @@ private fun TrackRow(
                             endUs = minOf(overlay.timelineEndUs,windowEndUs)-originUs,
                             pixelsPerSecond = pixelsPerSecond,
                             selected = selection == EditorSelection.ImageOverlay(overlay.id),
-                            keyframes = keyframes.filter { it.ownerId == overlay.id },
+                            keyframes = keyframes.filter { it.ownerId == overlay.id && it.timeUs in
+                                (maxOf(overlay.timelineStartUs,originUs)-overlay.timelineStartUs)..(minOf(overlay.timelineEndUs,windowEndUs)-overlay.timelineStartUs) }
+                                .map { it.copy(timeUs=it.timeUs-(maxOf(overlay.timelineStartUs,originUs)-overlay.timelineStartUs)) },
                             onSelect = { onSelect(EditorSelection.ImageOverlay(overlay.id)) }
                         )
                     }

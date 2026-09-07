@@ -183,10 +183,13 @@ class Media3CompositionBuilder(
                     gainKeyframes = keyframesByOwner[clip.id].orEmpty().filter { it.property == KeyframeProperty.AUDIO_GAIN },
                     outputChannelCount = settings.audioChannels
                 )
+                val resampler=androidx.media3.common.audio.SonicAudioProcessor().apply {
+                    setOutputSampleRateHz(settings.audioSampleRate)
+                }
                 val item = EditedMediaItem.Builder(media)
                     .setRemoveVideo(true)
                     .setSpeed(ConstantSpeedProvider(clip.speed.toFloat()))
-                    .setEffects(Effects(listOf(gainProcessor), emptyList()))
+                    .setEffects(Effects(listOf(gainProcessor,resampler), emptyList()))
                     .build()
                 EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_AUDIO)).apply {
                     if (clip.timelineStartUs > 0) addGap(clip.timelineStartUs)
@@ -250,14 +253,20 @@ class Media3CompositionBuilder(
         durationUs: Long,
         settings: ResolvedExportSettings
     ): EditedMediaItemSequence {
-        val durationMs = ((durationUs.coerceAtLeast(1L) + 999L) / 1_000L).coerceAtLeast(1L)
+        // The primary image sequence is the compositor clock. Media3's image rate is Int;
+        // speed-adjust that clock to preserve requested rational rates such as 30000/1001.
+        val clockRate=kotlin.math.ceil(settings.frameRate.fps).toInt().coerceAtLeast(1)
+        val clockSpeed=(settings.frameRate.fps/clockRate).toFloat()
+        val inputDurationUs=(durationUs.toDouble()*clockSpeed).toLong().coerceAtLeast(1L)
+        val durationMs = (1L+(inputDurationUs-1L)/1_000L).coerceAtLeast(1L)
         val media = MediaItem.Builder()
             .setUri(Uri.parse(sourceUri))
             .setImageDurationMs(durationMs)
             .build()
         val item = EditedMediaItem.Builder(media)
-            .setDurationUs(durationUs.coerceAtLeast(1L))
-            .setFrameRate(settings.frameRate.fps.toInt().coerceAtLeast(1))
+            .setDurationUs(inputDurationUs)
+            .setFrameRate(clockRate)
+            .setSpeed(ConstantSpeedProvider(clockSpeed))
             .setRemoveAudio(true)
             .build()
         return EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO)).apply {

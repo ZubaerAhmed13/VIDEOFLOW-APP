@@ -20,7 +20,7 @@ Room transactions own timeline mutations; AtomicFile sidecars own Effects, Enhan
 
 The defined image pipeline is original decode → ordered AI regions → Enhance → ordered Effects → crop/transform/opacity → timeline composition and overlays → requested encode → output validation. AI regions retain stable sidecar order; visual effects sort by order then stable ID. Preview and final use the same VisualStage interpretation of timing and parameters. Source-local times incorporate trim and speed; segmented rendering explicitly offsets visual times and clips static overlay ranges.
 
-Long timeline layout uses a 12,000 dp maximum window, independent of Long project duration. A whole-project navigator reaches later windows without collapsing timestamps. Clips and overlays are composed only when they intersect the visible horizontal viewport. Track and effect lists remain proportional to authored objects, never decoded frames. Deep zoom preserves its logical anchor with Double calculations and Long timestamps. Keyframe markers and clipped trim handles retain their time ownership.
+Long timeline layout uses a 12,000 dp maximum window, independent of Long project duration. A whole-project navigator reaches later windows without collapsing timestamps. Clips and overlays are composed only when they intersect the visible horizontal viewport. Tracks use lazy vertical composition; effect lists remain proportional to authored objects, never decoded frames. Deep zoom preserves its logical anchor with Double calculations and Long timestamps. Keyframe markers and clipped trim handles retain their time ownership.
 
 ## Export ownership and recovery
 

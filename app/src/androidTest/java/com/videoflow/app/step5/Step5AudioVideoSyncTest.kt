@@ -38,6 +38,31 @@ class Step5AudioVideoSyncTest {
             }
         } finally { f.close() }
     }
+    @Test fun variableSourceTimestampsNormalizeToRequestedFractionalOutputCadence()=runBlocking {
+        val f=Step5MediaFixture()
+        try {
+            val plan=f.plan(f.source("step5-vfr.mp4"))
+            for(rate in listOf(com.videoflow.app.domain.editor.FrameRate.FPS_2997,com.videoflow.app.domain.editor.FrameRate.FPS_5994)) {
+                val result=f.render(plan,f.settings.copy(frameRate=rate)).second
+                assertTrue(result.validation.problems.toString(),result.validation.passed)
+                assertTrue(com.videoflow.app.render.FrameCadenceVerifier.matches(checkNotNull(result.validation.video?.measuredFrameRate),rate))
+                f.evidence("vfr-cadence.jsonl","{\"requested_fps\":${rate.fps},\"measured_fps\":${result.validation.video!!.measuredFrameRate}}")
+            }
+        } finally { f.close() }
+    }
+    @Test fun stereo44100SourceUsesRequestedSampleRateAndChannelCount()=runBlocking {
+        val f=Step5MediaFixture()
+        try {
+            val original=f.plan(f.source("step5-44100.mp4"))
+            val plan=original.copy(originalSources=original.originalSources.mapValues { (_,s) -> s.copy(audioSampleRate=44_100,audioChannelCount=2) })
+            for(channels in listOf(1,2)) {
+                val result=f.render(plan,f.settings.copy(audioSampleRate=48_000,audioChannels=channels)).second
+                assertTrue(result.validation.problems.toString(),result.validation.passed)
+                assertEquals(48_000,result.validation.audio!!.sampleRate)
+                assertEquals(channels,result.validation.audio!!.channelCount)
+            }
+        } finally { f.close() }
+    }
     private fun videoEvents(f: Step5MediaFixture,uri: Uri,duration: Long): List<Long> {
         val retriever=MediaMetadataRetriever();val events=mutableListOf<Long>();var active=false
         try {
