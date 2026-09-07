@@ -101,7 +101,19 @@ class ExportRepository @Inject constructor(
         )
     }
 
-    suspend fun markInterruptedAfterProcessRestart(now: Long = System.currentTimeMillis()): Int = withContext(Dispatchers.IO) {
+    suspend fun markInterruptedAfterProcessRestart(now: Long = System.currentTimeMillis(), context: android.content.Context? = null): Int = withContext(Dispatchers.IO) {
+        // Only rows owned by an earlier process can own abandoned output. Never truncate queued work.
+        if(context!=null) {
+            val active=db.exportDao().activeJobs()
+            active.filter { it.createdAt<now && it.status in setOf("RENDERING","FINALIZING","VALIDATING") }.forEach { job ->
+                if(active.none { it.createdAt>=now && it.destinationUri==job.destinationUri }) runCatching {
+                    val plan=compileFinalPlan(job.projectId).plan ?: return@runCatching
+                    val uri=android.net.Uri.parse(job.destinationUri)
+                    if(com.videoflow.app.render.ExportDestinationSafety.problem(context,plan,uri)==null)
+                        context.contentResolver.openFileDescriptor(uri,"rwt")?.close()
+                }
+            }
+        }
         // New work created during asynchronous startup recovery must not be marked interrupted.
         db.exportDao().markInterruptedJobs(now, "Export was interrupted. Start export again with unchanged settings to reuse available validated AI checkpoints; other timelines restart safely.")
     }

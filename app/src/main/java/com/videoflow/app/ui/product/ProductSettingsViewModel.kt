@@ -20,6 +20,8 @@ import kotlinx.coroutines.withContext
 
 data class ProductStorageState(
     val proxyBytes: Long = 0L,
+    val checkpointBytes: Long = 0L,
+    val derivedAudioBytes: Long = 0L,
     val proxyCount: Int = 0,
     val clearing: Boolean = false,
     val message: String? = null
@@ -29,7 +31,8 @@ data class ProductStorageState(
 class ProductSettingsViewModel @Inject constructor(
     private val projects: ProjectRepository,
     private val database: VideoFlowDatabase,
-    private val proxyManager: ProxyManager
+    private val proxyManager: ProxyManager,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
     val projectList = projects.observeProjects()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -68,6 +71,24 @@ class ProductSettingsViewModel @Inject constructor(
         }
     }
 
+    fun clearExportCheckpoints() {
+        if(_storage.value.clearing) return
+        _storage.value=_storage.value.copy(clearing=true)
+        viewModelScope.launch {
+            val result=withContext(Dispatchers.IO) {
+                val lease=com.videoflow.app.render.ExportCacheLease.mutex
+                if(!lease.tryLock()) return@withContext "Wait for the active export to finish before clearing recovery files."
+                try {
+                    if(database.exportDao().activeJobs().isNotEmpty()) "Finish or cancel queued exports before clearing recovery files."
+                    else if(java.io.File(context.filesDir,"ai-jobs").deleteRecursively()) "Export recovery files cleared. Interrupted exports will start again."
+                    else "Some recovery files could not be cleared. Try again after restarting VideoFlow."
+                } finally { lease.unlock() }
+            }
+            refreshProxyUsage(projectList.value.map { it.id })
+            _storage.value=_storage.value.copy(clearing=false,message=result)
+        }
+    }
+
     fun clearMessage() {
         _storage.value = _storage.value.copy(message = null)
     }
@@ -77,7 +98,12 @@ class ProductSettingsViewModel @Inject constructor(
             projectIds.flatMap { database.proxyDao().getForProject(it) }
                 .distinctBy { it.id }
         }
+        val owned=withContext(Dispatchers.IO) {
+            fun bytes(name: String)=java.io.File(context.filesDir,name).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            bytes("ai-jobs") to bytes("extracted-audio")
+        }
         _storage.value = _storage.value.copy(
+            checkpointBytes=owned.first, derivedAudioBytes=owned.second,
             proxyBytes = proxies.sumOf { it.sizeBytes ?: 0L },
             proxyCount = proxies.size
         )

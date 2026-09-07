@@ -7,6 +7,13 @@ import java.io.File
 /** Small ROI histories only. A committed video segment and this state are checkpointed together. */
 class AiTemporalCheckpoint {
     val patches = mutableMapOf<String, ByteArray>()
+    fun store(key: String, value: ByteArray) {
+        require(patches.values.sumOf { it.size.toLong() }-(patches[key]?.size ?: 0)+value.size <= MAX_BYTES) {
+            "Active temporal regions exceed the safe memory budget. Reduce simultaneous regions or export separate sections."
+        }
+        patches[key]=value
+    }
+    fun retainEffects(ids: Set<String>) { patches.keys.removeAll { key -> ids.none { key.startsWith("$it:") } } }
     fun write(file: File) {
         require(patches.values.sumOf { it.size.toLong() } <= MAX_BYTES) { "Temporal ROI history exceeds the safe resource budget." }
         DataOutputStream(file.outputStream().buffered()).use { out ->

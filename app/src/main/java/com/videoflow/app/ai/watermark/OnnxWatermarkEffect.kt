@@ -314,8 +314,8 @@ private class LamaTileProcessor(
         }
         previousWidth = tile.core.width; previousHeight = tile.core.height
         previousCore = coreTopLeft.copyOf()
-        runtime.temporal?.patches?.set(temporalKey, requireNotNull(previousCore))
-        runtime.temporal?.patches?.set("$temporalKey:shape", ByteBuffer.allocate(8).putInt(previousWidth).putInt(previousHeight).array())
+        runtime.temporal?.store(temporalKey, requireNotNull(previousCore))
+        runtime.temporal?.store("$temporalKey:shape", ByteBuffer.allocate(8).putInt(previousWidth).putInt(previousHeight).array())
 
         val glBuffer = ByteBuffer.allocateDirect(coreTopLeft.size).order(ByteOrder.nativeOrder())
         for (glY in 0 until tile.core.height) {

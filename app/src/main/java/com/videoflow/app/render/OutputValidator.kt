@@ -79,8 +79,13 @@ class OutputValidator(private val contentResolver: ContentResolver) {
                 if (mime.startsWith("audio/") && audio == null) audio = info
             }
             videoTrackIndex?.let { index ->
-                val measured = measureVideoCadence(extractor, index)
-                if (measured != null) video = video?.copy(measuredFrameRate = measured.measuredFps)
+                val windows=listOf(0L,expectedDurationUs/2,(expectedDurationUs-2_000_000L).coerceAtLeast(0L)).distinct()
+                windows.forEach { start ->
+                    val measured=measureVideoCadence(extractor,index,start)
+                    if(start==0L && measured!=null) video=video?.copy(measuredFrameRate=measured.measuredFps)
+                    if(measured!=null && !FrameCadenceVerifier.matches(measured.measuredFps,expected.frameRate))
+                        problems += "Video cadence near $start us: ${FrameCadenceVerifier.mismatchMessage(measured.measuredFps,expected.frameRate)}"
+                }
             }
         } catch (t: Throwable) {
             problems += "Output container could not be read: ${t.message ?: t::class.java.simpleName}."
@@ -119,8 +124,13 @@ class OutputValidator(private val contentResolver: ContentResolver) {
                 if (mime.startsWith("audio/") && audio == null) audio = info
             }
             videoTrackIndex?.let { index ->
-                val measured = measureVideoCadence(extractor, index)
-                if (measured != null) video = video?.copy(measuredFrameRate = measured.measuredFps)
+                val windows=listOf(0L,expectedDurationUs/2,(expectedDurationUs-2_000_000L).coerceAtLeast(0L)).distinct()
+                windows.forEach { start ->
+                    val measured=measureVideoCadence(extractor,index,start)
+                    if(start==0L && measured!=null) video=video?.copy(measuredFrameRate=measured.measuredFps)
+                    if(measured!=null && !FrameCadenceVerifier.matches(measured.measuredFps,expected.frameRate))
+                        problems += "Video cadence near $start us: ${FrameCadenceVerifier.mismatchMessage(measured.measuredFps,expected.frameRate)}"
+                }
             }
         } catch (t: Throwable) {
             problems += "Output container could not be read: ${t.message ?: t::class.java.simpleName}."
@@ -225,10 +235,11 @@ class OutputValidator(private val contentResolver: ContentResolver) {
         }
     }
 
-    private fun measureVideoCadence(extractor: MediaExtractor, trackIndex: Int): FrameCadenceVerifier.Measurement? {
+    private fun measureVideoCadence(extractor: MediaExtractor, trackIndex: Int, startUs: Long): FrameCadenceVerifier.Measurement? {
         val samples = ArrayList<Long>(MAX_CADENCE_SAMPLES)
         return runCatching {
             extractor.selectTrack(trackIndex)
+            extractor.seekTo(startUs,MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             while (samples.size < MAX_CADENCE_SAMPLES) {
                 val timeUs = extractor.sampleTime
                 if (timeUs < 0L) break

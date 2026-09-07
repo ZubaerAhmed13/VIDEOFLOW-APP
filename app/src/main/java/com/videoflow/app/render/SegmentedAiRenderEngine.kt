@@ -43,7 +43,7 @@ class SegmentedAiRenderEngine @Inject constructor(
         private set
     @Volatile var resumedSegmentCount: Long = 0L
         private set
-    private val mutex = Mutex()
+    private val mutex = ExportCacheLease.mutex
     private val cancelled = AtomicBoolean(false)
 
     override suspend fun prepare(plan: FinalRenderPlan, destination: OutputDestination, settings: ResolvedExportSettings): RenderPreparationResult {
@@ -149,6 +149,7 @@ class SegmentedAiRenderEngine @Inject constructor(
                             effect.copy(clipLocalStartUs=(effect.clipLocalStartUs-segment.startUs).coerceAtLeast(0L),
                                 clipLocalEndUs=minOf(effect.clipLocalEndUs,segment.endUs)-segment.startUs,motionAnchors=anchors)
                         }
+                        temporal.retainEffects(shortAi.map { it.id }.toSet())
                         val uri = FileProvider.getUriForFile(context,"${context.packageName}.derived",file)
                         save(AiLongJobState.PROCESSING)
                         val part = preparation.copy(plan=shortPlan,destination=OutputDestination(uri,file.name),

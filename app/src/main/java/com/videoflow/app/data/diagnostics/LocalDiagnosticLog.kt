@@ -15,7 +15,7 @@ class LocalDiagnosticLog @Inject constructor() {
     @Synchronized
     fun add(level: DiagnosticLevel, message: String) {
         // Messages are deliberately descriptive but must not include content URIs or user filenames.
-        events.addLast(DiagnosticEvent(System.currentTimeMillis(), level, message.take(240)))
+        events.addLast(DiagnosticEvent(System.currentTimeMillis(), level, DiagnosticRedaction.clean(message).take(240)))
         while (events.size > MAX_EVENTS) events.removeFirst()
     }
 

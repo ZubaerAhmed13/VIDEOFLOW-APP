@@ -60,6 +60,7 @@ fun ProfessionalSettingsScreen(
     val preferences by preferencesViewModel.state.collectAsState()
     val storage by settingsViewModel.storage.collectAsState()
     var appearanceDialog by remember { mutableStateOf(false) }
+    var clearRecoveryDialog by remember { mutableStateOf(false) }
     var clearProxyDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { settingsViewModel.refresh() }
@@ -117,6 +118,12 @@ fun ProfessionalSettingsScreen(
             }
 
             item { SectionHeader("Storage") }
+            item {
+                ListItem(headlineContent={ Text("Export recovery files") },
+                    supportingContent={ Text("${formatBytes(storage.checkpointBytes)} • Valid segments let compatible interrupted exports resume.") },
+                    trailingContent={ TextButton(onClick={ clearRecoveryDialog=true },enabled=storage.checkpointBytes>0 && !storage.clearing) { Text("Clear") } })
+            }
+            item { SettingsReadOnly("Extracted audio", "${formatBytes(storage.derivedAudioBytes)} • Project media retained with edits and snapshots; removed when its project is deleted.", Icons.Default.Storage) }
             item {
                 SettingsReadOnly(
                     "Original media",
@@ -201,6 +208,12 @@ fun ProfessionalSettingsScreen(
         )
     }
 
+    if(clearRecoveryDialog) {
+        AlertDialog(onDismissRequest={ clearRecoveryDialog=false },title={ Text("Clear export recovery files?") },
+            text={ Text("Interrupted exports will restart from the beginning. Projects, original media, extracted audio and AI models remain available.") },
+            confirmButton={ TextButton(onClick={ clearRecoveryDialog=false; settingsViewModel.clearExportCheckpoints() }) { Text("Clear recovery files") } },
+            dismissButton={ TextButton(onClick={ clearRecoveryDialog=false }) { Text("Keep") } })
+    }
     if (clearProxyDialog) {
         AlertDialog(
             onDismissRequest = { clearProxyDialog = false },

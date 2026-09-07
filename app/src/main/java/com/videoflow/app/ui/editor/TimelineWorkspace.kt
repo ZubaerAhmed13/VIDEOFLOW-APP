@@ -122,10 +122,14 @@ fun TimelineWorkspace(
         originUs=TimelineViewport.zoomOrigin(originUs,anchorDp,pixelsPerSecond,next,safeDuration)
         onZoom(next)
     }
-    LaunchedEffect(playheadUs, pixelsPerSecond, safeDuration) {
+    LaunchedEffect(playheadUs, safeDuration) {
         if(playheadUs < originUs || playheadUs >= windowEndUs) {
             originUs=TimelineViewport.centeredOrigin(playheadUs,pixelsPerSecond,safeDuration)
-            horizontal.scrollTo(0)
+        }
+        if(safeDuration>windowDurationUs) {
+            androidx.compose.runtime.withFrameNanos { }
+            val x=TimelineViewport.positionDp(playheadUs,originUs,pixelsPerSecond).toFloat()
+            horizontal.scrollTo(with(density) { (x-120f).coerceAtLeast(0f).dp.roundToPx() })
         }
     }
     val hasTimelineItems = clips.isNotEmpty() || textOverlays.isNotEmpty() || imageOverlays.isNotEmpty()
@@ -348,7 +352,8 @@ private fun TrackRow(
                             onTrimEnd = { onTrimClipEnd(clip.id, it) }
                         )
                     }
-                    textOverlays.filter { TimelineViewport.intersects(it.timelineStartUs,it.timelineEndUs,visibleStart,visibleEnd) }.forEach { overlay ->
+                    textOverlays.forEach { overlay ->
+                        if(!TimelineViewport.intersects(overlay.timelineStartUs,overlay.timelineEndUs,visibleStart,visibleEnd)) return@forEach
                         OverlayBlock(
                             label = overlay.content.ifBlank { "Text" },
                             startUs = maxOf(overlay.timelineStartUs,originUs)-originUs,
@@ -359,7 +364,8 @@ private fun TrackRow(
                             onSelect = { onSelect(EditorSelection.TextOverlay(overlay.id)) }
                         )
                     }
-                    imageOverlays.filter { TimelineViewport.intersects(it.timelineStartUs,it.timelineEndUs,visibleStart,visibleEnd) }.forEach { overlay ->
+                    imageOverlays.forEach { overlay ->
+                        if(!TimelineViewport.intersects(overlay.timelineStartUs,overlay.timelineEndUs,visibleStart,visibleEnd)) return@forEach
                         OverlayBlock(
                             label = mediaNames[overlay.assetId] ?: "Image",
                             startUs = maxOf(overlay.timelineStartUs,originUs)-originUs,

@@ -20,7 +20,7 @@ class VideoFlowApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         appScope.launch {
-            exportRepository.markInterruptedAfterProcessRestart(processStartedAt)
+            exportRepository.markInterruptedAfterProcessRestart(processStartedAt,this@VideoFlowApplication)
         }
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(

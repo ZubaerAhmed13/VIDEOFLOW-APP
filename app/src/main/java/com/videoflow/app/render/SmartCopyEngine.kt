@@ -58,6 +58,11 @@ class SmartCopyEngine @Inject constructor(
     }
 
     fun preflight(plan: FinalRenderPlan): SmartCopyPreflight {
+        val activeIds=plan.editorPlan.clips.filter { it.enabled }.map { it.id }.toSet()
+        val hasAi=kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            com.videoflow.app.data.ai.AiWatermarkRepository(context).load(plan.editorPlan.projectId).any { it.enabled && it.clipId in activeIds }
+        }
+        if(hasAi) return SmartCopyPreflight(false,listOf("AI reconstruction requires pixel rendering."))
         val visual = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
             com.videoflow.app.data.effects.VisualEditsRepository(context).load(plan.editorPlan.projectId)
         }
