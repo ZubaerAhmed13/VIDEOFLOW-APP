@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.room.withTransaction
+import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.data.db.MediaAssetEntity
 import com.videoflow.app.data.db.ProjectEntity
 import com.videoflow.app.data.db.VideoFlowDatabase
@@ -69,7 +70,11 @@ class ProjectRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val analyzer: MediaAnalyzer,
     private val fingerprinter: UriFingerprintService,
-    private val diagnosticLog: LocalDiagnosticLog
+    private val diagnosticLog: LocalDiagnosticLog,
+    private val projectDeletionService: ProjectDeletionService = ProjectDeletionService(
+        db,
+        AiWatermarkRepository(context)
+    )
 ) {
     private val resolver: ContentResolver = context.contentResolver
 
@@ -103,8 +108,10 @@ class ProjectRepository @Inject constructor(
         )
     }
 
-    suspend fun deleteProject(id: String) = withContext(Dispatchers.IO) {
-        db.projectDao().delete(id)
+    /** Canonical project deletion; Room state and Step-4 AI sidecar are cleaned together. */
+    suspend fun deleteProject(id: String) {
+        projectDeletionService.deleteProject(id)
+        diagnosticLog.add(DiagnosticLevel.INFO, "Project deleted and local AI sidecar cleaned")
     }
 
     suspend fun removeMediaReference(assetId: String) = withContext(Dispatchers.IO) {
