@@ -81,7 +81,9 @@ class WatermarkStudioViewModel @Inject constructor(
 
     fun bind(projectId: String, clipId: String) {
         historyService.activateProject(projectId)
-        if (boundProjectId == projectId && boundClipId == clipId && modelJob?.isActive == true) return
+        frameJob?.cancel(); workJob?.cancel()
+        replaceAiPreview(null); replaceSourceFrame(null)
+        _state.value = WatermarkStudioState()
         boundProjectId = projectId
         boundClipId = clipId
         modelJob?.cancel()
@@ -120,7 +122,7 @@ class WatermarkStudioViewModel @Inject constructor(
     }
 
     fun loadSourceFrame(sourceUri: String, sourceTimeUs: Long) {
-        replaceAiPreview(null)
+        clearPreviewOnly()
         frameJob?.cancel()
         frameJob = viewModelScope.launch {
             val previousBusy = _state.value.busy
@@ -135,6 +137,7 @@ class WatermarkStudioViewModel @Inject constructor(
                     }
                 }
                 .onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) return@onFailure
                     if (_state.value.busy == WatermarkStudioBusy.LOADING_FRAME) {
                         _state.value = _state.value.copy(
                             busy = WatermarkStudioBusy.IDLE,
@@ -159,6 +162,10 @@ class WatermarkStudioViewModel @Inject constructor(
     }
 
     fun clearPreviewOnly() {
+        if (_state.value.busy == WatermarkStudioBusy.AI_PREVIEW) {
+            workJob?.cancel()
+            _state.value = _state.value.copy(busy = WatermarkStudioBusy.IDLE, progress = 0f)
+        }
         replaceAiPreview(null)
         _state.value = _state.value.copy(previewProvider = null, error = null)
     }
@@ -272,6 +279,7 @@ class WatermarkStudioViewModel @Inject constructor(
         workJob = viewModelScope.launch {
             _state.value = _state.value.copy(busy = WatermarkStudioBusy.APPLYING, progress = 0.5f, error = null)
             runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 val before = repository.load(effect.projectId)
                 val existed = before.any { it.id == effect.id }
                 repository.upsert(effect)
@@ -286,6 +294,7 @@ class WatermarkStudioViewModel @Inject constructor(
                     )
                 )
                 after.filter { it.clipId == effect.clipId }
+                }
             }.onSuccess { effects ->
                 _state.value = _state.value.copy(
                     busy = WatermarkStudioBusy.IDLE,
@@ -345,6 +354,10 @@ class WatermarkStudioViewModel @Inject constructor(
     fun cancelWork() {
         workJob?.cancel()
         _state.value = _state.value.copy(busy = WatermarkStudioBusy.IDLE, progress = 0f)
+    }
+
+    fun closeSession() {
+        modelJob?.cancel(); frameJob?.cancel(); cancelWork()
     }
 
     private suspend fun refreshEffects(projectId: String, clipId: String) {

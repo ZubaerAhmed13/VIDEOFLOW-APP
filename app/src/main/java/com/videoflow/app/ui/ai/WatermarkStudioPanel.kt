@@ -165,6 +165,7 @@ fun WatermarkStudioPanel(
         }
     }
     LaunchedEffect(projectId, clipId) { vm.bind(projectId, clipId) }
+    androidx.compose.runtime.DisposableEffect(projectId,clipId) { onDispose { vm.closeSession() } }
     LaunchedEffect(asset.sourceUri, sourceTimeUs) {
         vm.loadSourceFrame(asset.sourceUri, sourceTimeUs.coerceIn(clip.sourceStartUs, clip.sourceEndUs - 1L))
     }
@@ -259,8 +260,8 @@ fun WatermarkStudioPanel(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
                 onClick = {
-                    loadedAnchors = activeAnchors
                     val from = if (activeAnchors.any { it.manual }) previewLocalUs else startUs
+                    loadedAnchors = activeAnchors.filter { it.manual || it.clipLocalTimeUs < from }
                     vm.track(asset.sourceUri, clip, correctionRoi ?: draftEffect.roiAt(from), from, endUs)
                 },
                 enabled = state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE

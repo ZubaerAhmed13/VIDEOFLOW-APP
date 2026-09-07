@@ -138,7 +138,9 @@ class ProfessionalProductWorkflowTest {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val file=File(context.getExternalFilesDir(null),"professional-screenshots/$label.png")
         file.parentFile!!.mkdirs()
-        val bitmap=rule.onRoot().captureToImage().asAndroidBitmap()
+        rule.waitForIdle()
+        val bitmap=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot() ?: error("Could not capture product screen")
         file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
+        bitmap.recycle()
     }
 }

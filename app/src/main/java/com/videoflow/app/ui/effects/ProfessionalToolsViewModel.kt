@@ -30,6 +30,7 @@ class ProfessionalToolsViewModel @Inject constructor(
     private var task: Job? = null
     private var before = VisualEdits()
     fun open(projectId: String) {
+        history.activateProject(projectId)
         task?.cancel()
         mutable.value = ProfessionalToolState(busy = true)
         task = viewModelScope.launch {
@@ -43,9 +44,11 @@ class ProfessionalToolsViewModel @Inject constructor(
     fun cancel() { task?.cancel(); mutable.value = ProfessionalToolState() }
     fun apply(projectId: String, label: String, done: () -> Unit) = work {
         val next = mutable.value.draft
-        repository.visualEdits.replace(projectId, next)
-        history.touchProject(projectId)
-        history.record(VisualEditsHistoryEntry(projectId, label, before, next))
+        withContext(NonCancellable) {
+            repository.visualEdits.replace(projectId, next)
+            history.touchProject(projectId)
+            history.record(VisualEditsHistoryEntry(projectId, label, before, next))
+        }
         done()
     }
     fun extract(projectId: String, clipId: String, mute: Boolean, done: () -> Unit) = work {
