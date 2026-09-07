@@ -49,7 +49,7 @@ def report():
     units=unit_results('verified-build')
     logs=pathlib.Path('verified-runtime')
     names=['step5-integration','step5-layout-portrait','step5-layout-landscape','step5-layout-tablet','step5-process-start','step5-process-recovery',
-        'product-panels','ai-runtime','final-ai-export','editor-regression','professional-upgrade','retained-product-regression']
+        'product-panels','ai-runtime','ai-moving-preview','final-ai-export','editor-regression','professional-upgrade','retained-product-regression']
     counts={}
     for name in names:
         text=(logs/(name+'.txt')).read_text(errors='replace')
@@ -58,6 +58,10 @@ def report():
         assert len(matches)==1,name
         counts[name]=int(matches[0])
     assert counts['step5-integration']==13 and counts['professional-upgrade']==5
+    assert counts['ai-moving-preview']==1
+    assert 'STEP5_AI_MOVING_PREVIEW_CERTIFIED' in (logs/'ai-moving-preview.txt').read_text(errors='replace')
+    isolation=(logs/'step5-export-process-isolation.txt').read_text(errors='replace')
+    assert 'STEP5_EXPORT_PROCESS_ISOLATION_CERTIFIED' in isolation
     for name in ('quality.jsonl','av-sync.jsonl','ai-roi-quality.jsonl','resources.jsonl','vfr-cadence.jsonl','audio-fades.jsonl','composition-geometry.jsonl'):
         path=logs/'step5-evidence'/name
         rows=[json.loads(line) for line in path.read_text().splitlines()]
@@ -81,6 +85,9 @@ def report():
         (dest/'certification-results.json').write_text(json.dumps({'units':{k:sum(v.values()) for k,v in units.items()},'instrumentation':counts,'totalInstrumentedExecutions':sum(counts.values()),'physical':'NOT VERIFIED'},indent=2))
     shutil.copytree(logs/'step5-evidence',target/'measurements')
     for apk in pathlib.Path('verified-apks').glob('*.apk'):shutil.copy(apk,package/apk.name)
+    review=pathlib.Path('verified-apks/VideoFlow_Step5_Review.apk')
+    shutil.copy(review,target/'VideoFlow-Step5-Review.apk')
+    shutil.copy(review,package/'VideoFlow-Step5-Review.apk')
     (package/'results').mkdir()
     (package/'results'/'README.md').write_text('No physical tests have been run. Each physical.py invocation creates a separate UTC-stamped evidence directory.\n')
     shutil.make_archive('VideoFlow_Step5_Physical_Test_Package','zip',package)

@@ -30,9 +30,10 @@ class Step5ProcessDeathTest {
     @Test fun startRealForegroundAiJob() = runBlocking {
         val f=Step5MediaFixture();val db=AppModule.provideDatabase(f.context)
         val prefs=f.context.getSharedPreferences("step5-process-death",0)
-        val sourceFile=privateFixtureFile(f.context,"source-${System.nanoTime()}.mp4")
-        f.instrumentation.context.assets.open("sample_av.mp4").use { input -> sourceFile.outputStream().use(input::copyTo) }
-        val source=privateFixtureUri(f.context,sourceFile)
+        // The source must satisfy the same durable background-export contract as a real project.
+        // Step5MediaFixture inserts through the target app's resolver, so MediaStore records this
+        // row as app-owned and ProjectRepository can safely authorize it without weakening SAF rules.
+        val source=f.source()
         val projects=ProjectRepository(db,f.context,MediaAnalyzer(f.context),UriFingerprintService(f.context),LocalDiagnosticLog())
         val id=projects.createProject("Step 5 process recovery")
         val asset=(projects.addMedia(id,source) as AddMediaResult.Added).asset
@@ -42,9 +43,10 @@ class Step5ProcessDeathTest {
         val outputFile=privateFixtureFile(f.context,"output-${System.nanoTime()}.mp4")
         val output=privateFixtureUri(f.context,outputFile)
         // Exercise a real foreground AI export in :export at the fixture's native dimensions.
-        // App-private FileProvider fixtures make this process-isolation test deterministic across
-        // the instrumentation process, main/editor process and :export process. Direct user-selected
-        // SAF/MediaStore muxing remains independently certified by SafMediaMuxerFactoryInstrumentedTest.
+        // The app-owned MediaStore source proves the durable source-authority path; the private
+        // FileProvider output stays deterministic across instrumentation, editor and :export.
+        // Direct user-selected SAF/MediaStore muxing remains independently certified by
+        // SafMediaMuxerFactoryInstrumentedTest.
         val settings=ExportSettings(resolutionPreset=ExportResolutionPreset.CUSTOM,
             customWidth=320,customHeight=240,videoBitrateOverride=4_000_000,
             audioBitrate=128_000,audioChannels=1)
@@ -54,7 +56,6 @@ class Step5ProcessDeathTest {
             .putString("job",job.id)
             .putString("source",source.toString())
             .putString("output",output.toString())
-            .putString("sourcePath",sourceFile.absolutePath)
             .putString("outputPath",outputFile.absolutePath)
             .commit()
         ActivityScenario.launch(MainActivity::class.java).use {
@@ -82,10 +83,8 @@ class Step5ProcessDeathTest {
             val output=Uri.parse(prefs.getString("output",null))
             context.contentResolver.openFileDescriptor(output,"r")!!.use { assertEquals(0L,it.statSize) }
             ProjectDeletionService(db,AiWatermarkRepository(context)).deleteProject(id)
-            for(key in listOf("source","output")) runCatching {
-                context.contentResolver.delete(Uri.parse(prefs.getString(key,null)),null,null)
-            }
-            for(key in listOf("sourcePath","outputPath")) prefs.getString(key,null)?.let { path -> runCatching { File(path).delete() } }
+            runCatching { context.contentResolver.delete(Uri.parse(prefs.getString("source",null)),null,null) }
+            prefs.getString("outputPath",null)?.let { path -> runCatching { File(path).delete() } }
             prefs.edit().clear().commit()
             Unit
         } finally { db.close() }
