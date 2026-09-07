@@ -33,75 +33,147 @@ import com.videoflow.app.domain.export.ExportFailureCode
 class ExportForegroundService : Service() {
     @Inject lateinit var coordinator: ExportCoordinator
     @Inject lateinit var repository: ExportRepository
+    @Inject lateinit var diagnostics: ExportDiagnosticsRecorder
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var activeJobId: String? = null
-    private val requests=Channel<String>(16)
-    private val pending=linkedSetOf<String>()
-    private var worker: Job?=null
-    private var latestStartId=0
+    private val requests = Channel<String>(16)
+    private val pending = linkedSetOf<String>()
+    private var worker: Job? = null
+    private var latestStartId = 0
 
     override fun onCreate() {
         super.onCreate()
+        check(ExportProcessIdentity.isExportProcess(this)) { "ExportForegroundService must run in :export" }
         createNotificationChannel()
-        worker=serviceScope.launch {
+        worker = serviceScope.launch {
             try {
-                for(jobId in requests) {
-                    activeJobId=jobId
-                    val status=coordinator.execute(jobId) { state, progress -> updateNotification(state,progress) }
-                    if(status==ExportJobStatus.COMPLETED) updateNotification(status,1f,"Export completed")
+                for (jobId in requests) {
+                    activeJobId = jobId
+                    val status = try {
+                        coordinator.execute(jobId) { state, progress -> updateNotification(state, progress) }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Throwable) {
+                        // Never pretend try/catch can make fatal VM/linkage damage safe. Because this
+                        // service runs in :export, rethrowing these errors sacrifices only the heavy
+                        // worker process; the editor/main process is protected and its watchdog will
+                        // mark the persisted job INTERRUPTED.
+                        if (ExportFailureClassifier.shouldRethrow(error)) throw error
+                        containEscapedFailure(jobId, error)
+                        ExportJobStatus.FAILED
+                    }
+                    if (status == ExportJobStatus.COMPLETED) updateNotification(status, 1f, "Export completed")
                     pending.remove(jobId)
-                    activeJobId=null
-                    if(pending.isEmpty()) {
+                    activeJobId = null
+                    if (pending.isEmpty()) {
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelfResult(latestStartId)
                     }
                 }
             } finally {
                 // Queue ownership remains in this service; interrupted queued work must not look active.
-                val interrupted=pending.toList()
+                val interrupted = pending.toList()
                 withContext(NonCancellable + Dispatchers.IO) {
                     interrupted.forEach { id ->
-                        val job=repository.getJob(id)
-                        if(job?.status in setOf(ExportJobStatus.QUEUED,ExportJobStatus.PREPARING,ExportJobStatus.RENDERING,ExportJobStatus.FINALIZING,ExportJobStatus.VALIDATING))
-                            repository.updateJob(id,ExportJobStatus.INTERRUPTED,job?.progress ?: 0f,ExportFailureCode.CANCELLED,
-                                "Android stopped the export service. Restart export to recover validated checkpoints where supported.")
+                        val job = repository.getJob(id)
+                        if (job?.status in setOf(
+                                ExportJobStatus.QUEUED,
+                                ExportJobStatus.PREPARING,
+                                ExportJobStatus.RENDERING,
+                                ExportJobStatus.FINALIZING,
+                                ExportJobStatus.VALIDATING
+                            )
+                        ) {
+                            repository.updateJob(
+                                id,
+                                ExportJobStatus.INTERRUPTED,
+                                job.progress,
+                                ExportFailureCode.UNKNOWN,
+                                "Android stopped the isolated export process. The project is safe; retry export to recover validated checkpoints where supported."
+                            )
+                            diagnostics.record(job, job.status.name, "export-service-interrupted")
+                        }
                     }
                 }
             }
         }
     }
 
+    private suspend fun containEscapedFailure(jobId: String, error: Throwable) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            val job = repository.getJob(jobId)
+            val classified = ExportFailureClassifier.classify(error)
+            if (job != null) {
+                ExportPartialOutputCleanup.invalidate(this@ExportForegroundService, job.destinationUri)
+                runCatching {
+                    repository.updateJob(
+                        jobId,
+                        ExportJobStatus.FAILED,
+                        job.progress,
+                        classified.code,
+                        classified.userMessage
+                    )
+                }
+                diagnostics.record(job, job.status.name, "escaped-export-failure", error)
+            }
+        }
+        updateNotification(ExportJobStatus.FAILED, 0f, "Export failed")
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        latestStartId=startId
-        val jobId=intent?.getStringExtra(EXTRA_JOB_ID)
-        if(intent?.action==ACTION_CANCEL) {
-            if(jobId!=null) serviceScope.launch {
-                if(jobId==activeJobId) {
-                    updateNotification(ExportJobStatus.RENDERING,0f,"Cancelling export…")
+        latestStartId = startId
+        val jobId = intent?.getStringExtra(EXTRA_JOB_ID)
+        if (intent?.action == ACTION_CANCEL) {
+            if (jobId != null) serviceScope.launch {
+                if (jobId == activeJobId) {
+                    updateNotification(ExportJobStatus.RENDERING, 0f, "Cancelling export…")
                     coordinator.cancel(jobId)
-                } else if(jobId in pending) repository.updateJob(jobId,ExportJobStatus.CANCELLED,0f,ExportFailureCode.CANCELLED,"Queued export cancelled.")
+                } else if (jobId in pending) {
+                    repository.updateJob(jobId, ExportJobStatus.CANCELLED, 0f, ExportFailureCode.CANCELLED, "Queued export cancelled.")
+                    pending.remove(jobId)
+                }
             }
             return START_NOT_STICKY
         }
-        if(jobId==null) { if(pending.isEmpty()) stopSelf(startId); return START_NOT_STICKY }
-        if(jobId in pending) return START_NOT_STICKY
-        if(activeJobId==null) {
-            try { startAsForeground(jobId,ExportJobStatus.PREPARING,0f,"Preparing native export…") }
-            catch(error: RuntimeException) {
+        if (jobId == null) {
+            if (pending.isEmpty()) stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        if (jobId in pending) return START_NOT_STICKY
+        if (activeJobId == null) {
+            try {
+                startAsForeground(jobId, ExportJobStatus.PREPARING, 0f, "Preparing native export…")
+            } catch (error: RuntimeException) {
                 serviceScope.launch {
-                    try { repository.updateJob(jobId,ExportJobStatus.FAILED,0f,ExportFailureCode.UNKNOWN,
-                        "Android could not start background export. Keep VideoFlow open and try again after other processing finishes.") }
-                    finally { stopSelf(startId) }
+                    try {
+                        repository.updateJob(
+                            jobId,
+                            ExportJobStatus.FAILED,
+                            0f,
+                            ExportFailureCode.UNKNOWN,
+                            "Android could not start background export. Keep VideoFlow open and try again after other processing finishes."
+                        )
+                        diagnostics.record(repository.getJob(jobId), "FOREGROUND_START", "foreground-start-failed", error)
+                    } finally {
+                        stopSelf(startId)
+                    }
                 }
                 return START_NOT_STICKY
             }
         }
         pending.add(jobId)
-        if(requests.trySend(jobId).isFailure) {
+        if (requests.trySend(jobId).isFailure) {
             pending.remove(jobId)
-            serviceScope.launch { repository.updateJob(jobId,ExportJobStatus.FAILED,0f,ExportFailureCode.UNKNOWN,
-                "The export queue is full. Wait for an active export to finish, then try again.") }
+            serviceScope.launch {
+                repository.updateJob(
+                    jobId,
+                    ExportJobStatus.FAILED,
+                    0f,
+                    ExportFailureCode.UNKNOWN,
+                    "The export queue is full. Wait for an active export to finish, then try again."
+                )
+            }
         }
         return START_NOT_STICKY
     }
@@ -125,8 +197,8 @@ class ExportForegroundService : Service() {
         val notification = buildNotification(jobId, status, progress, text)
         if (Build.VERSION.SDK_INT >= 35) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
-        } else if(Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIFICATION_ID,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
