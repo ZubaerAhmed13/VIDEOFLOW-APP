@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.data.db.ClipEntity
 import com.videoflow.app.data.db.ImageOverlayEntity
 import com.videoflow.app.data.db.KeyframeEntity
@@ -60,7 +61,7 @@ class Step2ComplexPersistenceTest {
         assertEquals(2.0, loaded.timeline.clips.first { it.id == "c3" }.speed, 0.0)
         assertEquals(-6f, loaded.timeline.clips.first { it.id == "c4" }.gainDb, 0f)
 
-        val snapshots = SnapshotService(db)
+        val snapshots = SnapshotService(db, AiWatermarkRepository(context))
         val snapshot = snapshots.create(PROJECT_ID, "Certification snapshot")
         assertNotNull(db.snapshotDao().get(snapshot.id))
 
