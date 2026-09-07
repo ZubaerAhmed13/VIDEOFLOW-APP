@@ -1,0 +1,54 @@
+name: Step 5 one-shot maintenance patch
+
+on:
+  push:
+    branches:
+      - step5-final-hardening-certification
+    paths:
+      - .github/workflows/step5-one-shot-maintenance.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: step5-final-hardening-certification
+      - name: Apply deterministic maintenance corrections
+        shell: python
+        run: |
+          from pathlib import Path
+
+          preview = Path('app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt')
+          text = preview.read_text()
+          marker = 'import androidx.compose.runtime.Composable\n'
+          if 'import androidx.compose.runtime.collectAsState\n' not in text:
+              text = text.replace(marker, marker + 'import androidx.compose.runtime.collectAsState\n', 1)
+          preview.write_text(text)
+
+          workflow = Path('.github/workflows/android-step5-certification.yml')
+          text = workflow.read_text()
+          old = "          grep -q 'Generate AI Preview' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt\n"
+          new = (
+              "          grep -q 'Generate Still Preview' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt\n"
+              "          grep -q 'Generate Moving Preview' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt\n"
+          )
+          if old in text:
+              text = text.replace(old, new, 1)
+          workflow.write_text(text)
+      - name: Commit corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No maintenance corrections required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt .github/workflows/android-step5-certification.yml
+          git commit -m 'fix: align Step 5 preview compile and certification gate'
+          git push origin HEAD:step5-final-hardening-certification
