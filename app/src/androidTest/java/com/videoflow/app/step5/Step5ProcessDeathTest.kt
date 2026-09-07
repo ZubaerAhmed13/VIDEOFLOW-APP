@@ -1,6 +1,9 @@
 @file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 package com.videoflow.app.step5
 
+import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -15,32 +18,45 @@ import com.videoflow.app.data.project.*
 import com.videoflow.app.domain.ai.*
 import com.videoflow.app.domain.export.*
 import com.videoflow.app.export.ExportForegroundService
+import java.io.File
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** CI invokes the phases in separate app processes, with adb force-stop between them. */
+/** CI invokes the phases in separate app processes, with adb killing only the isolated :export process between them. */
 @RunWith(AndroidJUnit4::class)
 class Step5ProcessDeathTest {
     @Test fun startRealForegroundAiJob() = runBlocking {
         val f=Step5MediaFixture();val db=AppModule.provideDatabase(f.context)
         val prefs=f.context.getSharedPreferences("step5-process-death",0)
-        val source=f.source()
+        val sourceFile=privateFixtureFile(f.context,"source-${System.nanoTime()}.mp4")
+        f.instrumentation.context.assets.open("sample_av.mp4").use { input -> sourceFile.outputStream().use(input::copyTo) }
+        val source=privateFixtureUri(f.context,sourceFile)
         val projects=ProjectRepository(db,f.context,MediaAnalyzer(f.context),UriFingerprintService(f.context),LocalDiagnosticLog())
         val id=projects.createProject("Step 5 process recovery")
         val asset=(projects.addMedia(id,source) as AddMediaResult.Added).asset
         val editor=EditorRepository(db);val clip=editor.addClip(id,asset.id,0L)
         AiWatermarkRepository(f.context).upsert(AiWatermarkEffect("recovery-ai",id,clip.id,0,clip.timelineDurationUs,NormalizedRoi(.1f,.1f,.8f,.8f)))
         val repository=ExportRepository(db,editor)
-        val output=f.destination()
-        // Exercise real foreground AI and process death at the fixture's native dimensions.
-        // The default 1080p/high-bitrate project exceeds this emulator encoder's range.
+        val outputFile=privateFixtureFile(f.context,"output-${System.nanoTime()}.mp4")
+        val output=privateFixtureUri(f.context,outputFile)
+        // Exercise a real foreground AI export in :export at the fixture's native dimensions.
+        // App-private FileProvider fixtures make this process-isolation test deterministic across
+        // the instrumentation process, main/editor process and :export process. Direct user-selected
+        // SAF/MediaStore muxing remains independently certified by SafMediaMuxerFactoryInstrumentedTest.
         val settings=ExportSettings(resolutionPreset=ExportResolutionPreset.CUSTOM,
             customWidth=320,customHeight=240,videoBitrateOverride=4_000_000,
             audioBitrate=128_000,audioChannels=1)
         val job=repository.createJob(id,output.toString(),"interrupted.mp4",settings)
-        prefs.edit().putString("project",id).putString("job",job.id).putString("source",source.toString()).putString("output",output.toString()).commit()
+        prefs.edit()
+            .putString("project",id)
+            .putString("job",job.id)
+            .putString("source",source.toString())
+            .putString("output",output.toString())
+            .putString("sourcePath",sourceFile.absolutePath)
+            .putString("outputPath",outputFile.absolutePath)
+            .commit()
         ActivityScenario.launch(MainActivity::class.java).use {
             f.instrumentation.runOnMainSync { ExportForegroundService.start(f.context,job.id) }
             withTimeout(120_000L) { while(repository.getJob(job.id)!!.status != ExportJobStatus.RENDERING) {
@@ -52,6 +68,7 @@ class Step5ProcessDeathTest {
         }
         db.close()
     }
+
     @Test fun restartRecognizesInterruptedJobAndPreservesEditableProject() = runBlocking {
         val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
         val prefs=context.getSharedPreferences("step5-process-death",0)
@@ -62,12 +79,24 @@ class Step5ProcessDeathTest {
             withTimeout(30_000) { while(repository.getJob(jobId)!!.status !in setOf(ExportJobStatus.INTERRUPTED,ExportJobStatus.CANCELLED)) delay(100) }
             assertNotNull(db.projectDao().get(id));assertEquals(1,editor.load(id).timeline.clips.size)
             assertEquals(1,AiWatermarkRepository(context).load(id).size)
-            val output=android.net.Uri.parse(prefs.getString("output",null))
+            val output=Uri.parse(prefs.getString("output",null))
             context.contentResolver.openFileDescriptor(output,"r")!!.use { assertEquals(0L,it.statSize) }
             ProjectDeletionService(db,AiWatermarkRepository(context)).deleteProject(id)
-            for(key in listOf("source","output")) context.contentResolver.delete(android.net.Uri.parse(prefs.getString(key,null)),null,null)
+            for(key in listOf("source","output")) runCatching {
+                context.contentResolver.delete(Uri.parse(prefs.getString(key,null)),null,null)
+            }
+            for(key in listOf("sourcePath","outputPath")) prefs.getString(key,null)?.let { path -> runCatching { File(path).delete() } }
             prefs.edit().clear().commit()
             Unit
         } finally { db.close() }
     }
+
+    private fun privateFixtureFile(context: Context,name: String): File =
+        File(context.filesDir,"ai-jobs/process-death/$name").apply {
+            parentFile?.mkdirs()
+            if(!exists()) check(createNewFile()) { "Could not create process-death fixture $absolutePath" }
+        }
+
+    private fun privateFixtureUri(context: Context,file: File): Uri =
+        FileProvider.getUriForFile(context,"${context.packageName}.derived",file)
 }
