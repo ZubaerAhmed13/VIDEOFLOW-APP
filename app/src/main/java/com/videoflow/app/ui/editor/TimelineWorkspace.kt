@@ -101,7 +101,9 @@ fun TimelineWorkspace(
     onToggleVisible: (TimelineTrack) -> Unit,
     onToggleLock: (TimelineTrack) -> Unit,
     onTrackSettings: (TimelineTrack) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    revision: Long = 0L,
+    onProfessionalTool: (ProfessionalEditorTool)->Unit = {}
 ) {
     val horizontal = rememberScrollState()
     val vertical = rememberScrollState()
@@ -164,6 +166,7 @@ fun TimelineWorkspace(
                         .weight(1f)
                         .verticalScroll(vertical)
                 ) {
+                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool)
                     tracks.sortedBy { it.orderIndex }.forEach { track ->
                         TrackRow(
                             track = track,

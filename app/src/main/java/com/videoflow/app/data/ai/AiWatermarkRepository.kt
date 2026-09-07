@@ -88,6 +88,15 @@ class AiWatermarkRepository @Inject constructor(
         _changes.tryEmit(projectId)
     }
 
+    suspend fun cleanupDerivedMedia(projectId: String) = withContext(Dispatchers.IO) {
+        require(projectId.matches(Regex("[A-Za-z0-9_-]+")))
+        File(context.filesDir,"extracted-audio/$projectId").takeIf { it.isDirectory }?.deleteRecursively()
+        File(context.filesDir,"ai-jobs").listFiles()?.filter { it.isDirectory && it.name.matches(Regex("[0-9a-f]{64}")) }?.forEach { directory ->
+            val owned = runCatching { JSONObject(File(directory,"checkpoint.json").readText()).optString("project") == projectId }.getOrDefault(false)
+            if (owned) directory.deleteRecursively()
+        }
+    }
+
     private fun readEffects(projectId: String): List<AiWatermarkEffect> {
         requireSafeId(projectId)
         val file = fileFor(projectId)

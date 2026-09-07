@@ -297,6 +297,8 @@ class EditHistoryService @Inject constructor(
         }
     }
 
+    suspend fun touchProject(projectId: String) = withContext(Dispatchers.IO) { db.withTransaction { touch(projectId) } }
+
     private suspend fun touch(projectId: String) {
         val project = db.projectDao().get(projectId)?.project ?: return
         db.projectDao().update(project.copy(projectFormatVersion = 2, updatedAt = System.currentTimeMillis()))

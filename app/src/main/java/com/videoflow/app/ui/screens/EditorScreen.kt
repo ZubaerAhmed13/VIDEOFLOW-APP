@@ -447,6 +447,8 @@ fun EditorScreen(
                         onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
                         onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
                         onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
+                        revision = project?.updatedAt ?: 0L,
+                        onProfessionalTool = onProfessionalTool,
                         modifier = Modifier.weight(0.54f)
                     )
                 }
@@ -511,6 +513,8 @@ fun EditorScreen(
                         onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
                         onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
                         onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
+                        revision = project?.updatedAt ?: 0L,
+                        onProfessionalTool = onProfessionalTool,
                         modifier = Modifier.weight(0.44f)
                     )
                 }
@@ -567,6 +571,8 @@ fun EditorScreen(
                         onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
                         onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
                         onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
+                        revision = project?.updatedAt ?: 0L,
+                        onProfessionalTool = onProfessionalTool,
                         modifier = Modifier.weight(0.58f)
                     )
                 }

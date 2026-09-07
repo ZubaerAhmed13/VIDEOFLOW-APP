@@ -22,7 +22,8 @@ data class RenderPreparation(
     val usesTemporaryLocalOutput: Boolean,
     val aiEffectsOverride: List<com.videoflow.app.domain.ai.AiWatermarkEffect>? = null,
     val visualEditsOverride: com.videoflow.app.domain.effects.VisualEdits? = null,
-    val visualTimeOffsetUs: Long = 0L
+    val visualTimeOffsetUs: Long = 0L,
+    val aiTemporalCheckpoint: com.videoflow.app.ai.watermark.AiTemporalCheckpoint? = null
 )
 
 data class RenderExecutionResult(

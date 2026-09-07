@@ -57,7 +57,7 @@ fun Step4WatermarkEditorRoute(
     var activeTool by androidx.compose.runtime.remember { mutableStateOf<com.videoflow.app.ui.editor.ProfessionalEditorTool?>(null) }
 
     LaunchedEffect(selectedId, isVideoSelection) {
-        activeTool = null
+        if (!isVideoSelection || activeTool?.clipId != selectedId) activeTool = null
     }
 
     Box(Modifier.fillMaxSize()) {

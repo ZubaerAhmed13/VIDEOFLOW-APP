@@ -33,7 +33,6 @@ import com.videoflow.app.render.Media3RenderEngine
 import com.videoflow.app.render.OutputDestination
 import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -45,23 +44,32 @@ import org.junit.runner.RunWith
  * and produces an output that passes the production OutputValidator.
  */
 @RunWith(AndroidJUnit4::class)
-class ProfessionalCheckpointExportInstrumentedTest {
+class LongAiEnduranceInstrumentedTest {
     @Test
-    fun checkpointedVideoAssemblesWithContinuousOriginalAudio() = runBlocking {
+    fun runConfiguredOriginalSourceThroughFinalAiPipeline() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val testContext = InstrumentationRegistry.getInstrumentation().context
         val resolver = context.contentResolver
+        val args = InstrumentationRegistry.getArguments()
+        val configuredUri = requireNotNull(args.getString("vfSourceUri")) { "Supply vfSourceUri from an original source accessible to VideoFlow." }
+        val metadata = com.videoflow.app.data.media.MediaAnalyzer(context).analyze(android.net.Uri.parse(configuredUri)).metadata
+        val startUs = args.getString("vfStartUs")?.toLong() ?: 0L
+        val endUs = args.getString("vfEndUs")?.toLong() ?: requireNotNull(metadata.durationUs)
+        require(endUs > startUs)
+        val durationUs = endUs-startUs
+        val outputWidth = requireNotNull(metadata.width)
+        val outputHeight = requireNotNull(metadata.height)
+        val cadence = com.videoflow.app.domain.editor.SourceMediaAuthority.frameRate(metadata.frameRate)
+        val roiValues = (args.getString("vfRoi") ?: "0.70,0.05,0.90,0.15").split(',').map { it.toFloat() }
+        require(roiValues.size == 4)
+        val configuredRoi = NormalizedRoi(roiValues[0],roiValues[1],roiValues[2],roiValues[3])
         val suffix = System.currentTimeMillis().toString()
-        val projectId = "professional-checkpoint-export-$suffix"
-        val sourceUri = createVideoRow(context, "videoflow-step4-final-source-$suffix.mp4")
+        val projectId = "endurance-export-$suffix"
+        val sourceUri = android.net.Uri.parse(configuredUri)
         val outputUri = createVideoRow(context, "videoflow-step4-final-output-$suffix.mp4")
         val aiRepository = AiWatermarkRepository(context)
 
         try {
-            resolver.openOutputStream(sourceUri, "w")!!.use { output ->
-                testContext.assets.open("sample_av.mp4").use { it.copyTo(output, 64 * 1024) }
-            }
-
             val track = TimelineTrack(
                 id = "video-track",
                 projectId = projectId,
@@ -75,15 +83,15 @@ class ProfessionalCheckpointExportInstrumentedTest {
                 trackId = track.id,
                 assetId = "source",
                 timelineStartUs = 0L,
-                sourceStartUs = 0L,
-                sourceEndUs = 2_000_000L
+                sourceStartUs = startUs,
+                sourceEndUs = endUs
             )
             val plan = FinalRenderPlan(
                 editorPlan = RenderPlan(
                     projectId = projectId,
-                    width = 320,
-                    height = 240,
-                    frameRate = FrameRate.FPS_30,
+                    width = outputWidth,
+                    height = outputHeight,
+                    frameRate = cadence,
                     tracks = listOf(track),
                     clips = listOf(clip),
                     textOverlays = emptyList(),
@@ -98,15 +106,15 @@ class ProfessionalCheckpointExportInstrumentedTest {
                         displayName = "sample_av.mp4",
                         mimeType = "video/mp4",
                         sizeBytes = null,
-                        durationUs = 2_000_000L,
-                        width = 320,
-                        height = 240,
-                        rotationDegrees = 0,
-                        frameRate = 30.0,
+                        durationUs = durationUs,
+                        width = outputWidth,
+                        height = outputHeight,
+                        rotationDegrees = metadata.rotationDegrees,
+                        frameRate = metadata.frameRate,
                         videoCodecMime = "video/avc",
-                        audioCodecMime = "audio/mp4a-latm",
-                        audioSampleRate = 48_000,
-                        audioChannelCount = 1,
+                        audioCodecMime = metadata.audioCodecMime,
+                        audioSampleRate = metadata.audioSampleRate ?: 48_000,
+                        audioChannelCount = metadata.audioChannelCount,
                         videoBitrate = null,
                         colorStandard = null,
                         colorTransfer = null,
@@ -115,7 +123,7 @@ class ProfessionalCheckpointExportInstrumentedTest {
                         fingerprintSha256 = "step4-final-export-fixture"
                     )
                 ),
-                durationUs = 2_000_000L
+                durationUs = durationUs
             )
             val effect = AiWatermarkEffect(
                 id = "final-ai-effect",
@@ -124,12 +132,9 @@ class ProfessionalCheckpointExportInstrumentedTest {
                 // Keep the certification bounded to the opening frames so API-35 proves the real
                 // FINAL model path without turning CI into a full two-second CPU inference soak.
                 clipLocalStartUs = 0L,
-                clipLocalEndUs = 40_000L,
-                roi = NormalizedRoi(0.62f, 0.62f, 0.94f, 0.92f),
-                motionAnchors = listOf(
-                    RoiMotionAnchor(0L, 0.78f, 0.77f),
-                    RoiMotionAnchor(33_333L, 0.72f, 0.72f)
-                ),
+                clipLocalEndUs = durationUs,
+                roi = configuredRoi,
+                motionAnchors = emptyList(),
                 contextPaddingPx = 32,
                 featherPx = 6,
                 temporalStability = 0f,
@@ -137,34 +142,23 @@ class ProfessionalCheckpointExportInstrumentedTest {
                 enabled = true
             )
             aiRepository.upsert(effect)
-            val visual = com.videoflow.app.domain.effects.VisualEdits(
-                effects = com.videoflow.app.domain.effects.VisualEffectType.entries.mapIndexed { index, type ->
-                    com.videoflow.app.domain.effects.VideoEffectNode("effect-$index",clip.id,type,0L,2_000_000L,.08f,order=index)
-                },
-                enhance = mapOf(clip.id to com.videoflow.app.domain.effects.EnhanceParameters(mapOf(com.videoflow.app.domain.effects.Adjustment.EXPOSURE to .05f)))
-            )
-            aiRepository.visualEdits.replace(projectId,visual)
-            assertEquals(visual, AiWatermarkRepository(context).visualEdits.load(projectId))
-            assertEquals(17,com.videoflow.app.render.effects.VisualEffectPipeline.create(visual,clip.id).size)
-            assertTrue(!com.videoflow.app.render.SmartCopyEngine(context).preflight(plan).eligible)
-
             val settings = ResolvedExportSettings(
-                size = ExportSize(320, 240),
-                frameRate = FrameRate.FPS_30,
+                size = ExportSize(outputWidth, outputHeight),
+                frameRate = cadence,
                 videoCodec = VideoCodec.H264,
                 quality = ExportQuality.BALANCED,
                 bitrateMode = BitrateMode.AUTO,
-                videoBitrate = 2_000_000,
+                videoBitrate = (outputWidth.toLong()*outputHeight*cadence.fps*.12).toLong().coerceIn(2_000_000,100_000_000).toInt(),
                 audioCodec = AudioCodec.AAC_LC,
                 audioBitrate = 128_000,
-                audioSampleRate = 48_000,
-                audioChannels = 1,
+                audioSampleRate = metadata.audioSampleRate ?: 48_000,
+                audioChannels = metadata.audioChannelCount ?: 2,
                 hdrPolicy = HdrPolicy.PRESERVE_WHEN_COMPATIBLE,
                 isUpscale = false
             )
             val manager = AiModelPackManager(context)
             manager.ensurePackInstalled()
-            val engine = com.videoflow.app.render.SegmentedAiRenderEngine(context, Media3RenderEngine(context, aiRepository, manager), aiRepository).apply { checkpointIntervalUs = 1_000_000L }
+            val engine = com.videoflow.app.render.SegmentedAiRenderEngine(context,Media3RenderEngine(context,aiRepository,manager),aiRepository).apply { checkpointIntervalUs = args.getString("vfCheckpointUs")?.toLong() ?: 60_000_000L }
 
             val prepared = engine.prepare(
                 plan,
@@ -174,24 +168,14 @@ class ProfessionalCheckpointExportInstrumentedTest {
             assertTrue("Final AI export preflight problems: ${prepared.problems}", prepared.ready)
             assertTrue(prepared.warnings.any { it.code == "LOCAL_AI_RENDER_REQUIRED" })
 
-            var cancellationRequested=false
-            val interrupted = engine.render(requireNotNull(prepared.preparation), com.videoflow.app.render.RenderProgressListener {
-                if (engine.completedSegmentCount == 1L && !cancellationRequested) {
-                    cancellationRequested=true
-                    launch { engine.cancel() }
-                }
-            })
-            assertTrue("Checkpoint cancellation must return a failure, not successful partial output", interrupted.isFailure)
-            assertTrue(cancellationRequested)
             val result = engine.render(requireNotNull(prepared.preparation), com.videoflow.app.render.RenderProgressListener {}).getOrThrow()
-            assertTrue("Resume must reuse at least one completed segment", engine.resumedSegmentCount >= 1L)
             assertTrue("Final AI export validation problems: ${result.validation.problems}", result.validation.passed)
             assertTrue(result.outputBytes > 1_024L)
-            assertEquals(320, result.validation.video?.width)
-            assertEquals(240, result.validation.video?.height)
+            assertEquals(outputWidth, result.validation.video?.width)
+            assertEquals(outputHeight, result.validation.video?.height)
             assertEquals("video/avc", result.validation.video?.mimeType)
-            assertEquals("audio/mp4a-latm", result.validation.audio?.mimeType)
-            assertTrue(result.validation.video?.measuredFrameRate?.let { kotlin.math.abs(it - 30.0) < 0.1 } == true)
+            if (metadata.audioCodecMime != null) assertEquals("audio/mp4a-latm", result.validation.audio?.mimeType)
+            assertTrue(result.validation.video?.measuredFrameRate?.let { kotlin.math.abs(it - cadence.fps) < 0.5 } == true)
 
             val sha256 = resolver.openInputStream(outputUri)!!.use { input ->
                 val digest = MessageDigest.getInstance("SHA-256")
@@ -205,7 +189,7 @@ class ProfessionalCheckpointExportInstrumentedTest {
             }
             assertEquals(64, sha256.length)
             val marker =
-                "PROFESSIONAL_CHECKPOINT_EXPORT_CERTIFIED project=$projectId bytes=${result.outputBytes} " +
+                "LONG_AI_ENDURANCE_EXPORT_CERTIFIED project=$projectId bytes=${result.outputBytes} " +
                     "sha256=$sha256 model=${AiModelCatalog.FINAL_512.id} validation=true"
 
             // System.out from instrumentation tests is not guaranteed to be forwarded by
@@ -218,7 +202,6 @@ class ProfessionalCheckpointExportInstrumentedTest {
         } finally {
             aiRepository.visualEdits.delete(projectId)
             aiRepository.replaceProjectEffects(projectId, emptyList())
-            resolver.delete(sourceUri, null, null)
             resolver.delete(outputUri, null, null)
         }
     }

@@ -39,6 +39,10 @@ class SegmentedAiRenderEngine @Inject constructor(
 ) : RenderEngine {
     var checkpointIntervalUs: Long = 60_000_000L
         set(value) { require(value > 0L); field = value }
+    @Volatile var completedSegmentCount: Long = 0L
+        private set
+    @Volatile var resumedSegmentCount: Long = 0L
+        private set
     private val mutex = Mutex()
     private val cancelled = AtomicBoolean(false)
 
@@ -67,6 +71,7 @@ class SegmentedAiRenderEngine @Inject constructor(
 
     override suspend fun render(preparation: RenderPreparation, listener: RenderProgressListener): Result<RenderExecutionResult> = mutex.withLock {
         cancelled.set(false)
+        completedSegmentCount=0L; resumedSegmentCount=0L
         if (!eligible(preparation.plan,preparation.settings)) return@withLock delegate.render(preparation,listener)
         withContext(Dispatchers.IO) {
             val started = System.currentTimeMillis()
@@ -74,16 +79,25 @@ class SegmentedAiRenderEngine @Inject constructor(
             val clip = plan.editorPlan.clips.first { it.enabled }
             val effects = ai.load(plan.editorPlan.projectId)
             val visual = ai.visualEdits.load(plan.editorPlan.projectId)
-            val signature = sha((plan.toString()+preparation.settings.toString()+effects.toString()+VisualEditsRepository.encode(visual)+AiModelCatalog.FINAL_512.sha256).toByteArray())
+            val original = plan.originalSources.getValue(clip.assetId)
+            val fingerprint = com.videoflow.app.data.media.UriFingerprintService(context).fingerprint(Uri.parse(original.sourceUri), original.sizeBytes,
+                original.durationUs,original.width,original.height)
+            if (original.fingerprintSha256?.matches(Regex("[0-9a-fA-F]{64}")) == true)
+                require(original.fingerprintSha256 == fingerprint.sha256) { "Original media changed; reconnect and review the source before resuming." }
+            val signature = sha(("segmented-v1-$checkpointIntervalUs-${fingerprint.sha256}"+plan.toString()+preparation.settings.toString()+effects.toString()+VisualEditsRepository.encode(visual)+AiModelCatalog.FINAL_512.sha256).toByteArray())
             val directory = File(context.filesDir,"ai-jobs/$signature")
             directory.mkdirs()
             val checkpoint = AtomicFile(File(directory,"checkpoint.json"))
             val schedule = AiLongJobPlan(plan.durationUs,checkpointIntervalUs)
+            val temporal = com.videoflow.app.ai.watermark.AiTemporalCheckpoint()
+            var sampledPeakPssKb = 0
             var completedUs = 0L
             fun save(state: AiLongJobState) {
+                sampledPeakPssKb = maxOf(sampledPeakPssKb,android.os.Debug.getPss())
                 val row = JSONObject().put("version",1).put("signature",signature).put("project",plan.editorPlan.projectId)
                     .put("sourceFingerprint",plan.originalSources.getValue(clip.assetId).fingerprintSha256)
                     .put("modelSha256",AiModelCatalog.FINAL_512.sha256).put("destination",preparation.destination.uri.toString())
+                    .put("sampledPeakPssKb",sampledPeakPssKb).put("tileSize",512).put("queueLimit",2).put("workers",1)
                     .put("durationUs",plan.durationUs).put("completedUs",completedUs).put("state",state.name)
                 val out = checkpoint.startWrite()
                 try { out.write(row.toString().toByteArray()); checkpoint.finishWrite(out) }
@@ -95,8 +109,14 @@ class SegmentedAiRenderEngine @Inject constructor(
                     currentCoroutineContext().ensureActive(); checkCancelled()
                     val file = File(directory,"segment-${segment.index}.mp4")
                     val digest = File(directory,"segment-${segment.index}.sha256")
-                    val valid = file.isFile && digest.isFile && digest.readText() == hashFile(file)
-                    if (!valid) {
+                    val temporalFile = File(directory,"segment-${segment.index}.temporal")
+                    val temporalHash = File(directory,"segment-${segment.index}.temporal.sha256")
+                    val valid = file.isFile && digest.isFile && digest.readText() == hashFile(file) &&
+                        temporalFile.isFile && temporalHash.isFile && temporalHash.readText() == hashFile(temporalFile)
+                    if (valid) {
+                        temporal.read(temporalFile)
+                        resumedSegmentCount++
+                    } else {
                         file.delete(); digest.delete()
                         val shortClip = clip.copy(timelineStartUs=0L,sourceStartUs=clip.sourceStartUs+segment.startUs,sourceEndUs=clip.sourceStartUs+segment.endUs)
                         val shortPlan = plan.copy(editorPlan=plan.editorPlan.copy(clips=listOf(shortClip)),
@@ -112,12 +132,15 @@ class SegmentedAiRenderEngine @Inject constructor(
                         val uri = FileProvider.getUriForFile(context,"${context.packageName}.derived",file)
                         save(AiLongJobState.PROCESSING)
                         val part = preparation.copy(plan=shortPlan,destination=OutputDestination(uri,file.name),
-                            aiEffectsOverride=shortAi,visualEditsOverride=visual,visualTimeOffsetUs=segment.startUs)
+                            aiEffectsOverride=shortAi,visualEditsOverride=visual,visualTimeOffsetUs=segment.startUs,aiTemporalCheckpoint=temporal)
                         delegate.render(part,RenderProgressListener { p -> listener.onProgress(((segment.startUs.toDouble()+p*segment.durationUs)/plan.durationUs* .90).toFloat()) }).getOrThrow()
                         checkCancelled()
+                        temporal.write(temporalFile)
+                        temporalHash.writeText(hashFile(temporalFile))
                         digest.writeText(hashFile(file))
                     }
                     completedUs=segment.endUs
+                    completedSegmentCount=segment.index+1L
                     save(AiLongJobState.PROCESSING)
                     listener.onProgress(schedule.progress(completedUs)*.90f)
                 }

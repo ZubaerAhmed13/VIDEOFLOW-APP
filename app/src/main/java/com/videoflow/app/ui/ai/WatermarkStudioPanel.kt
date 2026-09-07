@@ -93,6 +93,7 @@ fun WatermarkStudioPanel(
     var roi by remember(clipId) { mutableStateOf(NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)) }
     var startUs by remember(clipId) { mutableStateOf(0L) }
     var endUs by remember(clipId) { mutableStateOf(durationUs) }
+    var detailedPreview by remember(clipId) { mutableStateOf(false) }
     var showBefore by remember(clipId) { mutableStateOf(false) }
     var correctionRoi by remember(clipId, studioLocalUs) { mutableStateOf<NormalizedRoi?>(null) }
     var featherPx by remember(clipId) { mutableFloatStateOf(8f) }
@@ -212,8 +213,9 @@ fun WatermarkStudioPanel(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
                 onClick = {
-                    loadedAnchors = emptyList()
-                    vm.track(asset.sourceUri, clip, roi, startUs, endUs)
+                    loadedAnchors = activeAnchors
+                    val from = if (activeAnchors.any { it.manual }) previewLocalUs else startUs
+                    vm.track(asset.sourceUri, clip, correctionRoi ?: draftEffect.roiAt(from), from, endUs)
                 },
                 enabled = state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE
             ) { Text(if (activeAnchors.isEmpty()) "Track movement" else "Re-track") }
@@ -250,6 +252,12 @@ fun WatermarkStudioPanel(
         }
 
         StepTitle("3", "AI Preview")
+        Row {
+            androidx.compose.material3.FilterChip(!detailedPreview,{ detailedPreview=false; vm.clearPreviewOnly() },{ Text("Fast preview") })
+            Spacer(Modifier.width(8.dp))
+            androidx.compose.material3.FilterChip(detailedPreview,{ detailedPreview=true; vm.clearPreviewOnly() },{ Text("Detailed preview") })
+        }
+        Text("Final export always uses Best Quality at original resolution.")
         Text("Preview uses the smaller local model. Final export uses the 512px final model on bounded original-resolution ROI tiles.", color = VideoFlowEditorColors.SecondaryText)
         Button(
             onClick = {
@@ -264,7 +272,8 @@ fun WatermarkStudioPanel(
                         sourceWidth = width,
                         sourceHeight = height,
                         featherPx = featherPx.roundToInt(),
-                        anchors = activeAnchors
+                        anchors = activeAnchors,
+                        detailed = detailedPreview
                     )
                 }
             },

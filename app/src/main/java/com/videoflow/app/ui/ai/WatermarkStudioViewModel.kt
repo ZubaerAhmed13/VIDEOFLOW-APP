@@ -214,7 +214,8 @@ class WatermarkStudioViewModel @Inject constructor(
         sourceWidth: Int,
         sourceHeight: Int,
         featherPx: Int,
-        anchors: List<RoiMotionAnchor>
+        anchors: List<RoiMotionAnchor>,
+        detailed: Boolean = false
     ) {
         if (!_state.value.runtimeReady) return
         workJob?.cancel()
@@ -244,7 +245,8 @@ class WatermarkStudioViewModel @Inject constructor(
                     roi = previewRoi,
                     sourceWidth = sourceWidth,
                     sourceHeight = sourceHeight,
-                    featherPx = featherPx
+                    featherPx = featherPx,
+                    modelRole = if (detailed) com.videoflow.app.domain.ai.AiModelRole.FINAL else com.videoflow.app.domain.ai.AiModelRole.PREVIEW
                 )
             }.onSuccess { result ->
                 replaceAiPreview(result.bitmap)
@@ -273,6 +275,7 @@ class WatermarkStudioViewModel @Inject constructor(
                 val before = repository.load(effect.projectId)
                 val existed = before.any { it.id == effect.id }
                 repository.upsert(effect)
+                historyService.touchProject(effect.projectId)
                 val after = repository.load(effect.projectId)
                 historyService.record(
                     AiWatermarkHistoryEntry(
@@ -306,6 +309,7 @@ class WatermarkStudioViewModel @Inject constructor(
             runCatching {
                 val before = repository.load(effect.projectId)
                 repository.upsert(effect.copy(enabled = enabled))
+                historyService.touchProject(effect.projectId)
                 val after = repository.load(effect.projectId)
                 historyService.record(
                     AiWatermarkHistoryEntry(
@@ -324,6 +328,7 @@ class WatermarkStudioViewModel @Inject constructor(
             runCatching {
                 val before = repository.load(effect.projectId)
                 repository.remove(effect.projectId, effect.id)
+                historyService.touchProject(effect.projectId)
                 val after = repository.load(effect.projectId)
                 historyService.record(
                     AiWatermarkHistoryEntry(

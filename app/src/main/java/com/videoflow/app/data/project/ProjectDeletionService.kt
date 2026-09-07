@@ -24,6 +24,7 @@ class ProjectDeletionService @Inject constructor(
             aiWatermarkRepository.deleteProjectState(projectId)
             aiWatermarkRepository.visualEdits.delete(projectId)
             db.projectDao().delete(projectId)
+            runCatching { aiWatermarkRepository.cleanupDerivedMedia(projectId) }
         } catch (failure: Throwable) {
             runCatching { aiWatermarkRepository.visualEdits.replace(projectId, beforeVisual) }
             runCatching { aiWatermarkRepository.restoreProjectStateJson(projectId, beforeAiState) }

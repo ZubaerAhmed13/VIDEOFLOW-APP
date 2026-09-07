@@ -44,6 +44,7 @@ class ProfessionalToolsViewModel @Inject constructor(
     fun apply(projectId: String, label: String, done: () -> Unit) = work {
         val next = mutable.value.draft
         repository.visualEdits.replace(projectId, next)
+        history.touchProject(projectId)
         history.record(VisualEditsHistoryEntry(projectId, label, before, next))
         done()
     }

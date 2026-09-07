@@ -101,6 +101,10 @@ fun ProfessionalToolPanel(projectId: String, tool: ProfessionalEditorTool, clip:
                     TextButton(onClick = { update(selected.copy(enabled = !selected.enabled)) }) { Text(if (selected.enabled) "Disable" else "Enable") }
                     TextButton(onClick = { vm.draft(state.draft.copy(effects = state.draft.effects - selected)); selectedId = null }) { Text("Remove") }
                     TextButton(onClick = { update(selected.copy(intensity = .5f, startUs = 0L, endUs = clip.timelineDurationUs)) }) { Text("Reset") }
+                    TextButton(onClick = {
+                        val copy = selected.copy(id=UUID.randomUUID().toString(),order=(state.draft.effects.maxOfOrNull { it.order } ?: 0)+1)
+                        vm.draft(state.draft.copy(effects=state.draft.effects+copy));selectedId=copy.id
+                    }) { Text("Duplicate") }
                 }
             }
         }

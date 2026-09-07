@@ -90,6 +90,7 @@ class EditorViewModel @Inject constructor(
             reload(id)
             refreshSnapshots(id)
             warmThumbnails()
+            _project.value?.mediaAssets.orEmpty().filter { it.mimeType?.startsWith("audio/") == true }.forEach { generateWaveform(it.id) }
         }
     }
 

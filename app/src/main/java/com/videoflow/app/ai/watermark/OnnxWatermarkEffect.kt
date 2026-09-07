@@ -30,7 +30,8 @@ import kotlin.math.min
 class SharedLamaRenderRuntime private constructor(
     private val ort: AiOrtSession,
     private val executor: ListeningExecutorService,
-    private val context: android.content.Context?
+    private val context: android.content.Context?,
+    val temporal: AiTemporalCheckpoint?
 ) : AutoCloseable {
     private val cancelled = AtomicBoolean(false)
     private val inferenceLock = Any()
@@ -82,7 +83,7 @@ class SharedLamaRenderRuntime private constructor(
     }
 
     companion object {
-        suspend fun create(manager: AiModelPackManager, context: android.content.Context? = null): SharedLamaRenderRuntime {
+        suspend fun create(manager: AiModelPackManager, context: android.content.Context? = null, temporal: AiTemporalCheckpoint? = null): SharedLamaRenderRuntime {
             // NNAPI is attempted first; AiModelPackManager falls back to the CPU correctness path.
             val session = manager.openSession(AiModelRole.FINAL, preferNnapi = true)
             val profile = com.videoflow.app.domain.ai.AiResourceProfile()
@@ -98,7 +99,7 @@ class SharedLamaRenderRuntime private constructor(
                     if (executor.isShutdown && executor.remove(task)) throw java.util.concurrent.RejectedExecutionException("AI export stopped")
                 })
             val executor = MoreExecutors.listeningDecorator(pool)
-            return SharedLamaRenderRuntime(session, executor, context)
+            return SharedLamaRenderRuntime(session, executor, context, temporal)
 
         }
     }
@@ -159,7 +160,8 @@ private class LamaTileProcessor(
     private var frameHeight = expectedHeight
     private var configuredReadWidth = min(512, expectedWidth)
     private var configuredReadHeight = min(512, expectedHeight)
-    private var previousCore: ByteArray? = null
+    private val temporalKey = "${effect.id}:$tileIndex"
+    private var previousCore: ByteArray? = runtime.temporal?.patches?.get(temporalKey)
 
     override fun configure(inputWidth: Int, inputHeight: Int): Size {
         frameWidth = inputWidth
@@ -180,10 +182,10 @@ private class LamaTileProcessor(
         image: ByteBufferGlEffect.Image,
         presentationTimeUs: Long
     ): ListenableFuture<LamaPatch> {
-        if (!effect.activeAt(presentationTimeUs)) { previousCore = null; return Futures.immediateFuture(LamaPatch.NO_OP) }
+        if (!effect.activeAt(presentationTimeUs)) { previousCore = null; runtime.temporal?.patches?.remove(temporalKey); return Futures.immediateFuture(LamaPatch.NO_OP) }
         val currentTarget = AiWatermarkMath.toPixelRect(effect.roiAt(presentationTimeUs), frameWidth, frameHeight)
         val currentTiles = AiWatermarkMath.planTiles(currentTarget,frameWidth,frameHeight,512,effect.contextPaddingPx.coerceAtMost(255))
-        if (tileIndex >= currentTiles.size) { previousCore = null; return Futures.immediateFuture(LamaPatch.NO_OP) }
+        if (tileIndex >= currentTiles.size) { previousCore = null; runtime.temporal?.patches?.remove(temporalKey); return Futures.immediateFuture(LamaPatch.NO_OP) }
         val logicalTarget = AiWatermarkMath.toPixelRect(effect.roiAt(presentationTimeUs), frameWidth, frameHeight)
         val tile = tileAt(presentationTimeUs)
         return runtime.submit {
@@ -308,6 +310,7 @@ private class LamaTileProcessor(
             }
         }
         previousCore = coreTopLeft.copyOf()
+        runtime.temporal?.patches?.set(temporalKey, requireNotNull(previousCore))
 
         val glBuffer = ByteBuffer.allocateDirect(coreTopLeft.size).order(ByteOrder.nativeOrder())
         for (glY in 0 until tile.core.height) {

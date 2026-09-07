@@ -83,13 +83,14 @@ class LocalWatermarkPreviewEngine @Inject constructor(
         roi: NormalizedRoi,
         sourceWidth: Int,
         sourceHeight: Int,
-        featherPx: Int
+        featherPx: Int,
+        modelRole: AiModelRole = AiModelRole.PREVIEW
     ): PreviewResult = withContext(Dispatchers.Default) {
         require(sourceWidth > 0 && sourceHeight > 0)
         require(featherPx >= 0)
         val frame = decodeFrame(sourceUri, sourceTimeUs, maxDimensionPx = 960)
         coroutineContext.ensureActive()
-        val modelSize = 256
+        val modelSize = if (modelRole == AiModelRole.FINAL) 512 else 256
         val modelBitmap = Bitmap.createScaledBitmap(frame, modelSize, modelSize, true)
         val modelPixels = IntArray(modelSize * modelSize)
         modelBitmap.getPixels(modelPixels, 0, modelSize, 0, 0, modelSize, modelSize)
@@ -113,7 +114,7 @@ class LocalWatermarkPreviewEngine @Inject constructor(
             }
         }
 
-        val output = modelPackManager.openSession(AiModelRole.PREVIEW, preferNnapi = true).use { ort ->
+        val output = modelPackManager.openSession(modelRole, preferNnapi = true).use { ort ->
             val direct = ByteBuffer.allocateDirect(packed.size * Float.SIZE_BYTES)
                 .order(ByteOrder.nativeOrder())
                 .asFloatBuffer()

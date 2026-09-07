@@ -43,20 +43,26 @@ class AudioExtractionService @Inject constructor(
         withContext(Dispatchers.IO) {
             require(projectId.matches(Regex("[A-Za-z0-9_-]+")))
             val before = editor.load(projectId).timeline.clips.first { it.id == clipId }
+            val originalFrames = db.editorDao().getKeyframes(listOf(clipId))
             val source = db.mediaAssetDao().get(before.assetId) ?: error("Original source is missing")
+            require(source.sourceStatus == "AVAILABLE") { "Original source must be available before audio extraction." }
             require(source.audioTrackCount > 0) { "This video has no audio track." }
             val root = File(context.filesDir, "extracted-audio/$projectId")
             check(root.isDirectory || root.mkdirs())
             // Reserve enough for the full encoded source as a conservative track-copy ceiling.
             val estimate = source.sizeBytes ?: Math.multiplyExact((source.durationUs ?: before.sourceEndUs) / 1_000_000L + 1, 192_000L)
             require(root.usableSpace > Math.addExact(estimate, 32L * 1024 * 1024)) { "Not enough free space for extracted audio." }
-            val target = File(root, "${UUID.randomUUID()}.m4a")
+            require(source.assetId.matches(Regex("[A-Za-z0-9_-]+")))
+            val identity = source.fingerprintSha256?.takeIf { it.matches(Regex("[a-fA-F0-9]{64}")) } ?: UUID.randomUUID().toString()
+            val target = File(root, "${source.assetId}-$identity.m4a")
+            val created = !target.exists()
             var registered = false
             try {
                 progress(0f)
-                copyOrTranscode(Uri.parse(source.sourceUri), target, source.durationUs ?: before.sourceEndUs, progress)
+                if (created) copyOrTranscode(Uri.parse(source.sourceUri), target, source.durationUs ?: before.sourceEndUs, progress)
                 currentCoroutineContext().ensureActive()
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.derived", target)
+                withContext(NonCancellable) {
                 val assetId = db.withTransaction {
                     val result = projects.addMedia(projectId, uri)
                     val id = when (result) {
@@ -70,6 +76,7 @@ class AudioExtractionService @Inject constructor(
                     }
                     db.mediaAssetDao().update(asset.copy(displayName = "Extracted from ${source.displayName}", permissionPersisted = true))
                     val track = editor.createTrack(projectId, TrackType.AUDIO, "Extracted audio")
+                    require(editor.load(projectId).timeline.clips.first { it.id == clipId } == before) { "The video was edited during extraction. Open Extract audio again with the current clip." }
                     val originalEntity = db.editorDao().getClips(projectId).first { it.id == clipId }
                     val audio = originalEntity.copy(
                         id = UUID.randomUUID().toString(), trackId = track.id, assetId = id,
@@ -78,17 +85,28 @@ class AudioExtractionService @Inject constructor(
                     )
                     require(audio.sourceEndUs > audio.sourceStartUs) { "No audio exists in this selected clip range." }
                     db.editorDao().putClip(audio)
-                    if (muteOriginal) db.editorDao().putClip(originalEntity.copy(gainDb = -120f))
+                    originalFrames.filter { it.property == "AUDIO_GAIN" }.forEach { frame ->
+                        db.editorDao().putKeyframe(frame.copy(id=UUID.randomUUID().toString(),ownerId=audio.id))
+                    }
+                    if (muteOriginal) {
+                        require(!db.editorDao().getTracks(projectId).first { it.id == originalEntity.trackId }.locked) { "Unlock the video track before muting it." }
+                        db.editorDao().putClip(originalEntity.copy(gainDb = -120f))
+                        originalFrames.filter { it.property == "AUDIO_GAIN" }.forEach { frame -> db.editorDao().putKeyframe(frame.copy(value=-120f)) }
+                    }
                     id
                 }
                 registered = true
                 val after = editor.load(projectId).timeline.clips.filter { it.id == clipId || it.assetId == assetId }
-                val frames = editor.load(projectId).timeline.keyframes.filter { it.ownerId == clipId }
-                history.record(ClipHistoryEntry(projectId, "Extract audio", listOf(before), after, frames, frames))
+                val frames = editor.load(projectId).timeline.keyframes.filter { frame -> after.any { it.id == frame.ownerId } }
+                val beforeFrames = originalFrames.map { row -> com.videoflow.app.domain.editor.Keyframe(row.id,row.ownerId,
+                    com.videoflow.app.domain.editor.KeyframeOwnerType.valueOf(row.ownerType),com.videoflow.app.domain.editor.KeyframeProperty.valueOf(row.property),
+                    row.timeUs,row.value,com.videoflow.app.domain.editor.KeyframeInterpolation.valueOf(row.interpolation)) }
+                history.record(ClipHistoryEntry(projectId, "Extract audio", listOf(before), after, beforeFrames, frames))
                 progress(1f)
                 assetId
+                }
             } finally {
-                if (!registered) target.delete()
+                if (!registered && created) target.delete()
             }
         }
     }
@@ -113,8 +131,10 @@ class AudioExtractionService @Inject constructor(
                 val buffer = ByteBuffer.allocateDirect(1024 * 1024)
                 val info = MediaCodec.BufferInfo()
                 var samples = 0L
-                while (extractor.sampleTime >= 0) {
+                while (extractor.sampleTrackIndex >= 0) {
                     currentCoroutineContext().ensureActive()
+                    // AAC encoder priming may have a negative PTS. Only sampleTrackIndex==-1 is EOF.
+                    if (extractor.sampleTime < 0L) { extractor.advance(); continue }
                     require(android.os.Build.VERSION.SDK_INT < 28 || extractor.sampleSize <= buffer.capacity().toLong()) { "Encoded audio packet exceeds the safe buffer size." }
                     buffer.clear()
                     val size = extractor.readSampleData(buffer, 0)

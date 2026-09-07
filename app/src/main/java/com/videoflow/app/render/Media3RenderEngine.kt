@@ -204,7 +204,7 @@ class Media3RenderEngine @Inject constructor(
             val allAiEffects = preparation.aiEffectsOverride ?: withContext(Dispatchers.IO) { aiRepository.load(preparation.plan.editorPlan.projectId) }
             val aiEffects = AiReconstructionExportPolicy.activeForProject(allAiEffects, preparation.plan.editorPlan.clips)
             if (aiEffects.isNotEmpty()) {
-                aiRuntimeForCleanup = SharedLamaRenderRuntime.create(aiModelPackManager, context)
+                aiRuntimeForCleanup = SharedLamaRenderRuntime.create(aiModelPackManager, context, preparation.aiTemporalCheckpoint)
                 activeAiRuntime = aiRuntimeForCleanup
             }
             val bundle = withContext(Dispatchers.IO) {

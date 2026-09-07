@@ -210,9 +210,10 @@ class Media3CompositionBuilder(
         // is the critical proxy->original fidelity rule: proxy editing never reduces final AI ROI resolution.
         if (aiEffects.isNotEmpty()) {
             val runtime = requireNotNull(aiRuntime)
-            val sourceWidth = source.width?.takeIf { it > 0 }
+            val rotated = source.rotationDegrees == 90 || source.rotationDegrees == 270
+            val sourceWidth = (if (rotated) source.height else source.width)?.takeIf { it > 0 }
                 ?: error("AI reconstruction requires known original source width for clip ${clip.id}.")
-            val sourceHeight = source.height?.takeIf { it > 0 }
+            val sourceHeight = (if (rotated) source.width else source.height)?.takeIf { it > 0 }
                 ?: error("AI reconstruction requires known original source height for clip ${clip.id}.")
             aiEffects.sortedWith(compareBy<AiWatermarkEffect> { it.clipLocalStartUs }.thenBy { it.id }).forEach { ai ->
                 effects += OnnxWatermarkEffectFactory.createEffects(ai, sourceWidth, sourceHeight, runtime)

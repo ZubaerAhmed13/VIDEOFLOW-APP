@@ -190,6 +190,7 @@ jobs:
           for DOC in STEP_4_AI_WATERMARK_STUDIO_HANDOFF.md STEP_4_AI_WATERMARK_STUDIO_COMPLETION_REPORT.md STEP_4_AI_WATERMARK_STUDIO_TEST_REPORT.md STEP_4_AI_WATERMARK_STUDIO_PHYSICAL_REVIEW.md; do
             test -f "$DOC" && cp "$DOC" step4-artifacts/
           done
+          cp PROFESSIONAL_*.md AUDIO_EXTRACT_ARCHITECTURE.md VIDEO_EFFECTS_ARCHITECTURE.md ENHANCE_ARCHITECTURE.md AI_LONG_DURATION_ARCHITECTURE.md AI_30_MINUTE_CERTIFICATION.md step4-artifacts/
           (cd step4-artifacts && sha256sum *.apk | tee SHA256SUMS.txt)
           cp app/build/outputs/apk/debug/app-debug.apk step4-runtime/VideoFlow_Professional_Upgrade_Debug.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk step4-runtime/VideoFlow_Professional_Upgrade_Debug-androidTest.apk
