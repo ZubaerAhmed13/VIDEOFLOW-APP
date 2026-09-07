@@ -67,7 +67,7 @@ class ProfessionalProductWorkflowTest {
             val aiVm=WatermarkStudioViewModel(ai,manager,LocalWatermarkPreviewEngine(context,manager),LocalRoiTracker(LocalWatermarkPreviewEngine(context,manager)),history)
             store.put("tools",toolsVm);store.put("ai",aiVm)
             var tool by mutableStateOf<ProfessionalEditorTool?>(ProfessionalEditorTool.AudioExtract(clip.id))
-            rule.setContent { com.videoflow.app.ui.theme.VideoFlowTheme(com.videoflow.app.ui.product.AppAppearance.DARK) { Surface(Modifier.fillMaxSize(),color=com.videoflow.app.ui.editor.VideoFlowEditorColors.EditorSurfaceElevated) {
+            rule.setContent { com.videoflow.app.ui.theme.VideoFlowTheme(com.videoflow.app.ui.product.AppAppearance.DARK) { Surface(Modifier.fillMaxSize(),color=com.videoflow.app.ui.editor.VideoFlowEditorColors.EditorSurfaceElevated,contentColor=com.videoflow.app.ui.editor.VideoFlowEditorColors.PrimaryText) {
                 val selected=tool
                 if(selected is ProfessionalEditorTool.AiWatermark) WatermarkStudioPanel(id,clip.id,project,loaded,0L,{tool=null},{},vm=aiVm)
                 else if(selected!=null) ProfessionalToolPanel(id,selected,clip,asset,{tool=null},{},vm=toolsVm)

@@ -58,6 +58,8 @@ fun NativeVideoPlayer(
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(mediaUri))
             setVideoEffects(videoEffects)
+            val frameHandler=android.os.Handler(android.os.Looper.getMainLooper())
+            setVideoFrameMetadataListener { _, _, _, _ -> frameHandler.post { frameRendered=true } }
             addListener(object : Player.Listener {
                 override fun onRenderedFirstFrame() { frameRendered=true }
                 override fun onPlayerError(error: PlaybackException) {
@@ -71,8 +73,8 @@ fun NativeVideoPlayer(
     LaunchedEffect(player, videoEffects) {
         frameRendered=false
         player.setVideoEffects(videoEffects)
-        // A paused comparison needs a newly rendered frame after the effect chain changes.
-        if (!player.playWhenReady) player.seekTo(player.currentPosition)
+        // Media3's redraw marker reprocesses the retained frame without moving the playhead.
+        if (!player.playWhenReady) player.setVideoEffects(androidx.media3.common.VideoFrameProcessor.REDRAW)
     }
 
     // Do not chase every high-frequency UI playhead tick with a decoder seek. While playing, only
