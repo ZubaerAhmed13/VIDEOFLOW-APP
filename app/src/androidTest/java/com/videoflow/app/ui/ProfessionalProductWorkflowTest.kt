@@ -80,7 +80,7 @@ class ProfessionalProductWorkflowTest {
             rule.runOnIdle { tool=ProfessionalEditorTool.Effects(clip.id) }
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
             waitForVideoFrame()
-            val originalPreview=previewPixels()
+            val originalPreview=stablePreviewPixels()
             rule.onNodeWithText("Film",substring=false).performScrollTo().performClick()
             rule.onNodeWithText("Sepia").performScrollTo().performClick()
             assertTrue(ai.visualEdits.load(id).effects.isEmpty()) // Draft does not persist on selection.
@@ -94,7 +94,7 @@ class ProfessionalProductWorkflowTest {
             rule.runOnIdle { tool=ProfessionalEditorTool.Enhance(clip.id) }
             rule.waitUntil(30_000) { toolsVm.state.value.loaded }
             waitForVideoFrame()
-            val beforeExposure=previewPixels()
+            val beforeExposure=stablePreviewPixels()
             rule.onNodeWithContentDescription("Exposure adjustment").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.2f) }
             assertEquals(.2f,toolsVm.state.value.draft.enhance.getValue(clip.id)[Adjustment.EXPOSURE],.001f)
             waitForVideoFrame()
@@ -166,14 +166,26 @@ class ProfessionalProductWorkflowTest {
     }
     private fun waitForPreviewChange(before: IntArray) {
         rule.waitUntil(30_000) {
-            val after=previewPixels()
-            before.indices.sumOf { index ->
-                listOf(0,8,16).sumOf { shift ->
-                    kotlin.math.abs(((before[index] ushr shift) and 255)-((after[index] ushr shift) and 255))
-                }
-            }.toDouble()/(before.size*3)>3.0
+            pixelDifference(before,previewPixels())>3.0
         }
     }
+    private fun stablePreviewPixels(): IntArray {
+        var previous: IntArray?=null
+        var stable=0
+        rule.waitUntil(30_000) {
+            val current=previewPixels()
+            val visible=current.sumOf { pixel -> listOf(0,8,16).sumOf { shift -> (pixel ushr shift) and 255 } }.toDouble()/(current.size*3)>20.0
+            stable=if(visible && previous?.let { pixelDifference(it,current)<.5 }==true) stable+1 else 0
+            previous=current
+            stable>=2
+        }
+        return checkNotNull(previous)
+    }
+    private fun pixelDifference(before: IntArray, after: IntArray): Double = before.indices.sumOf { index ->
+        listOf(0,8,16).sumOf { shift ->
+            kotlin.math.abs(((before[index] ushr shift) and 255)-((after[index] ushr shift) and 255))
+        }
+    }.toDouble()/(before.size*3)
     private fun screenshot(label: String) {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val file=File(context.getExternalFilesDir(null),"professional-screenshots/$label.png")
