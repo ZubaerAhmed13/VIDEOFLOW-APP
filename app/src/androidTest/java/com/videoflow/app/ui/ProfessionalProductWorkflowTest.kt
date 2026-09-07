@@ -133,6 +133,7 @@ class ProfessionalProductWorkflowTest {
             instrumentation.sendStatus(0,android.os.Bundle().apply { putString("stream","PROFESSIONAL_PRODUCT_PANELS_CERTIFIED audio=${editor.load(id).timeline.clips.size} effects=1 enhance=0.2 aiCorrections=1\n") })
         } finally {
             runCatching { screenshot("last-state") }
+            runCatching { println(rule.onRoot().printToString()) }
             instrumentation.runOnMainSync { store.clear() }
             projectId?.let { ai.deleteProjectState(it);ai.visualEdits.delete(it);File(context.filesDir,"extracted-audio/$it").deleteRecursively() }
             db.close();resolver.delete(source,null,null)

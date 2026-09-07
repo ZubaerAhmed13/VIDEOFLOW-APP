@@ -283,6 +283,7 @@ jobs:
 
             adb shell am instrument -w -r -e class com.videoflow.app.ui.ProfessionalProductWorkflowTest com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > step4-emulator-reports/product-panels.txt 2>&1
             adb pull /sdcard/Android/data/com.videoflow.app.debug/files/professional-screenshots step4-emulator-reports/ || true
+            adb logcat -d -v threadtime > step4-emulator-reports/player-logcat.txt
             cat step4-emulator-reports/product-panels.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/product-panels.txt
             grep -E -q 'OK \(1 test\)' step4-emulator-reports/product-panels.txt

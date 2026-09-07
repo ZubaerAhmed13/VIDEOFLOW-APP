@@ -49,6 +49,8 @@ fun NativeVideoPlayer(
     val lifecycleOwner = LocalLifecycleOwner.current
     var playbackError by remember(uri) { mutableStateOf<String?>(null) }
     var frameRendered by remember(uri) { mutableStateOf(false) }
+    var redrawPending by remember(uri) { mutableStateOf(false) }
+    val playerDisposed=remember(uri) { java.util.concurrent.atomic.AtomicBoolean(false) }
     val mediaUri = remember(uri) {
         if (uri.startsWith("/")) Uri.fromFile(File(uri)) else Uri.parse(uri)
     }
@@ -59,10 +61,17 @@ fun NativeVideoPlayer(
             setMediaItem(MediaItem.fromUri(mediaUri))
             setVideoEffects(videoEffects)
             val frameHandler=android.os.Handler(android.os.Looper.getMainLooper())
-            setVideoFrameMetadataListener { _, _, _, _ -> frameHandler.post { frameRendered=true } }
+            setVideoFrameMetadataListener { _, _, _, _ -> frameHandler.post {
+                if (!playerDisposed.get()) {
+                    if(redrawPending) {
+                        redrawPending=false
+                        setVideoEffects(androidx.media3.common.VideoFrameProcessor.REDRAW)
+                    } else frameRendered=true
+                }
+            } }
             addListener(object : Player.Listener {
-                override fun onRenderedFirstFrame() { frameRendered=true }
                 override fun onPlayerError(error: PlaybackException) {
+                    android.util.Log.e("VideoFlowPreview",error.errorCodeName,error)
                     playbackError = "VideoFlow could not prepare this media for playback."
                 }
             })
@@ -71,10 +80,14 @@ fun NativeVideoPlayer(
     }
 
     LaunchedEffect(player, videoEffects) {
+        val ready=frameRendered
         frameRendered=false
         player.setVideoEffects(videoEffects)
-        // Media3's redraw marker reprocesses the retained frame without moving the playhead.
-        if (!player.playWhenReady) player.setVideoEffects(androidx.media3.common.VideoFrameProcessor.REDRAW)
+        // Interleave redraws with frame callbacks: the first frame must exist before it can be redrawn.
+        if (!player.playWhenReady) {
+            if(ready) player.setVideoEffects(androidx.media3.common.VideoFrameProcessor.REDRAW)
+            else redrawPending=true
+        }
     }
 
     // Do not chase every high-frequency UI playhead tick with a decoder seek. While playing, only
@@ -101,6 +114,7 @@ fun NativeVideoPlayer(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            playerDisposed.set(true)
             lifecycleOwner.lifecycle.removeObserver(observer)
             player.release()
         }
