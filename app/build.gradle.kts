@@ -128,8 +128,7 @@ dependencies {
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.08.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }
-// Media3 1.11.0 destroys the multi-input context but omits releasing the GL worker's
-// EGL thread state. Keep the pinned library and correct only that cleanup boundary.
+// Pinned Media3 lifecycle and causal-frame corrections; CI verifies packaged DEX calls.
 androidComponents.onVariants { variant ->
     variant.instrumentation.transformClassesWith(Media3EglReleaseVisitor::class.java, InstrumentationScope.ALL) {}
     variant.instrumentation.setAsmFramesComputationMode(FramesComputationMode.COMPUTE_FRAMES_FOR_INSTRUMENTED_METHODS)

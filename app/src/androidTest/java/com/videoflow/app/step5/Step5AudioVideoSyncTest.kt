@@ -18,7 +18,7 @@ class Step5AudioVideoSyncTest {
         val f=Step5MediaFixture()
         try {
             val source=f.source("step5-sync.mp4")
-            f.evidence("sync-diagnostics.txt","source video events=${videoEvents(f,source,2_000_000L)}")
+            f.evidence("sync-diagnostics.txt","source video events=${videoEvents(f,source,2_000_000L)} audio events=${audioEvents(f,source)}")
             f.preserve(source,"sync-source.mp4")
             for(speed in listOf(1.0,2.0,.5)) {
                 val clip=f.clip.copy(sourceStartUs=200_000L,sourceEndUs=1_800_000L,speed=speed)

@@ -12,6 +12,9 @@ cat step4-emulator-reports/step5-integration.txt
 adb pull /sdcard/Android/data/com.videoflow.app.debug/files/step5-evidence step4-emulator-reports/ || true
 adb pull /sdcard/Android/data/com.videoflow.app.debug/files/professional-screenshots step4-emulator-reports/ || true
 adb logcat -d -v threadtime > step4-emulator-reports/step5-logcat.txt
+for measurement in fd-details.txt fd-phases.jsonl sync-diagnostics.txt av-sync.jsonl audio-fades.jsonl resources.jsonl; do
+  if [ -f "step4-emulator-reports/step5-evidence/$measurement" ]; then cat "step4-emulator-reports/step5-evidence/$measurement"; fi
+done
 ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/step5-integration.txt || exit 1
 grep -E -q 'OK \(13 tests\)' step4-emulator-reports/step5-integration.txt
 grep -q 'STEP5_OVERLAY_CHECKPOINT_CERTIFIED' step4-emulator-reports/step5-integration.txt

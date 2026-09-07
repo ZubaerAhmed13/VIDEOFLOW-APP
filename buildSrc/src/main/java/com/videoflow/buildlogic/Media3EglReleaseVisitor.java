@@ -8,34 +8,60 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-/** Narrow cleanup correction for the pinned Media3 1.11.0 multi-input graph. */
+/** Pinned Media3 1.11.0 lifecycle and causal-CFR corrections, verified again in APK bytecode. */
 public abstract class Media3EglReleaseVisitor implements AsmClassVisitorFactory<InstrumentationParameters.None> {
+    private static final String WRAPPER = "androidx.media3.effect.FinalShaderProgramWrapper";
+    private static final String COMPOSITOR = "androidx.media3.effect.DefaultVideoCompositor";
+    private static final String PROVIDER = "androidx.media3.effect.MultipleInputVideoGraph$SingleContextGlObjectsProvider";
+
     @Override public boolean isInstrumentable(ClassData data) {
-        return data.getClassName().equals("androidx.media3.effect.MultipleInputVideoGraph$SingleContextGlObjectsProvider");
+        String name = data.getClassName();
+        return name.equals(WRAPPER) || name.equals(COMPOSITOR) || name.equals(PROVIDER);
     }
 
     @Override public ClassVisitor createClassVisitor(ClassContext context, ClassVisitor next) {
+        String className = context.getCurrentClassData().getClassName();
         return new ClassVisitor(Opcodes.ASM9, next) {
-            private boolean found;
+            private int replacements;
             @Override public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
                 MethodVisitor delegate = super.visitMethod(access, name, descriptor, signature, exceptions);
-                if (!name.equals("release") || !descriptor.equals("(Landroid/opengl/EGLDisplay;)V")) return delegate;
-                found = true;
+                boolean wrapper = className.equals(WRAPPER) && name.equals("release") && descriptor.equals("()V");
+                boolean compositor = className.equals(COMPOSITOR) && name.equals("getFramesToComposite");
+                boolean provider = className.equals(PROVIDER) && name.equals("release") && descriptor.equals("(Landroid/opengl/EGLDisplay;)V");
+                if (!wrapper && !compositor && !provider) return delegate;
                 return new MethodVisitor(Opcodes.ASM9, delegate) {
+                    @Override public void visitMethodInsn(int opcode, String owner, String method, String desc, boolean isInterface) {
+                        if (compositor && owner.equals("java/lang/Math") && method.equals("abs") && desc.equals("(J)J")) {
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "com/videoflow/app/render/CausalFrameSelection", "distanceUs", "(J)J", false);
+                            replacements++;
+                            return;
+                        }
+                        super.visitMethodInsn(opcode, owner, method, desc, isInterface);
+                        if (wrapper && owner.equals("androidx/media3/common/util/GlUtil") && method.equals("destroyEglSurface")) {
+                            // Remain inside the original GlException handling. Each processor owns
+                            // its placeholder surface even when multiple processors share a context.
+                            super.visitVarInsn(Opcodes.ALOAD, 0);
+                            super.visitFieldInsn(Opcodes.GETFIELD, "androidx/media3/effect/FinalShaderProgramWrapper", "eglDisplay", "Landroid/opengl/EGLDisplay;");
+                            super.visitVarInsn(Opcodes.ALOAD, 0);
+                            super.visitFieldInsn(Opcodes.GETFIELD, "androidx/media3/effect/FinalShaderProgramWrapper", "placeholderSurface", "Landroid/opengl/EGLSurface;");
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, owner, method, desc, isInterface);
+                            replacements++;
+                        }
+                    }
                     @Override public void visitInsn(int opcode) {
-                        if (opcode == Opcodes.RETURN) {
-                            // The original method has already destroyed its owned context here.
-                            // Match DefaultGlObjectsProvider's complete EGL lifecycle, including
-                            // the display initialization reference and worker TLS/driver connection.
-                            super.visitVarInsn(Opcodes.ALOAD, 1);
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "androidx/media3/common/util/GlUtil", "terminate", "(Landroid/opengl/EGLDisplay;)V", false);
+                        if (provider && opcode == Opcodes.RETURN) {
+                            // Context destruction alone leaves EGL thread-local state.
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "android/opengl/EGL14", "eglReleaseThread", "()Z", false);
+                            super.visitInsn(Opcodes.POP);
+                            replacements++;
                         }
                         super.visitInsn(opcode);
                     }
                 };
             }
             @Override public void visitEnd() {
-                if (!found) throw new IllegalStateException("Pinned Media3 EGL cleanup method changed; review the compatibility correction.");
+                if (replacements != 1) throw new IllegalStateException("Pinned Media3 correction changed: " + className + " replacements=" + replacements);
+                System.out.println("STEP5_MEDIA3_INSTRUMENTED " + className);
                 super.visitEnd();
             }
         };
