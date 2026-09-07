@@ -34,7 +34,12 @@ class Step5ProcessDeathTest {
         AiWatermarkRepository(f.context).upsert(AiWatermarkEffect("recovery-ai",id,clip.id,0,clip.timelineDurationUs,NormalizedRoi(.1f,.1f,.8f,.8f)))
         val repository=ExportRepository(db,editor)
         val output=f.destination()
-        val job=repository.createJob(id,output.toString(),"interrupted.mp4",ExportSettings())
+        // Exercise real foreground AI and process death at the fixture's native dimensions.
+        // The default 1080p/high-bitrate project exceeds this emulator encoder's range.
+        val settings=ExportSettings(resolutionPreset=ExportResolutionPreset.CUSTOM,
+            customWidth=320,customHeight=240,videoBitrateOverride=4_000_000,
+            audioBitrate=128_000,audioChannels=1)
+        val job=repository.createJob(id,output.toString(),"interrupted.mp4",settings)
         prefs.edit().putString("project",id).putString("job",job.id).putString("source",source.toString()).putString("output",output.toString()).commit()
         ActivityScenario.launch(MainActivity::class.java).use {
             f.instrumentation.runOnMainSync { ExportForegroundService.start(f.context,job.id) }
