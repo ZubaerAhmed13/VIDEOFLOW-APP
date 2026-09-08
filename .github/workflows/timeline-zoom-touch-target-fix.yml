@@ -32,17 +32,11 @@ jobs:
           from pathlib import Path
           path = Path('app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt')
           text = path.read_text()
-          old = '''            Row(
-                Modifier.fillMaxWidth().height(40.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {'''
-          new = '''            Row(
-                Modifier.fillMaxWidth().height(48.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {'''
+          old = 'Modifier.fillMaxWidth().height(40.dp),'
+          new = 'Modifier.fillMaxWidth().height(48.dp),'
           count = text.count(old)
           if count != 1:
-              raise SystemExit(f'Expected exactly one zoom/ruler parent row at 40 dp, found {count}')
+              raise SystemExit(f'Expected exactly one 40 dp timeline toolbar row, found {count}')
           path.write_text(text.replace(old, new, 1))
           PY
 
