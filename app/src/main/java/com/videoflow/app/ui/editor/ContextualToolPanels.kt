@@ -294,7 +294,7 @@ private fun TrimPanel(
 
 @Composable
 private fun SpeedPanel(clip: TimelineClip, editorVm: EditorViewModel, onDismiss: () -> Unit) {
-    var speed by remember(clip.id) { mutableFloatStateOf(1f) }
+    var speed by remember(clip.id) { mutableFloatStateOf(clip.speed.toFloat()) }
     ToolHeader("Speed", "Preview the resulting duration before applying")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
