@@ -8,6 +8,10 @@ on:
       - scripts/apply_ai_preview_isolation.py
       - scripts/apply_final_editor_cleanup.py
       - scripts/apply_step5_product_integration_cleanup.py
+      - app/src/androidTest/java/com/videoflow/app/ui/ProfessionalToolControlsTest.kt
+      - app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
+      - app/src/androidTest/java/com/videoflow/app/ui/EditorWorkspaceVisualCertificationTest.kt
+      - app/src/androidTest/java/com/videoflow/app/step5/Step5ProductIntegrationTest.kt
       - .github/workflows/ai-preview-isolation-apply.yml
   workflow_dispatch:
 
