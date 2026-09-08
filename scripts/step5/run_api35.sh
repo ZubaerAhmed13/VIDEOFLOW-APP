@@ -57,10 +57,12 @@ test -n "$EXPORT_PID"
 echo "MAIN_PID_BEFORE=$MAIN_PID EXPORT_PID_BEFORE=$EXPORT_PID" | tee -a step4-emulator-reports/step5-process-start.txt
 
 # Kill ONLY :export while the instrumentation process intentionally keeps MainActivity alive.
-adb shell kill -9 "$EXPORT_PID"
+# adb shell itself cannot signal an app UID process on API 35, so execute kill as the debuggable
+# target app UID. This still targets only the captured :export PID and leaves the main PID untouched.
+adb shell run-as "$PACKAGE_ID" kill -9 "$EXPORT_PID"
 sleep 2
-MAIN_AFTER="$(adb shell pidof "$PACKAGE_ID" | tr -d '\r' | awk '{print $1}')"
-EXPORT_AFTER="$(adb shell pidof "$PACKAGE_ID:export" | tr -d '\r' | awk '{print $1}')"
+MAIN_AFTER="$(adb shell pidof "$PACKAGE_ID" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
+EXPORT_AFTER="$(adb shell pidof "$PACKAGE_ID:export" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
 test -n "$MAIN_AFTER"
 test "$MAIN_AFTER" = "$MAIN_PID"
 test -z "$EXPORT_AFTER"
