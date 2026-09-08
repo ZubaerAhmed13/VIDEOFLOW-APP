@@ -1,20 +1,30 @@
 # VIDEOFLOW ANDROID PROFESSIONAL — STEP 5 RELEASE BLOCKER CORRECTION REPORT
 
-## Certification identity
+**Date:** 2026-09-08  
+**Branch:** `step5-final-hardening-certification`  
+**Protected toolbar baseline:** `86ea2a9b5d6b6009368b9dad4b92aa08580de2ec`  
+**Exact certified software commit:** `3655aaccf8a040c3618d05c3af60e3244d05158d`  
+**Certification workflow:** VideoFlow Step 5 Final Software Certification  
+**Certification run:** `34225200958` (#64)  
+**Certification URL:** https://github.com/ZubaerAhmed13/VIDEOFLOW-APP/actions/runs/34225200958  
+**Automated software certification:** **PASS**  
+**Physical-device certification:** **NOT RUN / NOT VERIFIED BY DESIGN**
 
-- Branch: `step5-final-hardening-certification`
-- Protected toolbar baseline: `86ea2a9`
-- Exact certified commit: `{{COMMIT}}`
-- Certification workflow run: `{{RUN_ID}}`
-- Certification URL: `{{RUN_URL}}`
-- Automated software certification: **{{AUTOMATED_STATUS}}**
-- Physical-device certification: **NOT VERIFIED**
+> This report is documentation bound to the exact certified software commit above. Finalizing this Markdown file does not modify production application code and does not replace the exact-head evidence from workflow run #64.
 
-`{{AUTOMATED_STATUS}}` is substituted only inside the exact-head completion artifact after every required build, architecture, privacy, packaging, API-35 runtime, regression, Review APK, and evidence job succeeds. A failed or skipped prerequisite cannot produce an automated PASS report.
+---
 
-## No-sacrifice boundary
+## 1. Executive completion status
 
-The production toolbar correction at commit `86ea2a9` is protected. Step 5 hardening does not revert, redesign, reorder, or deliberately reduce the editor toolset. The final export path remains independent from AI preview caches and continues to render from original project/source authority at the selected export settings. Physical-device evidence is not inferred from emulator evidence.
+Step 5 software hardening is complete for the certified software commit. All required build, static analysis, JVM, instrumentation, API-35 runtime, AI-preview, final-export, process-death, toolbar, retained-regression, privacy/package, long-media architecture, Review APK install/update, and exact-head completion jobs succeeded in workflow run #64.
+
+The no-sacrifice boundary was preserved:
+
+- the protected production toolbar implementation was not redesigned or weakened to satisfy certification;
+- the normal editor now has a real moving processed AI watermark-removal preview path for active ranges;
+- final export remains independent from preview caches and renders from persisted project/original-source authority;
+- export execution is isolated in `:export` so a forced export-process death does not take down the main editor process;
+- physical-device PASS is not inferred from emulator evidence.
 
 ---
 
@@ -22,263 +32,326 @@ The production toolbar correction at commit `86ea2a9` is protected. Step 5 harde
 
 ## Root cause
 
-The production spacing correction already existed at the protected baseline, but Step 5 did not yet have sufficient geometry/font-scale evidence to prove the tighter toolbar remained readable, reachable, and non-clipped across compact and larger editor widths.
+The remaining toolbar failure was a certification-harness geometry problem, not a production toolbar regression. The API-35 emulator initially exposed a 320×640 px root at 160 dpi, while the Compose test attempted to exercise 360–600 dp layouts inside that constrained root. Off-screen semantics were therefore clipped and could falsely appear to have missing leading padding or overlap between adjacent tools.
 
-## Files involved
+## Production implementation preserved
 
-- `app/src/main/java/com/videoflow/app/ui/editor/EditorChrome.kt` — protected production implementation; intentionally not redesigned by this correction work.
-- `app/src/androidTest/java/com/videoflow/app/ui/Step5ToolbarGeometryComposeTest.kt` — Step 5 geometry/font-scale coverage.
-- `app/src/androidTest/java/com/videoflow/app/ui/ContextualToolbarComposeTest.kt` — retained toolbar behavior coverage.
+`EditorChrome.kt` remains on the protected design:
 
-## Architecture / correction
+- `ToolRow` height: 72 dp;
+- horizontal outer padding: 12 dp;
+- inter-tool spacing: 8 dp;
+- tool cells: 72/84/96 dp wide depending on label length;
+- tool-cell height: 64 dp;
+- horizontal scrolling retained;
+- production ordering and tool availability retained.
 
-The toolbar remains horizontally scrollable and context-sensitive with the existing production ordering and semantics. Certification was added around the protected implementation rather than solving a test requirement by changing the UI again.
+No production toolbar geometry was sacrificed for the test.
 
-## Automated tests
+## Certification correction
 
-Coverage exercises representative widths including 360, 393, 412, 480, and 600 dp and font scales including 1.0, 1.15, 1.3, and 1.5. Assertions cover minimum touch targets, spacing/containment, label visibility, horizontal reachability, and end padding. API-35 layout execution additionally runs portrait, landscape, and tablet configurations with enlarged system font scale.
+The toolbar test was corrected so each geometry case starts from a deterministic scroll position, and the API-35 harness now runs toolbar certification separately in a true 600×1000 px viewport at 160 dpi before resetting the display for the rest of the editor regressions.
 
-## Automated status
+Certified width/font matrix:
 
-**{{AUTOMATED_STATUS}}** — valid only when the exact-head workflow succeeds.
+- widths: 360, 393, 412, 480, 600 dp;
+- font scales: 1.0, 1.15, 1.3, 1.5.
 
-## Follow-up risk
+Assertions cover minimum touch size, text containment, leading/trailing padding, non-overlap, approximately 8 dp spacing, horizontal reachability, and large-font behavior.
 
-Real-device one-handed reach, OEM font rendering, gesture navigation insets, and human visual judgment remain **NOT VERIFIED** until physical review.
+## Runtime evidence
 
----
+`Step5ToolbarGeometryComposeTest` on API 35:
 
-# BLOCKER 2 — MOVING PROCESSED AI WATERMARK PREVIEW IN THE NORMAL EDITOR
+- `laterToolsAreReachableAndEndPaddingSurvivesHorizontalScroll` — PASS;
+- `videoToolbarKeepsTouchTargetsAndLabelsAcrossWidthsAndFontScales` — PASS;
+- `videoToolbarKeepsNonOverlappingEightDpSpacingAcrossFontScales` — PASS;
+- result: **OK (3 tests)**.
 
-## Root cause
+Retained editor regression immediately afterward also passed: **OK (8 tests)**.
 
-The earlier Watermark Studio path could produce still/specialized preview output, but normal editor playback did not continuously substitute processed AI video over active watermark-removal ranges. That meant metadata could be saved without giving the user the required moving processed result directly on the normal timeline.
+## Status
 
-## Files changed / involved
+**PASS**
 
-- `app/src/main/java/com/videoflow/app/ai/watermark/AiProcessedPreviewManager.kt`
-- `app/src/main/java/com/videoflow/app/domain/editor/AiPreviewPlaybackResolver.kt`
-- `app/src/main/java/com/videoflow/app/ui/VideoPlayer.kt`
-- `app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt`
-- `app/src/main/java/com/videoflow/app/ui/editor/FlowComposeBridge.kt`
-- `app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt`
-- `app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt`
-- `app/src/test/java/com/videoflow/app/domain/editor/AiPreviewPlaybackResolverTest.kt`
-- `app/src/test/java/com/videoflow/app/ai/watermark/AiPreviewIdentityTest.kt`
-- `app/src/androidTest/java/com/videoflow/app/ai/Step5AiMovingPreviewInstrumentedTest.kt`
+## Residual physical risk
 
-## Architecture / correction
-
-Applied AI edits are persisted first. Preview preparation then generates bounded processed MP4 segments only for active AI ranges, using proxy/source media appropriate for responsive preview and a deterministic state identity. The normal editor builds one Media3 playlist that stitches ordinary source/proxy segments outside active ranges with processed cached segments inside active ranges.
-
-The cache identity includes source fingerprint/geometry/timing, clip speed, proxy identity, AI ranges/ROI/tracking context, model identity/hash, and relevant edit state so stale processed previews are rejected when the effect state changes. Preview work is cancellable and progress-aware.
-
-This preview path is deliberately separate from final export. Final export compiles the persisted project and active AI effects against original source authority and selected export settings; it does not treat the preview cache as final-render input.
-
-## Automated tests
-
-- Deterministic multi-range playlist segmentation and source/timeline mapping.
-- Seek/boundary continuity across processed and ordinary ranges.
-- Cache identity/invalidation behavior.
-- Real local LaMa moving processed-preview instrumentation with generated video material.
-- Required `STEP5_AI_MOVING_PREVIEW_CERTIFIED` runtime evidence token.
-- Final certifier explicitly requires `ai-moving-preview.txt` to contain exactly one passing instrumented test and the certification token.
-
-## Automated status
-
-**{{AUTOMATED_STATUS}}** — valid only when the exact-head workflow succeeds.
-
-## Follow-up risk
-
-Sustained long-duration AI preview generation, thermal throttling, device-specific decoder behavior, and subjective temporal-removal quality remain physical-device review items.
+OEM font rendering, gesture-navigation insets, one-handed reach, and human visual judgment remain part of physical-device review.
 
 ---
 
-# BLOCKER 3 — EXPORT CRASH CONTAINMENT / EDITOR SURVIVAL
+# BLOCKER 2 — REAL MOVING PROCESSED AI WATERMARK PREVIEW
 
 ## Root cause
 
-Heavy codec, GL, muxing, and local-ONNX export work needed a stronger failure boundary. A fatal or escaped export-process failure must not take down the editor process or leave an active job looking successful/indeterminate.
+The earlier editing path could persist AI watermark-removal metadata and provide specialized/still preview behavior, but it did not guarantee that normal editor playback continuously substituted actual processed moving media over active AI ranges. That was insufficient for a professional timeline editing workflow.
 
-## Files changed / involved
+## Architecture implemented
 
-- `app/src/main/AndroidManifest.xml`
-- `app/src/main/java/com/videoflow/app/di/AppModule.kt`
-- `app/src/main/java/com/videoflow/app/export/ExportProcessIdentity.kt`
-- `app/src/main/java/com/videoflow/app/export/ExportSafety.kt`
-- `app/src/main/java/com/videoflow/app/export/ExportForegroundService.kt`
-- `app/src/main/java/com/videoflow/app/VideoFlowApplication.kt`
-- `app/src/test/java/com/videoflow/app/export/ExportFailureClassifierTest.kt`
-- `app/src/androidTest/java/com/videoflow/app/step5/Step5ProcessDeathTest.kt`
+The completed architecture uses:
 
-## Architecture / correction
+- `AiProcessedPreviewManager.kt` for bounded processed preview MP4 generation and deterministic cache management;
+- `AiPreviewPlaybackResolver.kt` to stitch ordinary source/proxy segments outside active AI ranges with processed cached segments inside active AI ranges;
+- `VideoPlayer.kt` / `PreviewWorkspace.kt` to play that stitched media in the normal editor timeline while preserving global timing;
+- `WatermarkStudioViewModel.kt` / `WatermarkStudioPanel.kt` for apply, progress, cancellation, 3s/5s/10s/Selected Range preview choices, and current still/moving preview controls.
 
-`ExportForegroundService` runs in the isolated app process suffix `:export`. Room multi-instance invalidation lets the editor/main process observe persisted job changes written by the export process. Main-process-only startup/recovery logic prevents the export process from incorrectly marking its own work interrupted.
+Applied edits are persisted before preview generation. A preview-generation failure therefore does not silently discard the user's edit.
 
-An outer export-service boundary classifies escaped non-fatal failures, invalidates/truncates unusable partial output, persists FAILED/INTERRUPTED state, and writes bounded redacted local diagnostics. Fatal VM/linkage failures are deliberately not swallowed; process isolation is the containment mechanism for those categories.
+The cache identity covers source fingerprint and geometry, clip timing/speed, proxy state, active effects/ranges, ROI, motion anchors/tracking, context, feather/stability, enabled state, model identity/hash, and relevant build/settings identity. Changing those inputs invalidates stale processed preview media.
 
-The main process periodically reconciles persisted active jobs against the actual `:export` process. If export died, the job is marked interrupted and the editable project remains intact.
+Final export is independent: the production export compiler renders persisted edit state from original project/source authority at the selected output settings and does not use the preview cache as final-render input.
 
-## Automated tests
+## Runtime evidence
 
-- Export failure classifier unit coverage.
-- Real foreground export launched in `:export`.
-- Independent main/editor PID and export PID capture.
-- Shell kills only the export PID.
-- Main/editor PID must remain unchanged.
-- Export process must be absent after kill.
-- Persisted recovery must mark the job interrupted/cancelled-safe while preserving project timeline and AI edit state.
-- Final certifier requires the `STEP5_EXPORT_PROCESS_ISOLATION_CERTIFIED` evidence marker.
+The API-35 real-media instrumentation test passed:
 
-## Automated status
+`STEP5_AI_MOVING_PREVIEW_CERTIFIED ranges=2 audio=true tracking=true invalidation=true`
 
-**{{AUTOMATED_STATUS}}** — valid only when the exact-head workflow succeeds.
+Test: `processedPreview_isRealMovingMediaWithAudioAndInvalidatesOnEdit`  
+Result: **OK (1 test)**.
 
-## Follow-up risk
+This proves that the certification path exercised actual generated moving MP4 segments, retained audio, followed moving ROI/tracking state, handled multiple separated active ranges, and invalidated the cache after an edit-state change.
 
-OEM process-management policy, true low-memory kills, vendor codec/native crashes, and prolonged background execution remain physical-device certification items.
+The independent production final-AI export test also passed:
+
+`FINAL_AI_EXPORT_CERTIFIED ... model=lama-512-int8-v1 validation=true`
+
+Result: **OK (1 test)**.
+
+The broader offline AI runtime suite passed **OK (6 tests)**, including dual-model-pack installation/session behavior without network access.
+
+## Status
+
+**PASS**
+
+## Residual physical risk
+
+Long sustained AI preview generation, device thermal throttling, vendor decoder/GPU behavior, and subjective temporal-removal quality require physical-device review.
 
 ---
 
-# BLOCKER 4 — PROCESS-DEATH TEST SOURCE / DESTINATION AUTHORITY
+# BLOCKER 3 — EXPORT CRASH / PROCESS-DEATH CONTAINMENT
 
 ## Root cause
 
-Two successive test-fixture assumptions were too weak for the real production contracts. A MediaStore destination used by the first isolation fixture could fail before the kill point on the hosted emulator. Changing both source and destination to private FileProvider URIs solved cross-process determinism but correctly failed `FinalRenderPlanCompiler`, because FileProvider source URIs do not provide the persistable SAF permission required for background export.
+Heavy codec, GL, muxing, and local-ONNX work needed a process-level containment boundary. A fatal or escaped export failure must not terminate the editor process or leave a persisted export job falsely active/successful.
 
-The production permission check was correct and was not weakened.
+## Architecture implemented
 
-## Files changed / involved
+- `ExportForegroundService` runs in the separate app process `:export`;
+- Room multi-instance invalidation shares persisted state correctly across main and export processes;
+- `ExportProcessIdentity.kt` distinguishes main/export startup behavior;
+- `ExportSafety.kt` classifies recoverable export failures, sanitizes bounded diagnostics, cleans unusable partial output, and preserves fatal-error semantics;
+- main-process recovery/watchdog logic reconciles persisted active jobs against the real `:export` process;
+- if `:export` disappears, the export is safely marked interrupted/failed as appropriate while editable project state remains intact.
 
-- `app/src/androidTest/java/com/videoflow/app/step5/Step5ProcessDeathTest.kt`
-- `app/src/androidTest/java/com/videoflow/app/step5/Step5MediaFixture.kt` — existing app-owned MediaStore fixture reused.
-- `app/src/main/java/com/videoflow/app/data/project/ProjectRepository.kt` — production authority logic inspected, not weakened for the test.
-- `app/src/main/java/com/videoflow/app/domain/export/FinalRenderPlan.kt` — production `permissionPersisted` export gate retained.
-- `app/src/androidTest/java/com/videoflow/app/export/SafMediaMuxerFactoryInstrumentedTest.kt` — retained direct MediaStore/SAF-path evidence.
+The production source-permission authority was not weakened for testing. The final process-death fixture uses app-owned MediaStore source authority and a deterministic app-private destination for forced-death cleanup, while retained direct MediaStore/SAF tests independently certify the production content-URI path.
 
-## Architecture / correction
+## Runtime evidence
 
-The final isolation fixture uses an **app-owned MediaStore source** created through the target app resolver. `ProjectRepository.persistReadPermission` recognizes an app-owned MediaStore row as durable source authority by verifying `OWNER_PACKAGE_NAME`, satisfying the same background-export contract without fake flags or bypasses.
+API-35 process isolation captured two simultaneous PIDs:
 
-The process-death test uses an **app-private FileProvider destination** only for deterministic cross-process output/truncation during forced process death. That destination is not a replacement for user-selected SAF/MediaStore coverage. The retained direct-SAF/MediaStore mux instrumentation separately verifies real content-URI MP4 writing and finalization.
+- main/editor PID before forced death: `3946`;
+- export PID before forced death: `4044`.
 
-## Automated tests
+Only the export PID was killed. Evidence marker:
 
-- Background export must compile with genuine durable source authority.
-- Isolated process must reach RENDERING before the shell kill.
-- Partial private test output must be truncated after recovery.
-- Direct MediaStore content-URI muxing remains separately exercised by `SafMediaMuxerFactoryInstrumentedTest`.
+`STEP5_EXPORT_PROCESS_ISOLATION_CERTIFIED main_pid=3946 killed_export_pid=4044`
 
-## Automated status
+The main PID remained unchanged and the `:export` process disappeared.
 
-**{{AUTOMATED_STATUS}}** — valid only when the exact-head workflow succeeds.
+Then:
 
-## Follow-up risk
+- `startRealForegroundAiJob` — **OK (1 test)**;
+- `restartRecognizesInterruptedJobAndPreservesEditableProject` — **OK (1 test)**.
 
-Physical providers such as OEM file managers, SD cards, cloud-backed DocumentsProviders, and removable storage need device/provider testing.
+The retained SAF mux regression also passed, including `remuxesFixtureDirectlyIntoMediaStoreContentUri`.
+
+## Status
+
+**PASS**
+
+## Residual physical risk
+
+OEM background-process policies, genuine low-memory kills, vendor native codec failures, removable/cloud DocumentsProviders, and long-running background restrictions require real-device/provider testing.
 
 ---
 
-# BLOCKER 5 — RETAINED TEST / UI DEPENDENCY DRIFT
+# BLOCKER 4 — QUALITY, TIMING, SECURITY AND RETAINED PRODUCT REGRESSION
 
-## Root cause
+## API-35 Step 5 integration
 
-Two retained product-flow instrumentation tests still instantiated the former `WatermarkStudioViewModel` constructor after moving processed preview became a real production dependency. Retained UI automation also referenced obsolete preview wording, and one Compose semantics import was unavailable in the current test API.
+The main Step 5 runtime group passed **OK (13 tests)**. It included:
 
-## Files changed / involved
+- final LaMa target modification with unrelated-pixel colour retention;
+- recovery/security and atomic sidecar behavior;
+- derived-media deletion safety;
+- effect/enhance endpoint pixel changes;
+- composition geometry;
+- A/V synchronization across trim/speed/visual processing;
+- fractional cadence normalization;
+- stereo 44.1 kHz handling;
+- checkpoint assembly with continuous original audio;
+- product-panel integration.
 
-- Retained Watermark Studio/product-flow instrumentation files.
-- `app/src/androidTest/java/com/videoflow/app/ui/Step5ToolbarGeometryComposeTest.kt`.
+Certification markers included:
 
-## Architecture / correction
+- `STEP5_OVERLAY_CHECKPOINT_CERTIFIED ... validation=true`;
+- `STEP5_PRODUCT_INTEGRATION_CERTIFIED audio=3 effects=1 enhance=0.2 aiCorrections=1`.
 
-Tests now wire the real `AiProcessedPreviewManager` dependency instead of bypassing the production graph. UI automation uses the current `Generate Still Preview` wording. The unsupported semantics import was removed without altering production semantics.
+Measured video/audio event differences stayed within the 66,667 µs certification tolerance. Recorded differences included 30,707 µs, 20,041 µs, 3,375 µs, and 52,083 µs depending on speed/event case.
 
-## Automated tests
+Resource evidence showed no retained descriptor leak in the tested run (`retained_descriptor_growth=-3`, maximum single-render growth `2`).
 
-Instrumentation/Compose compilation must pass before APK assembly. Product-panel and retained professional/editor regressions then execute on API 35.
+## Professional and retained regressions
 
-## Automated status
+- professional product-panel flow — **OK (1 test)**;
+- protected editor/contextual toolbar regression — **OK (8 tests)**;
+- professional upgrade group — **OK (5 tests)**;
+- retained product regression — **OK (12 tests)**.
 
-**{{AUTOMATED_STATUS}}** — valid only when the exact-head workflow succeeds.
+Production combined/checkpoint render markers both reported `validation=true`.
 
-## Follow-up risk
+## Status
 
-Future production constructor/label changes still require tests to evolve with the product rather than pinning obsolete UX strings.
+**PASS**
 
 ---
 
-# BLOCKER 6 — FAIL-CLOSED FINAL CERTIFICATION / REVIEW APK HANDOFF
+# BLOCKER 5 — BUILD, PRIVACY, LONG-MEDIA AND PACKAGE INTEGRITY
 
-## Root cause
+## Exact-head build/static gates
 
-Intermediate green jobs are not enough to call Step 5 complete. The exact-head report must consume evidence from the same commit and explicitly include the moving-AI-preview and isolated-export-process proofs. The requested human-test APK also needs an unambiguous Review filename rather than being confused with a production release.
+On `3655aaccf8a040c3618d05c3af60e3244d05158d`:
 
-## Files changed / involved
+- architecture/product-entry/privacy audit — PASS;
+- full JVM regression — PASS;
+- Android lint — PASS;
+- instrumentation and Compose compilation — PASS;
+- Debug, Review and androidTest APK assembly with local AI assets — PASS;
+- Media3 lifecycle/timing verification — PASS;
+- Review identity/signature/offline-permission/model-pack verification — PASS.
 
-- `scripts/step5/run_api35.sh`
-- `scripts/step5/certify.py`
-- `.github/workflows/android-step5-certification.yml`
-- `STEP_5_RELEASE_BLOCKER_CORRECTION_REPORT.md`
+## Long-media / privacy/package jobs
 
-## Architecture / correction
+- `Long-media architecture evidence` — PASS;
+- `Privacy, model and RC package integrity` — PASS.
 
-The final report job depends on build, API-35 runtime, long-media architecture, and privacy/package integrity jobs. `certify.py` rejects missing/failed/skipped prerequisite evidence, validates JUnit XML, verifies APK hashes/model hashes/offline permissions/signature, parses required API-35 logs, and now explicitly requires:
+The architecture certification retains reference-based large-media handling rather than imposing an artificial whole-file-in-RAM design. Physical approximately-3-GB source testing is still intentionally deferred.
 
-- `ai-moving-preview.txt` with one passing test and `STEP5_AI_MOVING_PREVIEW_CERTIFIED`;
-- `step5-export-process-isolation.txt` with `STEP5_EXPORT_PROCESS_ISOLATION_CERTIFIED`;
-- the exact source commit identity;
-- all measurement JSONL evidence expected by Step 5.
+## Runtime bundle integrity
 
-The exact-head completion artifact additionally exposes the already verified Review build as **`VideoFlow-Step5-Review.apk`**. This is a Review APK for human/physical certification, not a production-release claim.
+Exact runtime artifact digest:
 
-## Automated tests / gates
+`sha256:4bd63ace4121ec6f6ddde2ed2182fc3eb6c1976e25a4142270005a7465e3d48c`
 
-The exact same commit must pass all of the following before automated completion:
+Its internal `SHA256SUMS.txt` verification reported:
 
-- pinned local LaMa SHA-256/size verification;
-- offline/privacy architecture gate;
-- complete JVM regression and Step 5 architecture contracts;
-- Android lint;
-- instrumentation/Compose compilation;
-- Debug, Review, and androidTest APK assembly;
-- Media3 bytecode/lifecycle/timing checks;
-- Review signature, offline permission, and model-pack verification;
-- long-media / approximately 3 GB architecture certification;
-- API-35 portrait/landscape/tablet execution;
-- isolated export-process kill/recovery;
-- Step 5 integration, quality/colour, composition geometry, A/V sync, security/recovery, and product suites;
-- actual moving processed AI preview instrumentation;
-- final local-AI export instrumentation;
-- protected toolbar regression;
-- retained professional and legacy regressions including direct SAF muxing;
-- Review APK fresh install, cold launch, in-place update install, and relaunch;
-- exact-head report generation from successful prerequisite evidence.
+- `VideoFlow_Step5_Debug-androidTest.apk: OK`;
+- `VideoFlow_Step5_Debug.apk: OK`;
+- `VideoFlow_Step5_Review.apk: OK`;
+- `run_api35.sh: OK`.
 
-## Automated status
+## Status
 
-**{{AUTOMATED_STATUS}}** — valid only when the exact-head workflow succeeds.
+**PASS**
 
-## Follow-up risk
+---
 
-The Review APK is not called production-ready until physical-device certification and any later release-signing/distribution requirements are completed.
+# BLOCKER 6 — REVIEW APK HANDOFF AND FAIL-CLOSED COMPLETION
+
+The Review build was installed on the API-35 emulator from a clean state and cold-launched successfully. It was then installed again with `adb install -r` and relaunched successfully.
+
+- fresh Review install — `Success`;
+- fresh launch produced an active Review process;
+- in-place Review update install — `Success`;
+- update relaunch produced an active Review process.
+
+The completion job consumed the exact same run's APK, build, and API-35 artifacts and executed `scripts/step5/certify.py report` only after all prerequisite jobs reported `success`. The completion job itself passed and produced both the completion report artifact and physical-test package.
+
+## Exact Review filename
+
+`VideoFlow_Step5_Review.apk`
+
+This is a **Review APK**, not a production-release signing/distribution claim.
+
+## Status
+
+**PASS — automated software/review packaging**
+
+---
+
+# FINAL VALIDATION MATRIX
+
+| Gate | Result |
+|---|---|
+| Architecture / privacy audit | PASS |
+| Full JVM regression | PASS |
+| Android lint | PASS |
+| Instrumentation / Compose compile | PASS |
+| Debug / Review / androidTest APK assembly | PASS |
+| Media3 lifecycle / timing checks | PASS |
+| Review signature / offline / model-pack checks | PASS |
+| Long-media architecture evidence | PASS |
+| Privacy / package integrity | PASS |
+| API-35 timeline accessibility configurations | PASS |
+| Real isolated export-process kill + editor survival | PASS |
+| Export restart/recovery + project preservation | PASS |
+| Step 5 integration suite | PASS — 13 tests |
+| Professional product panels | PASS — 1 test |
+| Offline AI runtime | PASS — 6 tests |
+| Real moving processed AI preview | PASS — 1 test |
+| Independent final AI export | PASS — 1 test |
+| Toolbar width/font geometry certification | PASS — 3 tests |
+| Editor/contextual regression | PASS — 8 tests |
+| Professional upgrade regression | PASS — 5 tests |
+| Retained product regression | PASS — 12 tests |
+| Review APK fresh install / cold launch | PASS |
+| Review APK in-place update / relaunch | PASS |
+| Exact-head completion job | PASS |
+| Physical Android hardware certification | **NOT RUN / NOT VERIFIED** |
+
+---
+
+# CERTIFICATION ARTIFACTS — WORKFLOW RUN 34225200958
+
+| Artifact | Artifact ID | Artifact ZIP SHA-256 |
+|---|---:|---|
+| VideoFlow-Step5-APKs | `10055786419` | `5abf2641e15e493b5b010672b15d6f8412de0cf32c2a98ea2384376f2f7d472d` |
+| VideoFlow-Step5-Runtime-Bundle | `10055796479` | `4bd63ace4121ec6f6ddde2ed2182fc3eb6c1976e25a4142270005a7465e3d48c` |
+| Step5-Build-Evidence | `10055797012` | `f141e37143e86ea2104aa121e54a153ec7fe718f7164cf3f1b76cc8dea5c043d` |
+| VideoFlow-Step5-Long-Media-Evidence | `10055802158` | `c7a7e877733e3f2f34bb7fc4abc6b3ac7559fe657bb370e201e749aaf6a93534` |
+| VideoFlow-Step5-Packaging-Evidence | `10055810906` | `f7a28065e992512e680741182aa4b22100e1c3a206405460b0ce920bafe6784a` |
+| VideoFlow-Step5-API35-Certification | `10056629194` | `6751a5ffc718b37d3f727376032a15b9f4f133ba5ba233a854ab565d71735a1c` |
+| VideoFlow-Step5-Completion-Report | `10056664123` | `4214c5cf8fd586274aadf83687a48c877545b81f48bf3a640a3ed746d77376a8` |
+| VideoFlow-Step5-Physical-Test-Package | `10056676007` | `8dee1b25f93372c6e8d73f5a4020cf431dcf84b67c82c4725b2b539b6fcae1b7` |
 
 ---
 
 # PHYSICAL-DEVICE BOUNDARY
 
-Physical-device certification is intentionally **NOT VERIFIED** in this report. Emulator/architecture evidence cannot prove:
+Physical-device certification remains deliberately **NOT RUN / NOT VERIFIED**. Automated/emulator evidence does not certify:
 
-- real-device thermal and battery behavior;
+- real-device thermal or battery behavior;
 - OEM codec/GL/native-driver behavior;
 - sustained 30-minute-or-longer local-AI processing;
-- approximately 3 GB sources on real storage providers;
+- approximately 3 GB sources through real storage providers;
 - device-specific 720p/1080p/2K/4K decode/encode capability;
-- real-world colour/HDR rendering across displays;
-- final human visual quality and interaction review.
+- HDR/display-specific colour behavior;
+- removable/cloud DocumentsProviders;
+- final human visual-quality and interaction judgment.
 
-Those items remain for the supplied physical certification package. No automated result may be relabeled as physical-device evidence.
+Those items belong to the generated `VideoFlow-Step5-Physical-Test-Package` and must be recorded from Android hardware before a physical certification PASS is claimed.
 
-# COMPLETION RULE
+---
 
-Step 5 software hardening is automated-complete only when this report is generated in the exact-head completion artifact with **Automated software certification: PASS**, all prerequisite jobs succeeded on `{{COMMIT}}`, and the Review APK/evidence artifacts are present. Any failed or skipped required job keeps Step 5 blocked. Physical-device status remains **NOT VERIFIED** until separately executed on Android hardware.
+# FINAL CONCLUSION
+
+**VIDEOFLOW ANDROID PROFESSIONAL STEP 5 SOFTWARE RELEASE-BLOCKER CORRECTION: PASS**
+
+Certified software commit: `3655aaccf8a040c3618d05c3af60e3244d05158d`  
+Successful certification run: `34225200958` (#64)  
+Review APK: `VideoFlow_Step5_Review.apk`  
+Physical-device certification: **NOT RUN / NOT VERIFIED**
+
+All requested software release blockers are closed by automated exact-head evidence. The remaining boundary is physical Android hardware certification; it is intentionally not represented as completed by this report.
