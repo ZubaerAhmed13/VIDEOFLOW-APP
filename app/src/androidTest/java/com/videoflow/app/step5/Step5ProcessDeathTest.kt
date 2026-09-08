@@ -1,6 +1,7 @@
 @file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 package com.videoflow.app.step5
 
+import android.app.ActivityManager
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
@@ -43,7 +44,6 @@ class Step5ProcessDeathTest {
         val outputFile=privateFixtureFile(f.context,"output-${System.nanoTime()}.mp4")
         val output=privateFixtureUri(f.context,outputFile)
         val readyFlag=handshakeFlag(f.context,"ready-for-export-kill.flag").apply { delete() }
-        val killedFlag=handshakeFlag(f.context,"export-killed.flag").apply { delete() }
         // Exercise a real foreground AI export in :export at the fixture's native dimensions.
         // The app-owned MediaStore source proves the durable source-authority path; the private
         // FileProvider output stays deterministic across instrumentation, editor and :export.
@@ -71,14 +71,13 @@ class Step5ProcessDeathTest {
             } }
             f.evidence("process-death.txt","REAL_FOREGROUND_RENDERING job=${job.id}")
             check(readyFlag.createNewFile()) { "Could not publish export-process kill readiness." }
-            // Keep instrumentation + MainActivity alive while the host shell captures both PIDs,
-            // kills only :export, verifies the main PID is unchanged, then acknowledges the kill.
-            // The handshake uses app-specific external test storage because adb shell can reliably
-            // observe it; it never participates in production export or recovery behavior.
+            // Keep instrumentation + MainActivity alive while the host shell captures both PIDs
+            // and kills only :export. The app then observes the isolated process disappearing
+            // directly, so no ownership-sensitive host acknowledgement file is required.
             withTimeout(60_000L) {
-                while(!killedFlag.exists()) delay(50)
+                while(isExportProcessRunning(f.context)) delay(50)
             }
-            readyFlag.delete();killedFlag.delete()
+            readyFlag.delete()
         }
         db.close()
     }
@@ -99,7 +98,6 @@ class Step5ProcessDeathTest {
             runCatching { context.contentResolver.delete(Uri.parse(prefs.getString("source",null)),null,null) }
             prefs.getString("outputPath",null)?.let { path -> runCatching { File(path).delete() } }
             handshakeFlag(context,"ready-for-export-kill.flag").delete()
-            handshakeFlag(context,"export-killed.flag").delete()
             prefs.edit().clear().commit()
             Unit
         } finally { db.close() }
@@ -113,6 +111,11 @@ class Step5ProcessDeathTest {
 
     private fun handshakeFlag(context: Context,name: String): File =
         File(checkNotNull(context.getExternalFilesDir(null)),"step5-handshake/$name").apply { parentFile?.mkdirs() }
+
+    private fun isExportProcessRunning(context: Context): Boolean {
+        val manager=context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        return manager.runningAppProcesses?.any { it.processName == "${context.packageName}:export" } == true
+    }
 
     private fun privateFixtureUri(context: Context,file: File): Uri =
         FileProvider.getUriForFile(context,"${context.packageName}.derived",file)
