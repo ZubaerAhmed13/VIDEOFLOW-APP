@@ -125,8 +125,8 @@ class EditorWorkspaceVisualCertificationTest {
         val density = rule.activity.resources.displayMetrics.density
         val minimumPx = 48f * density
         listOf("Media", "Audio", "Text", "Overlay", "Canvas", "More").forEach { label ->
-            // boundsInRoot is clipped by the horizontal scroll viewport. Scroll the
-            // requested tool fully into view before verifying the real touch target.
+            // boundsInRoot is clipped by the horizontal scroll viewport. Bring the tool
+            // fully into view before measuring its actual interactive cell.
             val node = rule.onNodeWithContentDescription(label)
             node.performScrollTo()
             rule.waitForIdle()
@@ -184,17 +184,20 @@ class LongTimelineWorkspaceSmokeTest {
                     onClearSelection = {},
                     onMoveClip = { _, _ -> },
                     onToggleMute = {},
-                    onToggleLock = {}
+                    onToggleVisible = {},
+                    onToggleLock = {},
+                    onTrackSettings = {}
                 )
             }
         }
 
-        rule.onNodeWithText("Video 1").fetchSemanticsNode()
-        rule.onNodeWithText("Audio 1").fetchSemanticsNode()
-        rule.onNodeWithText("Overlay 1").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Zoom out").performClick()
-        rule.waitForIdle()
-        rule.onNodeWithContentDescription("Zoom in").performClick()
-        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Zoom out timeline").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Zoom in timeline").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Open Video 1 settings").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Open Audio 1 settings").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Hide Video 1").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Mute Audio 1").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Lock Video 1").fetchSemanticsNode()
+        rule.onNodeWithText("Opening").fetchSemanticsNode()
     }
 }
