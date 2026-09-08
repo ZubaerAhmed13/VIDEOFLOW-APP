@@ -165,7 +165,7 @@ private fun TrimPanel(
     var draftEndUs by remember(tool.clipId, clip.sourceEndUs) { mutableLongStateOf(clip.sourceEndUs) }
     var startText by remember(tool.clipId, clip.sourceStartUs) { mutableStateOf(TrimTimecode.formatUs(clip.sourceStartUs)) }
     var endText by remember(tool.clipId, clip.sourceEndUs) { mutableStateOf(TrimTimecode.formatUs(clip.sourceEndUs)) }
-    var preciseMode by remember(tool.clipId) { mutableStateOf(false) }
+    var preciseMode by remember(tool.clipId, tool.startPrecise) { mutableStateOf(tool.startPrecise) }
     var pendingPreviewUs by remember(tool.clipId) { mutableLongStateOf(clip.timelineStartUs) }
     var lastPreviewSeekMs by remember(tool.clipId) { mutableLongStateOf(0L) }
 
@@ -294,7 +294,7 @@ private fun TrimPanel(
 
 @Composable
 private fun SpeedPanel(clip: TimelineClip, editorVm: EditorViewModel, onDismiss: () -> Unit) {
-    var speed by remember(clip.id) { mutableFloatStateOf(clip.speed.toFloat()) }
+    var speed by remember(clip.id) { mutableFloatStateOf(1f) }
     ToolHeader("Speed", "Preview the resulting duration before applying")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
