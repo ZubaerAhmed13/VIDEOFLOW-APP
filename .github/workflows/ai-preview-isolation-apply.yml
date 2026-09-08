@@ -91,6 +91,8 @@ jobs:
           grep -q 'AI stage Done' app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
           grep -q 'AI stage Done' app/src/androidTest/java/com/videoflow/app/step5/Step5ProductIntegrationTest.kt
           grep -q 'Save AI removal' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          ! grep -q 'Lock Video 1' app/src/androidTest/java/com/videoflow/app/ui/EditorWorkspaceVisualCertificationTest.kt
+          grep -q 'Open Video 1 settings' app/src/androidTest/java/com/videoflow/app/ui/EditorWorkspaceVisualCertificationTest.kt
 
       - name: Compile production, unit tests and instrumentation source
         run: ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin --no-daemon --stacktrace
@@ -112,8 +114,8 @@ jobs:
                   app/src/main/java/com/videoflow/app/ui/editor/ProfessionalEditorTool.kt \
                   app/src/androidTest/java/com/videoflow/app/ui/ProfessionalToolControlsTest.kt \
                   app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt \
+                  app/src/androidTest/java/com/videoflow/app/ui/EditorWorkspaceVisualCertificationTest.kt \
                   app/src/androidTest/java/com/videoflow/app/step5/Step5ProductIntegrationTest.kt \
-                  scripts/step5/run_api35.sh \
-                  .github/workflows/android-step5-certification.yml
+                  scripts/step5/run_api35.sh
           git commit -m 'fix: isolate editor AI preview runtime from main process'
           git push origin HEAD:step5-final-hardening-certification
