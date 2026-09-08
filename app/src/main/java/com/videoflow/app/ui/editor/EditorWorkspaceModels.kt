@@ -71,7 +71,7 @@ enum class TimedOwnerType { TEXT, IMAGE }
  * predictable state machine.
  */
 sealed interface EditorTool {
-    data class Trim(val clipId: String) : EditorTool
+    data class Trim(val clipId: String, val startPrecise: Boolean = false) : EditorTool
     data class Speed(val clipId: String) : EditorTool
     data class Crop(val clipId: String) : EditorTool
     data class Transform(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
