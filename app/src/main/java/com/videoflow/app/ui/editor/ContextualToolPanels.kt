@@ -165,7 +165,7 @@ private fun TrimPanel(
     var draftEndUs by remember(tool.clipId, clip.sourceEndUs) { mutableLongStateOf(clip.sourceEndUs) }
     var startText by remember(tool.clipId, clip.sourceStartUs) { mutableStateOf(TrimTimecode.formatUs(clip.sourceStartUs)) }
     var endText by remember(tool.clipId, clip.sourceEndUs) { mutableStateOf(TrimTimecode.formatUs(clip.sourceEndUs)) }
-    var preciseMode by remember(tool.clipId) { mutableStateOf(false) }
+    var preciseMode by remember(tool.clipId, tool.startPrecise) { mutableStateOf(tool.startPrecise) }
     var pendingPreviewUs by remember(tool.clipId) { mutableLongStateOf(clip.timelineStartUs) }
     var lastPreviewSeekMs by remember(tool.clipId) { mutableLongStateOf(0L) }
 
