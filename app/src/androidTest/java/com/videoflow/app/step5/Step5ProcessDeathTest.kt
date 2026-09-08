@@ -73,8 +73,9 @@ class Step5ProcessDeathTest {
             check(readyFlag.createNewFile()) { "Could not publish export-process kill readiness." }
             // Keep instrumentation + MainActivity alive while the host shell captures both PIDs,
             // kills only :export, verifies the main PID is unchanged, then acknowledges the kill.
-            // This is test synchronization only; no production delay or latch is introduced.
-            withTimeout(45_000L) {
+            // The handshake uses app-specific external test storage because adb shell can reliably
+            // observe it; it never participates in production export or recovery behavior.
+            withTimeout(60_000L) {
                 while(!killedFlag.exists()) delay(50)
             }
             readyFlag.delete();killedFlag.delete()
@@ -111,7 +112,7 @@ class Step5ProcessDeathTest {
         }
 
     private fun handshakeFlag(context: Context,name: String): File =
-        File(context.filesDir,"ai-jobs/process-death/$name").apply { parentFile?.mkdirs() }
+        File(checkNotNull(context.getExternalFilesDir(null)),"step5-handshake/$name").apply { parentFile?.mkdirs() }
 
     private fun privateFixtureUri(context: Context,file: File): Uri =
         FileProvider.getUriForFile(context,"${context.packageName}.derived",file)
