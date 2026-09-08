@@ -32,7 +32,7 @@ class Step5ToolbarGeometryComposeTest {
     )
 
     @Test
-    fun videoToolbarKeepsTouchTargetsSpacingAndLabelsAcrossWidthsAndFontScales() {
+    fun videoToolbarKeepsTouchTargetsAndLabelsAcrossWidthsAndFontScales() {
         val widthDp = mutableIntStateOf(360)
         val fontScale = mutableFloatStateOf(1f)
         rule.setContent {
@@ -60,8 +60,8 @@ class Step5ToolbarGeometryComposeTest {
                 }
                 rule.waitForIdle()
 
-                // boundsInRoot is clipped by a scrollable ancestor. Bring each tool fully
-                // into the viewport before measuring its real interactive cell.
+                // A horizontal scroll container clips boundsInRoot for off-screen children.
+                // Bring each tool fully into view before certifying its actual interactive cell.
                 labels.forEach { label ->
                     val node = rule.onNodeWithContentDescription(label)
                     node.performScrollTo()
@@ -71,23 +71,63 @@ class Step5ToolbarGeometryComposeTest {
                     assertTrue("$label touch height at ${width}dp/$scale", cell.height >= 48f)
 
                     val text = rule.onNodeWithText(label, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-                    assertTrue("$label text exceeds its cell horizontally at fontScale=$scale", text.left >= cell.left - 1f && text.right <= cell.right + 1f)
-                    assertTrue("$label text exceeds its cell vertically at fontScale=$scale", text.top >= cell.top - 1f && text.bottom <= cell.bottom + 1f)
-                }
-
-                labels.zipWithNext().forEach { (leftLabel, rightLabel) ->
-                    rule.onNodeWithContentDescription(rightLabel).performScrollTo()
-                    rule.waitForIdle()
-                    val left = rule.onNodeWithContentDescription(leftLabel).fetchSemanticsNode().boundsInRoot
-                    val right = rule.onNodeWithContentDescription(rightLabel).fetchSemanticsNode().boundsInRoot
-                    assertTrue("$leftLabel overlaps $rightLabel at ${width}dp/$scale", left.right <= right.left + 0.5f)
-                    assertTrue("toolbar gap collapsed at ${width}dp/$scale", right.left - left.right >= 7f)
+                    assertTrue(
+                        "$label text exceeds its cell horizontally at ${width}dp/$scale",
+                        text.left >= cell.left - 1f && text.right <= cell.right + 1f
+                    )
+                    assertTrue(
+                        "$label text exceeds its cell vertically at ${width}dp/$scale",
+                        text.top >= cell.top - 1f && text.bottom <= cell.bottom + 1f
+                    )
                 }
 
                 rule.onNodeWithContentDescription("Split").performScrollTo()
                 rule.waitForIdle()
                 val first = rule.onNodeWithContentDescription("Split").fetchSemanticsNode().boundsInRoot
                 assertTrue("first-cell leading padding missing at ${width}dp/$scale", first.left >= 11f)
+            }
+        }
+    }
+
+    @Test
+    fun videoToolbarKeepsNonOverlappingEightDpSpacingAcrossFontScales() {
+        val fontScale = mutableFloatStateOf(1f)
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = fontScale.floatValue)) {
+                // Deliberately expose the whole row. Pairwise spacing must be measured in one
+                // common coordinate space; independently scrolling each item changes that space
+                // and can make perfectly spaced neighbours appear to have a zero gap.
+                Box(Modifier.width(1400.dp)) {
+                    EditorBottomToolbar(
+                        selection = EditorSelection.Clip("clip"),
+                        selectedClipMime = "video/mp4",
+                        onPanel = {},
+                        onTool = {},
+                        onSplit = {},
+                        onProfessionalTool = {}
+                    )
+                }
+            }
+        }
+
+        listOf(1f, 1.15f, 1.3f, 1.5f).forEach { scale ->
+            rule.runOnIdle { fontScale.floatValue = scale }
+            rule.waitForIdle()
+
+            val bounds = labels.map { label ->
+                rule.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot
+            }
+            bounds.zipWithNext().forEachIndexed { index, (left, right) ->
+                val leftLabel = labels[index]
+                val rightLabel = labels[index + 1]
+                assertTrue(
+                    "$leftLabel overlaps $rightLabel at fontScale=$scale",
+                    left.right <= right.left + 0.5f
+                )
+                assertTrue(
+                    "$leftLabel/$rightLabel toolbar gap collapsed at fontScale=$scale",
+                    right.left - left.right >= 7f
+                )
             }
         }
     }
