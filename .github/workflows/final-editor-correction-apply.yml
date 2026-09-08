@@ -34,6 +34,21 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Normalize current precise-trim toolbar shape
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/com/videoflow/app/ui/editor/EditorChrome.kt')
+          text = path.read_text(encoding='utf-8')
+          current = '        ToolButton(Icons.Default.AccessTime, "Precise Trim") { onProfessionalTool(ProfessionalEditorTool.PreciseTrim(clipId)) }'
+          matcher_shape = '        EditorToolbarItem("Precise Trim", Icons.Default.ContentCut, action = { onProfessionalTool(ProfessionalEditorTool.PreciseTrim(selection.videoClip.id)) })'
+          if current in text:
+              path.write_text(text.replace(current, matcher_shape), encoding='utf-8')
+          elif matcher_shape not in text:
+              raise SystemExit('Precise Trim toolbar item was not found in the expected current or normalized form')
+          PY
+
       - name: Apply deterministic correction patch
         run: python3 scripts/apply_final_editor_corrections.py
 
@@ -56,4 +71,4 @@ jobs:
           git commit -m "fix: correct final editor physical-device blockers"
           git push origin HEAD:step5-final-hardening-certification
 
-# Trigger marker: 2026-09-08 final editor correction pass
+# Trigger marker: 2026-09-08 final editor correction pass v2
