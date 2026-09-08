@@ -134,9 +134,16 @@ class ProfessionalProductWorkflowTest {
             // Stage chip and commit button both say Apply; the chip exists before opening the stage.
             rule.onNodeWithContentDescription("AI stage Apply").performClick()
             rule.onNodeWithContentDescription("Apply AI removal").assertIsEnabled().performScrollTo().performClick()
-            rule.waitUntil(30_000) { tool==null || aiVm.state.value.error!=null }
-            assertNull("AI commit failed",aiVm.state.value.error)
-            assertNull("Applied panel must close",tool)
+            // Apply persists the edit first, then prepares real processed moving editor-preview media.
+            // Require that lifecycle to start, and keep the same bounded AI budget as the Step-5
+            // product integration gate. This remains fail-closed on either preview error or timeout.
+            rule.waitUntil(30_000) {
+                tool==null || aiVm.state.value.error!=null ||
+                    aiVm.state.value.busy==WatermarkStudioBusy.PREPARING_EDITOR_PREVIEW
+            }
+            rule.waitUntil(180_000) { tool==null || aiVm.state.value.error!=null }
+            assertNull("AI commit or processed editor-preview preparation failed",aiVm.state.value.error)
+            assertNull("Applied panel must close after processed editor preview is ready",tool)
             val saved=ai.load(id).single()
             assertEquals(Math.round(clip.timelineDurationUs*.25),saved.clipLocalStartUs)
             assertEquals(Math.round(clip.timelineDurationUs*.75),saved.clipLocalEndUs)
