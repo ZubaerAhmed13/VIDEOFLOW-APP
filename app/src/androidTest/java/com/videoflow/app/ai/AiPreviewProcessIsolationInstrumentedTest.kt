@@ -19,7 +19,8 @@ import org.junit.runner.RunWith
 class AiPreviewProcessIsolationInstrumentedTest {
     @Test
     fun workerDeathPreservesEditorAndWorkerCanRestart() = runBlocking {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
         val mainPid = Process.myPid()
         val client = AiPreviewProcessClient(context)
 
@@ -42,6 +43,8 @@ class AiPreviewProcessIsolationInstrumentedTest {
             assertEquals("Editor must remain in the original process", mainPid, Process.myPid())
         }
 
-        println("AI_PREVIEW_PROCESS_ISOLATION_CERTIFIED main_pid=$mainPid")
+        instrumentation.sendStatus(0, android.os.Bundle().apply {
+            putString("stream", "AI_PREVIEW_PROCESS_ISOLATION_CERTIFIED main_pid=$mainPid\n")
+        })
     }
 }
