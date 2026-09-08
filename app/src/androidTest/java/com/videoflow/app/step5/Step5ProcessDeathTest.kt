@@ -72,11 +72,15 @@ class Step5ProcessDeathTest {
             f.evidence("process-death.txt","REAL_FOREGROUND_RENDERING job=${job.id}")
             check(readyFlag.createNewFile()) { "Could not publish export-process kill readiness." }
             // Keep instrumentation + MainActivity alive while the host shell captures both PIDs
-            // and kills only :export. The app then observes the isolated process disappearing
-            // directly, so no ownership-sensitive host acknowledgement file is required.
+            // and kills only :export. The app first observes the isolated process disappearing.
             withTimeout(60_000L) {
                 while(isExportProcessRunning(f.context)) delay(50)
             }
+            // Test-only certification hold: the host performs its independent unchanged-main-PID
+            // assertion two seconds after SIGKILL. Do not close ActivityScenario until that proof
+            // window has elapsed, otherwise test teardown itself can destroy the main activity and
+            // masquerade as a process-isolation failure. This delay is never part of production.
+            delay(5_000L)
             readyFlag.delete()
         }
         db.close()
