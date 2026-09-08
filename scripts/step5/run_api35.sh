@@ -2,6 +2,7 @@
 set -e
 mkdir -p step4-emulator-reports
 PACKAGE_ID=com.videoflow.app.debug
+HANDSHAKE_DIR="/sdcard/Android/data/$PACKAGE_ID/files/step5-handshake"
 adb install -r step4-runtime/VideoFlow_Step5_Debug.apk
 adb install -r step4-runtime/VideoFlow_Step5_Debug-androidTest.apk
 
@@ -21,10 +22,11 @@ adb shell wm size reset
 adb shell wm density reset
 adb shell settings put system font_scale 1.0
 
-# Start a genuine AI export while instrumentation remains alive. The target test publishes an
-# internal ready flag only after the persisted job reaches RENDERING. This avoids allowing the
-# instrumentation lifecycle itself to tear down app processes before the host can prove isolation.
-adb shell run-as "$PACKAGE_ID" sh -c 'rm -f files/ai-jobs/process-death/ready-for-export-kill.flag files/ai-jobs/process-death/export-killed.flag' >/dev/null 2>&1 || true
+# Start a genuine AI export while instrumentation remains alive. The target test publishes a
+# host-visible ready flag only after the persisted job reaches RENDERING. App-specific external
+# test storage is used only for synchronization because adb shell can reliably observe it.
+adb shell rm -rf "$HANDSHAKE_DIR" >/dev/null 2>&1 || true
+adb shell mkdir -p "$HANDSHAKE_DIR"
 adb shell am instrument -w -r -e class 'com.videoflow.app.step5.Step5ProcessDeathTest#startRealForegroundAiJob' "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/step5-process-start.txt 2>&1 &
 PROCESS_TEST_HOST_PID=$!
 MAIN_PID=""
@@ -33,7 +35,7 @@ PROCESS_READY=0
 for attempt in $(seq 1 240); do
   MAIN_PID="$(adb shell pidof "$PACKAGE_ID" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
   EXPORT_PID="$(adb shell pidof "$PACKAGE_ID:export" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
-  if [ -n "$MAIN_PID" ] && [ -n "$EXPORT_PID" ] && adb shell run-as "$PACKAGE_ID" sh -c 'test -f files/ai-jobs/process-death/ready-for-export-kill.flag' >/dev/null 2>&1; then
+  if [ -n "$MAIN_PID" ] && [ -n "$EXPORT_PID" ] && adb shell test -f "$HANDSHAKE_DIR/ready-for-export-kill.flag" >/dev/null 2>&1; then
     PROCESS_READY=1
     break
   fi
@@ -67,7 +69,7 @@ test -z "$EXPORT_AFTER"
 echo "STEP5_EXPORT_PROCESS_ISOLATION_CERTIFIED main_pid=$MAIN_AFTER killed_export_pid=$EXPORT_PID" | tee step4-emulator-reports/step5-export-process-isolation.txt
 
 # Acknowledge the external kill so the test can close ActivityScenario and finish normally.
-adb shell run-as "$PACKAGE_ID" sh -c 'mkdir -p files/ai-jobs/process-death && touch files/ai-jobs/process-death/export-killed.flag'
+adb shell touch "$HANDSHAKE_DIR/export-killed.flag"
 if ! wait "$PROCESS_TEST_HOST_PID"; then
   cat step4-emulator-reports/step5-process-start.txt
   exit 1
