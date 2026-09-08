@@ -165,4 +165,16 @@ for stale in (
         raise SystemExit(f"Stale professional product expectation remained: {stale}")
 write(product, text)
 
+# 5. Compact 88dp timeline rows intentionally keep lock in Track Settings rather than the lane.
+#    The visual smoke test should require the settings entry and primary controls, not an obsolete
+#    dedicated row lock icon. Lock functionality remains certified through TrackSettingsPanel.
+workspace_test = "app/src/androidTest/java/com/videoflow/app/ui/EditorWorkspaceVisualCertificationTest.kt"
+text = read(workspace_test)
+text = text.replace('        rule.onNodeWithContentDescription("Lock Video 1").fetchSemanticsNode()\n', '')
+if 'onNodeWithContentDescription("Lock Video 1")' in text:
+    raise SystemExit("Stale per-row Lock Video 1 assertion remained")
+if 'onNodeWithContentDescription("Open Video 1 settings")' not in text:
+    raise SystemExit("Track Settings accessibility assertion is missing")
+write(workspace_test, text)
+
 print("Final editor cleanup applied")
