@@ -201,7 +201,7 @@ fun TimelineWorkspace(
                 }
             }
 
-            if (!hasTimelineItems && tracks.isEmpty()) {
+            if (!hasTimelineItems) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Start your video", color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.titleMedium)
@@ -274,73 +274,376 @@ private fun TrackRow(
     onToggleLock: () -> Unit,
     onTrackSettings: () -> Unit
 ) {
-    val active = selection is EditorSelection.Track && selection.trackId == track.id
     val density = LocalDensity.current
-    val selectionBackground = if (active) VideoFlowEditorColors.SelectionAccent.copy(alpha = 0.13f) else Color.Transparent
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(72.dp)
-            .background(selectionBackground),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        TrackHeader(track, active, onToggleMute, onToggleVisible, onToggleLock, onTrackSettings)
-        TimelineLane(
-            track = track,
-            originUs = originUs,
-            windowEndUs = windowEndUs,
-            clips = clips,
-            textOverlays = textOverlays,
-            imageOverlays = imageOverlays,
-            keyframes = keyframes,
-            playheadUs = playheadUs,
-            totalWidth = totalWidth,
-            pixelsPerSecond = pixelsPerSecond,
-            horizontal = horizontal,
-            selection = selection,
-            mediaNames = mediaNames,
-            thumbnails = thumbnails,
-            waveforms = waveforms,
-            onSeek = onSeek,
-            onSelect = onSelect,
-            onClearSelection = onClearSelection,
-            onMoveClip = onMoveClip,
-            onTrimClipStart = onTrimClipStart,
-            onTrimClipEnd = onTrimClipEnd
-        )
-    }
-}
+    val laneHeight = 88.dp
+    Row(Modifier.fillMaxWidth().height(laneHeight)) {
+        Surface(color = VideoFlowEditorColors.TimelineTrackHeader, modifier = Modifier.width(TrackHeaderWidth).fillMaxHeight()) {
+            Row(
+                Modifier.fillMaxSize().padding(start = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    track.name.take(7),
+                    color = VideoFlowEditorColors.PrimaryText,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                if (track.type == TrackType.AUDIO) {
+                    IconButton(onClick = onToggleMute, modifier = Modifier.width(48.dp).height(48.dp)) {
+                        Icon(
+                            if (track.muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                            contentDescription = if (track.muted) "Unmute ${track.name}" else "Mute ${track.name}",
+                            tint = VideoFlowEditorColors.SecondaryText
+                        )
+                    }
+                } else {
+                    IconButton(onClick = onToggleVisible, modifier = Modifier.width(48.dp).height(48.dp)) {
+                        Icon(
+                            if (track.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = if (track.visible) "Hide ${track.name}" else "Show ${track.name}",
+                            tint = VideoFlowEditorColors.SecondaryText
+                        )
+                    }
+                }
+                IconButton(onClick = onTrackSettings, modifier = Modifier.width(48.dp).height(48.dp)) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings", tint = VideoFlowEditorColors.SecondaryText)
+                }
+            }
+        }
 
-@Composable
-private fun TrackHeader(
-    track: TimelineTrack,
-    selected: Boolean,
-    onToggleMute: () -> Unit,
-    onToggleVisible: () -> Unit,
-    onToggleLock: () -> Unit,
-    onSettings: () -> Unit
-) {
-    Column(Modifier.width(TrackHeaderWidth).padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(track.name, color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (track.type == TrackType.AUDIO) {
-                IconButton(onClick = onToggleMute, modifier = Modifier.width(32.dp).height(32.dp)) {
-                    Icon(if (track.muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp, contentDescription = if (track.muted) "Unmute ${track.name}" else "Mute ${track.name}", tint = VideoFlowEditorColors.SecondaryText)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+            val viewportWidthPx = with(density) { maxWidth.toPx() }
+            val visibleStart = TimelineViewport.timeAt(originUs,with(density) { horizontal.value.toDp().value.toDouble() },pixelsPerSecond)
+            val visibleEnd = minOf(windowEndUs,TimelineViewport.timeAt(visibleStart,maxWidth.value.toDouble(),pixelsPerSecond))
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .horizontalScroll(horizontal)
+                    .background(VideoFlowEditorColors.TimelineBackground)
+            ) {
+                Box(
+                    Modifier
+                        .width(totalWidth)
+                        .fillMaxHeight()
+                        .clipToBounds()
+                        .pointerInput(pixelsPerSecond, originUs, windowEndUs) {
+                            detectTapGestures { offset ->
+                                val xDp = with(density) { offset.x.toDp().value }
+                                onClearSelection()
+                                onSeek(TimelineViewport.timeAt(originUs,xDp.toDouble(),pixelsPerSecond).coerceIn(originUs,windowEndUs))
+                            }
+                        }
+                ) {
+                    clips.filter { TimelineViewport.intersects(it.timelineStartUs,it.timelineStartUs+it.timelineDurationUs,visibleStart,visibleEnd) }.forEach { clip ->
+                        TimelineClipCard(
+                            clip = clip,
+                            originUs = originUs,
+                            windowEndUs = windowEndUs,
+                            name = mediaNames[clip.assetId] ?: "Clip",
+                            selected = selection == EditorSelection.Clip(clip.id),
+                            pixelsPerSecond = pixelsPerSecond,
+                            locked = track.locked,
+                            keyframes = keyframes.filter { it.ownerId == clip.id },
+                            thumbnail = thumbnails[clip.assetId],
+                            waveform = waveforms[clip.assetId],
+                            horizontal = horizontal,
+                            viewportWidthPx = viewportWidthPx,
+                            onSelect = { onSelect(EditorSelection.Clip(clip.id)) },
+                            onMove = { onMoveClip(clip.id, it) },
+                            onTrimStart = { onTrimClipStart(clip.id, it) },
+                            onTrimEnd = { onTrimClipEnd(clip.id, it) }
+                        )
+                    }
+                    textOverlays.forEach { overlay ->
+                        if(!TimelineViewport.intersects(overlay.timelineStartUs,overlay.timelineEndUs,visibleStart,visibleEnd)) return@forEach
+                        OverlayBlock(
+                            label = overlay.content.ifBlank { "Text" },
+                            startUs = maxOf(overlay.timelineStartUs,originUs)-originUs,
+                            endUs = minOf(overlay.timelineEndUs,windowEndUs)-originUs,
+                            pixelsPerSecond = pixelsPerSecond,
+                            selected = selection == EditorSelection.TextOverlay(overlay.id),
+                            keyframes = keyframes.filter { it.ownerId == overlay.id && it.timeUs in
+                                (maxOf(overlay.timelineStartUs,originUs)-overlay.timelineStartUs)..(minOf(overlay.timelineEndUs,windowEndUs)-overlay.timelineStartUs) }
+                                .map { it.copy(timeUs=it.timeUs-(maxOf(overlay.timelineStartUs,originUs)-overlay.timelineStartUs)) },
+                            onSelect = { onSelect(EditorSelection.TextOverlay(overlay.id)) }
+                        )
+                    }
+                    imageOverlays.forEach { overlay ->
+                        if(!TimelineViewport.intersects(overlay.timelineStartUs,overlay.timelineEndUs,visibleStart,visibleEnd)) return@forEach
+                        OverlayBlock(
+                            label = mediaNames[overlay.assetId] ?: "Image",
+                            startUs = maxOf(overlay.timelineStartUs,originUs)-originUs,
+                            endUs = minOf(overlay.timelineEndUs,windowEndUs)-originUs,
+                            pixelsPerSecond = pixelsPerSecond,
+                            selected = selection == EditorSelection.ImageOverlay(overlay.id),
+                            keyframes = keyframes.filter { it.ownerId == overlay.id && it.timeUs in
+                                (maxOf(overlay.timelineStartUs,originUs)-overlay.timelineStartUs)..(minOf(overlay.timelineEndUs,windowEndUs)-overlay.timelineStartUs) }
+                                .map { it.copy(timeUs=it.timeUs-(maxOf(overlay.timelineStartUs,originUs)-overlay.timelineStartUs)) },
+                            onSelect = { onSelect(EditorSelection.ImageOverlay(overlay.id)) }
+                        )
+                    }
+                    val playheadX = timeWidth(playheadUs-originUs, pixelsPerSecond)
+                    if(playheadUs in originUs..windowEndUs) Box(
+                        Modifier
+                            .offset(x = playheadX)
+                            .width(2.dp)
+                            .fillMaxHeight()
+                            .background(VideoFlowEditorColors.PlayheadAccent)
+                            .clearAndSetSemantics { }
+                    )
                 }
-            } else {
-                IconButton(onClick = onToggleVisible, modifier = Modifier.width(32.dp).height(32.dp)) {
-                    Icon(if (track.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff, contentDescription = if (track.visible) "Hide ${track.name}" else "Show ${track.name}", tint = VideoFlowEditorColors.SecondaryText)
-                }
-            }
-            IconButton(onClick = onToggleLock, modifier = Modifier.width(32.dp).height(32.dp)) {
-                Icon(if (track.locked) Icons.Default.Lock else Icons.Default.LockOpen, contentDescription = if (track.locked) "Unlock ${track.name}" else "Lock ${track.name}", tint = VideoFlowEditorColors.SecondaryText)
-            }
-            IconButton(onClick = onSettings, modifier = Modifier.width(32.dp).height(32.dp)) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings", tint = VideoFlowEditorColors.SecondaryText)
             }
         }
     }
 }
 
 @Composable
-private fun TimelineRuler(
+private fun TimelineClipCard(
+    clip: TimelineClip,
+    originUs: Long,
+    windowEndUs: Long,
+    name: String,
+    selected: Boolean,
+    pixelsPerSecond: Float,
+    locked: Boolean,
+    keyframes: List<Keyframe>,
+    thumbnail: String?,
+    waveform: FloatArray?,
+    horizontal: ScrollState,
+    viewportWidthPx: Float,
+    onSelect: () -> Unit,
+    onMove: (Long) -> Unit,
+    onTrimStart: (Long) -> Unit,
+    onTrimEnd: (Long) -> Unit
+) {
+    val density = LocalDensity.current
+    var movePx by remember(clip.id) { mutableFloatStateOf(0f) }
+    var startTrimPx by remember(clip.id) { mutableFloatStateOf(0f) }
+    var endTrimPx by remember(clip.id) { mutableFloatStateOf(0f) }
+    val shownStartUs=maxOf(originUs,clip.timelineStartUs)
+    val shownEndUs=minOf(windowEndUs,clip.timelineStartUs+clip.timelineDurationUs)
+    val baseWidthDp = timeWidth(shownEndUs-shownStartUs, pixelsPerSecond).coerceAtLeast(72.dp)
+    val baseWidthPx = with(density) { baseWidthDp.toPx() }
+    val minWidthPx = with(density) { 48.dp.toPx() }
+    val baseStartPx = with(density) { timeWidth(shownStartUs-originUs, pixelsPerSecond).toPx() }
+    val visualWidthPx = (baseWidthPx + endTrimPx - startTrimPx).coerceAtLeast(minWidthPx)
+    val visualWidthDp = with(density) { visualWidthPx.toDp() }
+    val visualStartDp = with(density) { (baseStartPx + startTrimPx).toDp() }
+    val isAudio = waveform != null
+    val categoryColor = if (isAudio) VideoFlowEditorColors.TimelineAudioClip else VideoFlowEditorColors.TimelineVideoClip
+
+    fun timelineDeltaUs(deltaPx: Float): Long {
+        val deltaDp = with(density) { deltaPx.toDp().value }
+        return ((deltaDp.toDouble() / pixelsPerSecond) * 1_000_000.0).roundToLong()
+    }
+
+    fun autoScroll(pointerTimelinePx: Float) {
+        if (viewportWidthPx <= 0f) return
+        val visibleX = pointerTimelinePx - horizontal.value.toFloat()
+        val edgePx = with(density) { 56.dp.toPx() }
+        val maxStepPx = with(density) { 18.dp.toPx() }
+        val delta = timelineAutoScrollDelta(visibleX, viewportWidthPx, edgePx, maxStepPx)
+        if (abs(delta) > 0.01f) horizontal.dispatchRawDelta(delta)
+    }
+
+    val bodyDrag = if (locked) Modifier else Modifier.pointerInput(clip, originUs, windowEndUs, pixelsPerSecond, selected) {
+        detectHorizontalDragGestures(
+            onDragStart = { onSelect() },
+            onDragCancel = { movePx = 0f },
+            onDragEnd = {
+                val deltaUs = timelineDeltaUs(movePx)
+                movePx = 0f
+                if (deltaUs != 0L) onMove(deltaUs)
+            }
+        ) { change, amount ->
+            change.consume()
+            movePx += amount
+            autoScroll(baseStartPx + startTrimPx + movePx + change.position.x)
+        }
+    }
+
+    Box(
+        Modifier
+            .offset(x = visualStartDp, y = 5.dp)
+            .width(visualWidthDp)
+            .height(68.dp)
+            .graphicsLayer { translationX = movePx }
+    ) {
+        Card(
+            onClick = onSelect,
+            colors = CardDefaults.cardColors(containerColor = categoryColor),
+            border = if (selected) BorderStroke(2.dp, VideoFlowEditorColors.SelectionAccent) else BorderStroke(1.dp, VideoFlowEditorColors.EditorDivider),
+            modifier = Modifier
+                .fillMaxSize()
+                .then(bodyDrag)
+                .semantics {
+                    contentDescription = "${if (isAudio) "Audio" else "Video"} clip $name, ${formatDurationUs(clip.timelineDurationUs)}${if (selected) ", selected" else ""}"
+                    this.selected = selected
+                }
+        ) {
+            Column(Modifier.padding(horizontal = if (selected) 20.dp else 5.dp, vertical = 5.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CachedThumbnailPreview(thumbnail, Modifier.width(48.dp).height(24.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(name, color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                }
+                if (waveform != null) {
+                    WaveformPreview(waveform, Modifier.fillMaxWidth().height(22.dp), VideoFlowEditorColors.SelectionAccent)
+                }
+                KeyframeStrip(keyframes.filter { it.timeUs in (shownStartUs-clip.timelineStartUs)..(shownEndUs-clip.timelineStartUs) }.map { it.copy(timeUs=it.timeUs-(shownStartUs-clip.timelineStartUs)) }, shownEndUs-shownStartUs, Modifier.fillMaxWidth().height(12.dp))
+            }
+        }
+
+        if (selected && !locked) {
+            if(shownStartUs==clip.timelineStartUs) TimelineTrimHandle(
+                description = "Trim clip start",
+                onCancelled = { startTrimPx=0f },
+                modifier = Modifier.align(Alignment.CenterStart),
+                onDrag = { amount, pointerLocalX ->
+                    val next = (startTrimPx + amount).coerceAtMost(baseWidthPx + endTrimPx - minWidthPx)
+                    startTrimPx = next
+                    autoScroll(baseStartPx + startTrimPx + pointerLocalX)
+                },
+                onFinished = {
+                    val deltaUs = timelineDeltaUs(startTrimPx)
+                    startTrimPx = 0f
+                    if (deltaUs != 0L) onTrimStart(deltaUs)
+                }
+            )
+            if(shownEndUs==clip.timelineStartUs+clip.timelineDurationUs) TimelineTrimHandle(
+                description = "Trim clip end",
+                onCancelled = { endTrimPx=0f },
+                modifier = Modifier.align(Alignment.CenterEnd),
+                onDrag = { amount, pointerLocalX ->
+                    val next = (endTrimPx + amount).coerceAtLeast(startTrimPx - baseWidthPx + minWidthPx)
+                    endTrimPx = next
+                    autoScroll(baseStartPx + baseWidthPx + endTrimPx + pointerLocalX)
+                },
+                onFinished = {
+                    val deltaUs = timelineDeltaUs(endTrimPx)
+                    endTrimPx = 0f
+                    if (deltaUs != 0L) onTrimEnd(deltaUs)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimelineTrimHandle(
+    description: String,
+    modifier: Modifier,
+    onDrag: (amountPx: Float, pointerLocalX: Float) -> Unit,
+    onFinished: () -> Unit,
+    onCancelled: () -> Unit
+) {
+    val currentDrag by rememberUpdatedState(onDrag)
+    val currentFinished by rememberUpdatedState(onFinished)
+    val currentCancelled by rememberUpdatedState(onCancelled)
+    var dragged by remember { mutableFloatStateOf(0f) }
+    Box(
+        modifier
+            .width(TimelineTrimHandleWidth)
+            .fillMaxHeight()
+            .background(VideoFlowEditorColors.SelectionAccent.copy(alpha = 0.22f))
+            .semantics { contentDescription = description }
+            .pointerInput(description) {
+                detectHorizontalDragGestures(
+                    onDragCancel = { dragged = 0f; currentCancelled() },
+                    onDragEnd = { dragged = 0f; currentFinished() }
+                ) { change, amount ->
+                    change.consume()
+                    dragged += amount
+                    currentDrag(amount, change.position.x)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(Modifier.width(3.dp).height(30.dp).background(VideoFlowEditorColors.SelectionAccent))
+    }
+}
+
+@Composable
+private fun OverlayBlock(
+    label: String,
+    startUs: Long,
+    endUs: Long,
+    pixelsPerSecond: Float,
+    selected: Boolean,
+    keyframes: List<Keyframe>,
+    onSelect: () -> Unit
+) {
+    val durationUs = (endUs - startUs).coerceAtLeast(1L)
+    Card(
+        onClick = onSelect,
+        colors = CardDefaults.cardColors(containerColor = VideoFlowEditorColors.TimelineOverlayClip),
+        border = if (selected) BorderStroke(2.dp, VideoFlowEditorColors.SelectionAccent) else null,
+        modifier = Modifier
+            .offset(x = timeWidth(startUs, pixelsPerSecond), y = 10.dp)
+            .width(timeWidth(durationUs, pixelsPerSecond).coerceAtLeast(64.dp))
+            .height(56.dp)
+            .semantics {
+                contentDescription = "$label overlay${if (selected) ", selected" else ""}"
+                this.selected = selected
+            }
+    ) {
+        Column(Modifier.fillMaxSize().padding(6.dp), verticalArrangement = Arrangement.Center) {
+            Text(label, color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            KeyframeStrip(keyframes, durationUs, Modifier.fillMaxWidth().height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun TimelineRuler(durationUs: Long, pixelsPerSecond: Float, width: Dp, originUs: Long) {
+    val intervalSeconds = when {
+        pixelsPerSecond < 28f -> 10
+        pixelsPerSecond < 65f -> 5
+        else -> 1
+    }
+    val firstSecond = (originUs/1_000_000L/intervalSeconds)*intervalSeconds
+    val ticks = (((durationUs-originUs) / 1_000_000L) / intervalSeconds + 2L).coerceAtMost(1500L).toInt()
+    Box(Modifier.width(width).height(48.dp).clearAndSetSemantics { }) {
+        repeat(ticks) { index ->
+            val second = firstSecond+index * intervalSeconds
+            Text(
+                formatDurationUs(second*1_000_000L),
+                color = VideoFlowEditorColors.SecondaryText,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.offset(x = TimelineViewport.positionDp(second*1_000_000L,originUs,pixelsPerSecond).toFloat().dp, y = 7.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun KeyframeStrip(frames: List<Keyframe>, ownerDurationUs: Long, modifier: Modifier) {
+    if (frames.isEmpty() || ownerDurationUs <= 0L) return
+    Canvas(modifier.clearAndSetSemantics { }) {
+        frames.forEach { frame ->
+            val x = keyframeMarkerFraction(frame.timeUs, ownerDurationUs) * size.width
+            val y = size.height / 2f
+            val radius = 4.5f
+            val diamond = Path().apply {
+                moveTo(x, y - radius)
+                lineTo(x + radius, y)
+                lineTo(x, y + radius)
+                lineTo(x - radius, y)
+                close()
+            }
+            drawPath(
+                diamond,
+                color = if (frame.interpolation == KeyframeInterpolation.HOLD) Color.Magenta else VideoFlowEditorColors.SelectionAccent
+            )
+        }
+    }
+}
+
+private fun timelineWidth(durationUs: Long, pixelsPerSecond: Float): Dp {
+    val calculated = ((durationUs.toDouble() / 1_000_000.0) * pixelsPerSecond).toFloat().coerceAtMost(12_000f)
+    return calculated.coerceAtLeast(360f).dp
+}
+
+private fun timeWidth(durationUs: Long, pixelsPerSecond: Float): Dp =
+    ((durationUs.toDouble() / 1_000_000.0) * pixelsPerSecond).toFloat().coerceIn(0f, 12_000f).dp
