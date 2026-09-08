@@ -188,12 +188,18 @@ class AiPreviewProcessClient @Inject constructor(
             payload.putString(AiPreviewIsolatedService.KEY_REQUEST_ID, requestId)
             var remote: Messenger? = null
             var remoteBinder: IBinder? = null
+            var deathRecipient: IBinder.DeathRecipient? = null
             var bound = false
             var finished = false
             lateinit var connection: ServiceConnection
 
             fun cleanup() {
-                remoteBinder?.let { binder -> runCatching { binder.unlinkToDeath(deathRecipient, 0) } }
+                val binder = remoteBinder
+                val recipient = deathRecipient
+                if (binder != null && recipient != null) {
+                    runCatching { binder.unlinkToDeath(recipient, 0) }
+                }
+                deathRecipient = null
                 remoteBinder = null
                 remote = null
                 if (bound) {
@@ -214,6 +220,12 @@ class AiPreviewProcessClient @Inject constructor(
                 finished = true
                 cleanup()
                 continuation.resumeWithException(error)
+            }
+
+            deathRecipient = IBinder.DeathRecipient {
+                mainHandler.post {
+                    fail(AiPreviewWorkerDiedException("AI preview worker process died; editor state is preserved."))
+                }
             }
 
             val replyMessenger = Messenger(Handler(Looper.getMainLooper()) { message ->
@@ -241,7 +253,8 @@ class AiPreviewProcessClient @Inject constructor(
                     }
                     if (finished || !continuation.isActive) return
                     remoteBinder = binder
-                    runCatching { binder.linkToDeath(deathRecipient, 0) }
+                    val recipient = requireNotNull(deathRecipient)
+                    runCatching { binder.linkToDeath(recipient, 0) }
                         .onFailure {
                             fail(AiPreviewWorkerDiedException("AI preview worker died during connection.", it))
                             return
@@ -297,11 +310,6 @@ class AiPreviewProcessClient @Inject constructor(
                 }
             }
         }
-    }
-
-    private val deathRecipient = IBinder.DeathRecipient {
-        // The per-request connection also receives process death. This field exists only so Binder
-        // callbacks are linked to the client lifetime; request() installs its own failure handling.
     }
 
     private fun Bundle.putRoi(roi: NormalizedRoi) {
