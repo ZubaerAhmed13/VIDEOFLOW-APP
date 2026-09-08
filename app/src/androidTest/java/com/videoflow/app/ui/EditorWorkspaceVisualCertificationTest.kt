@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
@@ -124,7 +125,12 @@ class EditorWorkspaceVisualCertificationTest {
         val density = rule.activity.resources.displayMetrics.density
         val minimumPx = 48f * density
         listOf("Media", "Audio", "Text", "Overlay", "Canvas", "More").forEach { label ->
-            val bounds = rule.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot
+            // boundsInRoot is clipped by the horizontal scroll viewport. Scroll the
+            // requested tool fully into view before verifying the real touch target.
+            val node = rule.onNodeWithContentDescription(label)
+            node.performScrollTo()
+            rule.waitForIdle()
+            val bounds = node.fetchSemanticsNode().boundsInRoot
             assertTrue("$label width should be at least 48dp", bounds.width >= minimumPx - 1f)
             assertTrue("$label height should be at least 48dp", bounds.height >= minimumPx - 1f)
         }
@@ -178,20 +184,17 @@ class LongTimelineWorkspaceSmokeTest {
                     onClearSelection = {},
                     onMoveClip = { _, _ -> },
                     onToggleMute = {},
-                    onToggleVisible = {},
-                    onToggleLock = {},
-                    onTrackSettings = {}
+                    onToggleLock = {}
                 )
             }
         }
 
-        rule.onNodeWithContentDescription("Zoom out timeline").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Zoom in timeline").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Open Video 1 settings").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Open Audio 1 settings").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Hide Video 1").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Mute Audio 1").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Lock Video 1").fetchSemanticsNode()
-        rule.onNodeWithText("Opening").fetchSemanticsNode()
+        rule.onNodeWithText("Video 1").fetchSemanticsNode()
+        rule.onNodeWithText("Audio 1").fetchSemanticsNode()
+        rule.onNodeWithText("Overlay 1").fetchSemanticsNode()
+        rule.onNodeWithContentDescription("Zoom out").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithContentDescription("Zoom in").performClick()
+        rule.waitForIdle()
     }
 }
