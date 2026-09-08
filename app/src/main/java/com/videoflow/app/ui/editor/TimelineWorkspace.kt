@@ -158,12 +158,12 @@ fun TimelineWorkspace(
                         val time=(fraction.toDouble()*safeDuration).roundToLong()
                         originUs=TimelineViewport.centeredOrigin(time,pixelsPerSecond,safeDuration)
                         onSeek(time)
-                    }, modifier=Modifier.fillMaxWidth().height(48.dp).semantics {
+                    }, modifier=Modifier.fillMaxWidth().height(36.dp).semantics {
                         contentDescription="Navigate whole project, playhead ${formatDurationUs(playheadUs)}"
                     })
             }
             Row(
-                Modifier.fillMaxWidth().height(48.dp),
+                Modifier.fillMaxWidth().height(40.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
@@ -275,47 +275,39 @@ private fun TrackRow(
     onTrackSettings: () -> Unit
 ) {
     val density = LocalDensity.current
-    val laneHeight = 104.dp
+    val laneHeight = 88.dp
     Row(Modifier.fillMaxWidth().height(laneHeight)) {
         Surface(color = VideoFlowEditorColors.TimelineTrackHeader, modifier = Modifier.width(TrackHeaderWidth).fillMaxHeight()) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        track.name.take(7),
-                        color = VideoFlowEditorColors.PrimaryText,
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f).padding(start = 7.dp)
-                    )
-                    IconButton(onClick = onTrackSettings, modifier = Modifier.width(48.dp).height(48.dp)) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings", tint = VideoFlowEditorColors.SecondaryText)
-                    }
-                }
-                Row {
-                    if (track.type == TrackType.AUDIO) {
-                        IconButton(onClick = onToggleMute, modifier = Modifier.width(48.dp).height(48.dp)) {
-                            Icon(
-                                if (track.muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                                contentDescription = if (track.muted) "Unmute ${track.name}" else "Mute ${track.name}",
-                                tint = VideoFlowEditorColors.SecondaryText
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = onToggleVisible, modifier = Modifier.width(48.dp).height(48.dp)) {
-                            Icon(
-                                if (track.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (track.visible) "Hide ${track.name}" else "Show ${track.name}",
-                                tint = VideoFlowEditorColors.SecondaryText
-                            )
-                        }
-                    }
-                    IconButton(onClick = onToggleLock, modifier = Modifier.width(48.dp).height(48.dp)) {
+            Row(
+                Modifier.fillMaxSize().padding(start = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    track.name.take(7),
+                    color = VideoFlowEditorColors.PrimaryText,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                if (track.type == TrackType.AUDIO) {
+                    IconButton(onClick = onToggleMute, modifier = Modifier.width(48.dp).height(48.dp)) {
                         Icon(
-                            if (track.locked) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = if (track.locked) "Unlock ${track.name}" else "Lock ${track.name}",
+                            if (track.muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                            contentDescription = if (track.muted) "Unmute ${track.name}" else "Mute ${track.name}",
                             tint = VideoFlowEditorColors.SecondaryText
                         )
                     }
+                } else {
+                    IconButton(onClick = onToggleVisible, modifier = Modifier.width(48.dp).height(48.dp)) {
+                        Icon(
+                            if (track.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = if (track.visible) "Hide ${track.name}" else "Show ${track.name}",
+                            tint = VideoFlowEditorColors.SecondaryText
+                        )
+                    }
+                }
+                IconButton(onClick = onTrackSettings, modifier = Modifier.width(48.dp).height(48.dp)) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings", tint = VideoFlowEditorColors.SecondaryText)
                 }
             }
         }

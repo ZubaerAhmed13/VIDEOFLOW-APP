@@ -521,7 +521,7 @@ fun EditorScreen(
             } else {
                 Column(Modifier.fillMaxSize()) {
                     PreviewWorkspace(
-                        project, editor, playheadUs, isPlaying, Modifier.weight(0.42f), activeTool, previewDraft,
+                        project, editor, playheadUs, isPlaying, Modifier.weight(0.48f), activeTool, previewDraft,
                             onCropChange = { crop -> previewDraft = previewDraft.copy(crop = crop) },
                             onCropCommit = { },
                             onTransformGesture = ::transformGesture,
@@ -573,7 +573,7 @@ fun EditorScreen(
                         onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
                         revision = project?.updatedAt ?: 0L,
                         onProfessionalTool = onProfessionalTool,
-                        modifier = Modifier.weight(0.58f)
+                        modifier = Modifier.weight(0.52f)
                     )
                 }
             }

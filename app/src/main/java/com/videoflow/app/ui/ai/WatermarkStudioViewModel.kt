@@ -388,40 +388,17 @@ class WatermarkStudioViewModel @Inject constructor(
                 )
                 return@launch
             }
-
-            val effects = persisted.getOrThrow()
+            // The edit definition is now durable. Do not synchronously prepare a full moving
+            // preview here: Done must return promptly and heavy reconstruction belongs to explicit
+            // Preview or final export.
+            processedPreviewManager.invalidateProject(effect.projectId)
             _state.value = _state.value.copy(
-                busy = WatermarkStudioBusy.PREPARING_EDITOR_PREVIEW,
-                progress = 0f,
-                existingEffects = effects,
+                busy = WatermarkStudioBusy.IDLE,
+                progress = 1f,
+                existingEffects = persisted.getOrThrow(),
                 error = null
             )
-            runCatching {
-                processedPreviewManager.prepareClip(effect.projectId, effect.clipId) { progress ->
-                    _state.value = _state.value.copy(
-                        busy = WatermarkStudioBusy.PREPARING_EDITOR_PREVIEW,
-                        progress = progress.coerceIn(0f, 1f)
-                    )
-                }
-            }.onSuccess {
-                _state.value = _state.value.copy(
-                    busy = WatermarkStudioBusy.IDLE,
-                    progress = 1f,
-                    existingEffects = effects,
-                    error = null
-                )
-                onApplied()
-            }.onFailure { error ->
-                if (error is CancellationException) return@onFailure
-                // The edit was already atomically saved. Keep it, report preview preparation honestly,
-                // and let the user retry/cancel without losing the AI effect.
-                _state.value = _state.value.copy(
-                    busy = WatermarkStudioBusy.IDLE,
-                    progress = 0f,
-                    existingEffects = effects,
-                    error = "AI edit saved, but moving preview could not be prepared: ${error.message ?: error::class.java.simpleName}"
-                )
-            }
+            onApplied()
         }
     }
 

@@ -242,7 +242,6 @@ private fun VideoClipToolbar(clipId: String, onTool: (EditorTool) -> Unit, onSpl
         ToolButton(Icons.Default.Tune, "Effects") { onProfessionalTool(ProfessionalEditorTool.Effects(clipId)) }
         ToolButton(Icons.Default.Tune, "Enhance") { onProfessionalTool(ProfessionalEditorTool.Enhance(clipId)) }
         ToolButton(Icons.Default.Tune, "AI Tools") { onProfessionalTool(ProfessionalEditorTool.AiWatermark(clipId)) }
-        ToolButton(Icons.Default.AccessTime, "Precise Trim") { onProfessionalTool(ProfessionalEditorTool.PreciseTrim(clipId)) }
         ToolButton(Icons.Default.Layers, "Canvas") { onPanel(EditorPanel.Canvas) }
         ToolButton(Icons.Default.MoreHoriz, "More") { onTool(EditorTool.More(clipId, VisualOwnerType.CLIP)) }
     }

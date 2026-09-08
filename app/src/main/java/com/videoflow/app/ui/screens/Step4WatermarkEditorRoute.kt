@@ -80,10 +80,7 @@ fun Step4WatermarkEditorRoute(
                         .fillMaxHeight()
                         .widthIn(min = 360.dp, max = 440.dp)
                 } else {
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .heightIn(max = maxHeight * 0.82f)
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = maxHeight * 0.50f)
                 }
                 com.videoflow.app.ui.theme.VideoFlowTheme(com.videoflow.app.ui.product.AppAppearance.DARK) {
                 Surface(

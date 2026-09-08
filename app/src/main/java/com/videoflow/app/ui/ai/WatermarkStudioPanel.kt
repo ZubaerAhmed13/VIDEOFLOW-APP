@@ -208,7 +208,7 @@ fun WatermarkStudioPanel(
             modifier = Modifier.padding(horizontal = 18.dp).semantics { contentDescription = "AI preview playhead" }
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf("Select", "Time", "Track", "Preview", "Apply").forEachIndexed { index, label ->
+            listOf("Cover", "Duration", "Track", "Preview", "Done").forEachIndexed { index, label ->
                 TextButton(
                     onClick = { stage = index },
                     modifier = Modifier.weight(1f).height(48.dp)
@@ -233,7 +233,7 @@ fun WatermarkStudioPanel(
                 color = if (asset.sourceStatus == SourceStatus.AVAILABLE) VideoFlowEditorColors.SecondaryText else VideoFlowEditorColors.WarningColor
             )
             Text(if (state.runtimeReady) "Local AI ready" else "Preparing local AI", color = VideoFlowEditorColors.SecondaryText)
-            TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }) { Text(if (diagnosticsExpanded) "Hide details" else "Device details") }
+            TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }) { Text(if (diagnosticsExpanded) "Hide Advanced" else "Advanced") }
             if (diagnosticsExpanded) Text(state.runtimeDetail, color = VideoFlowEditorColors.SecondaryText)
             state.error?.let { Text(it, color = VideoFlowEditorColors.ErrorColor) }
             if (state.busy != WatermarkStudioBusy.IDLE) {

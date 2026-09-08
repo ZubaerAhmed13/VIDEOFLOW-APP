@@ -109,36 +109,32 @@ fun NativeVideoPlayer(
 
     LaunchedEffect(player, videoEffects) {
         val current = appliedEffects.get()
-        if (current === videoEffects) return@LaunchedEffect
-        val ready = frameRendered
-        frameRendered = false
-        if (com.videoflow.app.render.effects.VisualEffectPipeline.updatePreview(current, videoEffects)) {
-            // Parameter-only edits reuse shader programs and Media3's bounded replay cache.
-            if (!player.playWhenReady) {
-                if (ready) player.setVideoEffects(androidx.media3.common.VideoFrameProcessor.REDRAW)
-                else redrawPending = true
-            }
-        } else {
-            // Adding/removing/reordering stages registers a new stream and clears Media3's cache.
-            // Reprepare this same player at its retained position to decode that paused frame again.
-            redrawPending = false
-            appliedEffects.set(videoEffects)
-            val stitchedPosition = if (previewSegments.isNotEmpty()) {
-                AiPreviewPlaybackResolver.absoluteSourcePositionMs(
-                    previewSegments,
-                    player.currentMediaItemIndex,
-                    player.currentPosition,
-                    clipSourceStartMs
-                )
-            } else player.currentPosition
+        if (current === videoEffects || current == videoEffects) return@LaunchedEffect
+        val stitchedPosition = if (previewSegments.isNotEmpty()) {
+            AiPreviewPlaybackResolver.absoluteSourcePositionMs(
+                previewSegments,
+                player.currentMediaItemIndex,
+                player.currentPosition,
+                clipSourceStartMs
+            )
+        } else player.currentPosition
+        runCatching {
+            // Re-registering the stage list avoids device-specific stale paused-frame behavior
+            // observed with parameter-only shader mutation. Keep the same ExoPlayer and position.
             player.stop()
             player.setVideoEffects(videoEffects)
+            appliedEffects.set(videoEffects)
+            redrawPending = false
+            frameRendered = false
             player.prepare()
             if (previewSegments.isNotEmpty()) {
                 AiPreviewPlaybackResolver.locate(previewSegments, stitchedPosition, clipSourceStartMs)?.let { (index, position) ->
                     player.seekTo(index, position)
                 }
             } else player.seekTo(stitchedPosition)
+        }.onFailure { error ->
+            android.util.Log.e("VideoFlowPreview", "Effect preview update failed", error)
+            playbackError = "Effect preview could not start on this device."
         }
     }
 
