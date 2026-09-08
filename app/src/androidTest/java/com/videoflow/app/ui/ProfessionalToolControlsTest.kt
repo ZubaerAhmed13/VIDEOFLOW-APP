@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.videoflow.app.domain.editor.CropRect
 import com.videoflow.app.ui.editor.*
 import org.junit.Assert.*
 import org.junit.Rule
