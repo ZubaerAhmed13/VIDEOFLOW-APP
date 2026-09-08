@@ -163,7 +163,7 @@ fun TimelineWorkspace(
                     })
             }
             Row(
-                Modifier.fillMaxWidth().height(40.dp),
+                Modifier.fillMaxWidth().height(48.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
