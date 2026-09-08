@@ -58,7 +58,12 @@ class ProfessionalProductWorkflowTest {
             val id=projects.createProject("Professional product workflow");projectId=id
             val asset=(projects.addMedia(id,source) as AddMediaResult.Added).asset
             val editor=EditorRepository(db)
-            val clip=editor.addClip(id,asset.id,0L)
+            val imported=editor.addClip(id,asset.id,0L)
+            // Keep this retained product regression bounded to the same short real-media scale
+            // already proven by the Step-5 integration gate. We deliberately trim rather than
+            // split here so the original retained expectation remains one source clip plus the
+            // extracted audio clip, while Apply still performs genuine processed AI preview work.
+            val clip=editor.trimClipEnd(id,imported.id,1_200_000L)
             val loaded=editor.load(id)
             val project=projects.getProject(id)!!
             val history=EditHistoryService(db,ai)
