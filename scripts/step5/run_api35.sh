@@ -125,7 +125,22 @@ cat step4-emulator-reports/final-ai-export.txt
 grep -E -q 'OK \(1 test\)' step4-emulator-reports/final-ai-export.txt
 grep -q 'FINAL_AI_EXPORT_CERTIFIED' step4-emulator-reports/final-ai-export.txt
 
-adb shell am instrument -w -r -e class com.videoflow.app.ui.HomeComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest,com.videoflow.app.ui.Step5ToolbarGeometryComposeTest "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/editor-regression.txt 2>&1
+# Toolbar geometry must be certified in a viewport that can genuinely represent every requested
+# 360/393/412/480/600 dp width. The default emulator skin is only 320 px wide; testing larger Box
+# widths there merely clips them to the parent and produces false overlap/padding failures.
+adb shell wm size 600x1000
+adb shell wm density 160
+adb shell settings put system font_scale 1.0
+adb shell am instrument -w -r -e class com.videoflow.app.ui.Step5ToolbarGeometryComposeTest "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/step5-toolbar-geometry.txt 2>&1
+cat step4-emulator-reports/step5-toolbar-geometry.txt
+! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/step5-toolbar-geometry.txt || exit 1
+grep -E -q 'OK \(3 tests\)' step4-emulator-reports/step5-toolbar-geometry.txt
+grep -q 'INSTRUMENTATION_CODE: -1' step4-emulator-reports/step5-toolbar-geometry.txt
+adb shell wm size reset
+adb shell wm density reset
+adb shell settings put system font_scale 1.0
+
+adb shell am instrument -w -r -e class com.videoflow.app.ui.HomeComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/editor-regression.txt 2>&1
 cat step4-emulator-reports/editor-regression.txt
 ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/editor-regression.txt || exit 1
 grep -E -q 'OK \([0-9]+ tests?\)' step4-emulator-reports/editor-regression.txt
