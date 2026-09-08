@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.Density
@@ -59,25 +60,34 @@ class Step5ToolbarGeometryComposeTest {
                 }
                 rule.waitForIdle()
 
-                val buttonBounds = labels.map { label ->
-                    rule.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot
-                }
-                buttonBounds.forEachIndexed { index, bounds ->
-                    assertTrue("${labels[index]} touch width at ${width}dp/$scale", bounds.width >= 48f)
-                    assertTrue("${labels[index]} touch height at ${width}dp/$scale", bounds.height >= 48f)
-                }
-                buttonBounds.zipWithNext().forEachIndexed { index, (left, right) ->
-                    assertTrue("${labels[index]} overlaps ${labels[index + 1]} at ${width}dp/$scale", left.right <= right.left + 0.5f)
-                    assertTrue("toolbar gap collapsed at ${width}dp/$scale", right.left - left.right >= 7f)
-                }
-                assertTrue("first-cell leading padding missing at ${width}dp/$scale", buttonBounds.first().left >= 11f)
-
+                // boundsInRoot is clipped by a scrollable ancestor. Bring each tool fully
+                // into the viewport before measuring its real interactive cell.
                 labels.forEach { label ->
-                    val cell = rule.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot
+                    val node = rule.onNodeWithContentDescription(label)
+                    node.performScrollTo()
+                    rule.waitForIdle()
+                    val cell = node.fetchSemanticsNode().boundsInRoot
+                    assertTrue("$label touch width at ${width}dp/$scale", cell.width >= 48f)
+                    assertTrue("$label touch height at ${width}dp/$scale", cell.height >= 48f)
+
                     val text = rule.onNodeWithText(label, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
                     assertTrue("$label text exceeds its cell horizontally at fontScale=$scale", text.left >= cell.left - 1f && text.right <= cell.right + 1f)
                     assertTrue("$label text exceeds its cell vertically at fontScale=$scale", text.top >= cell.top - 1f && text.bottom <= cell.bottom + 1f)
                 }
+
+                labels.zipWithNext().forEach { (leftLabel, rightLabel) ->
+                    rule.onNodeWithContentDescription(rightLabel).performScrollTo()
+                    rule.waitForIdle()
+                    val left = rule.onNodeWithContentDescription(leftLabel).fetchSemanticsNode().boundsInRoot
+                    val right = rule.onNodeWithContentDescription(rightLabel).fetchSemanticsNode().boundsInRoot
+                    assertTrue("$leftLabel overlaps $rightLabel at ${width}dp/$scale", left.right <= right.left + 0.5f)
+                    assertTrue("toolbar gap collapsed at ${width}dp/$scale", right.left - left.right >= 7f)
+                }
+
+                rule.onNodeWithContentDescription("Split").performScrollTo()
+                rule.waitForIdle()
+                val first = rule.onNodeWithContentDescription("Split").fetchSemanticsNode().boundsInRoot
+                assertTrue("first-cell leading padding missing at ${width}dp/$scale", first.left >= 11f)
             }
         }
     }
