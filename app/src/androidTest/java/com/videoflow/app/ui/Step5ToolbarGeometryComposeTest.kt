@@ -3,6 +3,7 @@ package com.videoflow.app.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
@@ -35,17 +36,23 @@ class Step5ToolbarGeometryComposeTest {
     fun videoToolbarKeepsTouchTargetsAndLabelsAcrossWidthsAndFontScales() {
         val widthDp = mutableIntStateOf(360)
         val fontScale = mutableFloatStateOf(1f)
+        val renderKey = mutableIntStateOf(0)
         rule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = fontScale.floatValue)) {
                 Box(Modifier.width(widthDp.intValue.dp)) {
-                    EditorBottomToolbar(
-                        selection = EditorSelection.Clip("clip"),
-                        selectedClipMime = "video/mp4",
-                        onPanel = {},
-                        onTool = {},
-                        onSplit = {},
-                        onProfessionalTool = {}
-                    )
+                    // Reset the remembered horizontal scroll state for every width/font-scale case.
+                    // The API-35 harness gives this test a real 600 px @ 160 dpi viewport, so every
+                    // requested 360/393/412/480/600 dp width below is genuinely representable.
+                    key(renderKey.intValue) {
+                        EditorBottomToolbar(
+                            selection = EditorSelection.Clip("clip"),
+                            selectedClipMime = "video/mp4",
+                            onPanel = {},
+                            onTool = {},
+                            onSplit = {},
+                            onProfessionalTool = {}
+                        )
+                    }
                 }
             }
         }
@@ -57,11 +64,18 @@ class Step5ToolbarGeometryComposeTest {
                 rule.runOnIdle {
                     widthDp.intValue = width
                     fontScale.floatValue = scale
+                    renderKey.intValue += 1
                 }
                 rule.waitForIdle()
 
+                // Certify leading content padding before any scroll operation changes viewport state.
+                val first = rule.onNodeWithContentDescription("Split").fetchSemanticsNode().boundsInRoot
+                assertTrue("first-cell leading padding missing at ${width}dp/$scale", first.left >= 11f)
+                assertTrue("Split touch width at ${width}dp/$scale", first.width >= 48f)
+                assertTrue("Split touch height at ${width}dp/$scale", first.height >= 48f)
+
                 // A horizontal scroll container clips boundsInRoot for off-screen children.
-                // Bring each tool fully into view before certifying its actual interactive cell.
+                // Bring each tool fully into view before certifying its interactive cell and label.
                 labels.forEach { label ->
                     val node = rule.onNodeWithContentDescription(label)
                     node.performScrollTo()
@@ -80,11 +94,6 @@ class Step5ToolbarGeometryComposeTest {
                         text.top >= cell.top - 1f && text.bottom <= cell.bottom + 1f
                     )
                 }
-
-                rule.onNodeWithContentDescription("Split").performScrollTo()
-                rule.waitForIdle()
-                val first = rule.onNodeWithContentDescription("Split").fetchSemanticsNode().boundsInRoot
-                assertTrue("first-cell leading padding missing at ${width}dp/$scale", first.left >= 11f)
             }
         }
     }
@@ -92,34 +101,43 @@ class Step5ToolbarGeometryComposeTest {
     @Test
     fun videoToolbarKeepsNonOverlappingEightDpSpacingAcrossFontScales() {
         val fontScale = mutableFloatStateOf(1f)
+        val renderKey = mutableIntStateOf(0)
         rule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = fontScale.floatValue)) {
-                // Deliberately expose the whole row. Pairwise spacing must be measured in one
-                // common coordinate space; independently scrolling each item changes that space
-                // and can make perfectly spaced neighbours appear to have a zero gap.
-                Box(Modifier.width(1400.dp)) {
-                    EditorBottomToolbar(
-                        selection = EditorSelection.Clip("clip"),
-                        selectedClipMime = "video/mp4",
-                        onPanel = {},
-                        onTool = {},
-                        onSplit = {},
-                        onProfessionalTool = {}
-                    )
+                Box(Modifier.width(360.dp)) {
+                    key(renderKey.intValue) {
+                        EditorBottomToolbar(
+                            selection = EditorSelection.Clip("clip"),
+                            selectedClipMime = "video/mp4",
+                            onPanel = {},
+                            onTool = {},
+                            onSplit = {},
+                            onProfessionalTool = {}
+                        )
+                    }
                 }
             }
         }
 
+        // Measure neighbours only when both are fully visible in the same 360 dp viewport.
+        // Resetting the toolbar for every pair prevents a previous performScrollTo() from changing
+        // the coordinate space. Scrolling the right-hand item into view leaves its immediate left
+        // neighbour visible because two maximum-width cells plus the 8 dp gap fit well within 360 dp.
         listOf(1f, 1.15f, 1.3f, 1.5f).forEach { scale ->
-            rule.runOnIdle { fontScale.floatValue = scale }
-            rule.waitForIdle()
+            labels.zipWithNext().forEach { (leftLabel, rightLabel) ->
+                rule.runOnIdle {
+                    fontScale.floatValue = scale
+                    renderKey.intValue += 1
+                }
+                rule.waitForIdle()
 
-            val bounds = labels.map { label ->
-                rule.onNodeWithContentDescription(label).fetchSemanticsNode().boundsInRoot
-            }
-            bounds.zipWithNext().forEachIndexed { index, (left, right) ->
-                val leftLabel = labels[index]
-                val rightLabel = labels[index + 1]
+                rule.onNodeWithContentDescription(rightLabel).performScrollTo()
+                rule.waitForIdle()
+                val left = rule.onNodeWithContentDescription(leftLabel).fetchSemanticsNode().boundsInRoot
+                val right = rule.onNodeWithContentDescription(rightLabel).fetchSemanticsNode().boundsInRoot
+
+                assertTrue("$leftLabel is clipped at fontScale=$scale", left.width >= 48f)
+                assertTrue("$rightLabel is clipped at fontScale=$scale", right.width >= 48f)
                 assertTrue(
                     "$leftLabel overlaps $rightLabel at fontScale=$scale",
                     left.right <= right.left + 0.5f
