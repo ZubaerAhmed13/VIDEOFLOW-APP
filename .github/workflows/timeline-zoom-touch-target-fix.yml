@@ -1,0 +1,68 @@
+name: Apply Timeline Zoom Touch Target Fix
+
+on:
+  push:
+    branches:
+      - step5-final-hardening-certification
+    paths:
+      - .github/workflows/timeline-zoom-touch-target-fix.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: timeline-zoom-touch-target-fix
+  cancel-in-progress: true
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout correction branch
+        uses: actions/checkout@v4
+        with:
+          ref: step5-final-hardening-certification
+          fetch-depth: 0
+
+      - name: Apply exact 48 dp parent touch-target correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt')
+          text = path.read_text()
+          old = '''            Row(
+                Modifier.fillMaxWidth().height(40.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {'''
+          new = '''            Row(
+                Modifier.fillMaxWidth().height(48.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one zoom/ruler parent row at 40 dp, found {count}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Validate correction is minimal
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt | tee /tmp/timeline-fix.diff
+          grep -q -- '-                Modifier.fillMaxWidth().height(40.dp),' /tmp/timeline-fix.diff
+          grep -q -- '+                Modifier.fillMaxWidth().height(48.dp),' /tmp/timeline-fix.diff
+          test "$(grep -c '^[-+].*Modifier.fillMaxWidth().height(' /tmp/timeline-fix.diff)" -eq 2
+          ! grep -q '^[-+].*IconButton' /tmp/timeline-fix.diff
+
+      - name: Commit exact UI accessibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt
+          git commit -m 'fix: enforce 48dp timeline zoom touch targets'
+          git push origin HEAD:step5-final-hardening-certification
