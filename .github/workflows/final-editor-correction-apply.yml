@@ -64,6 +64,24 @@ jobs:
               raise SystemExit('commitTrim mutation was not found in the expected current or normalized form')
           PY
 
+      - name: Normalize current professional-panel phone modifier shape
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/com/videoflow/app/ui/screens/Step4WatermarkEditorRoute.kt')
+          text = path.read_text(encoding='utf-8')
+          current = '''Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .heightIn(max = maxHeight * 0.82f)'''
+          matcher_shape = 'Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = maxHeight * 0.82f)'
+          if current in text:
+              path.write_text(text.replace(current, matcher_shape), encoding='utf-8')
+          elif matcher_shape not in text:
+              raise SystemExit('Professional panel phone modifier was not found in the expected current or normalized form')
+          PY
+
       - name: Apply deterministic correction patch
         run: python3 scripts/apply_final_editor_corrections.py
 
@@ -98,4 +116,4 @@ jobs:
           git commit -m "fix: correct final editor physical-device blockers"
           git push origin HEAD:step5-final-hardening-certification
 
-# Trigger marker: 2026-09-08 final editor correction pass v4
+# Trigger marker: 2026-09-08 final editor correction pass v5
