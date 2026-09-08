@@ -4,6 +4,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
@@ -60,5 +65,36 @@ class ProfessionalToolControlsTest {
         assertEquals(3_600_123_000L,start)
         rule.onNodeWithText("Full clip").performScrollTo().performClick()
         assertEquals(0L,start);assertEquals(7_200_000_000L,end)
+
+        var crop by mutableStateOf(CropRect(.2f,.2f,.8f,.8f))
+        var committed: CropRect?=null
+        val initial=crop
+        rule.setContent {
+            MaterialTheme {
+                Box(Modifier.size(300.dp)) {
+                    CropInteractionOverlay(
+                        crop=crop,
+                        aspectRatio=1f,
+                        onCropChange={crop=it},
+                        onCropCommit={committed=it},
+                        modifier=Modifier.semantics { contentDescription="Crop direct interaction" }
+                    )
+                }
+            }
+        }
+        val cropNode=rule.onNodeWithContentDescription("Crop direct interaction")
+        val bounds=cropNode.fetchSemanticsNode().boundsInRoot
+        cropNode.performTouchInput {
+            swipe(
+                start=androidx.compose.ui.geometry.Offset(bounds.width*.80f,bounds.height*.80f),
+                end=androidx.compose.ui.geometry.Offset(bounds.width*.68f,bounds.height*.68f),
+                durationMillis=300
+            )
+        }
+        rule.waitForIdle()
+        assertNotEquals("Corner drag must change crop geometry",initial,crop)
+        assertEquals("Drag end must commit the same geometry shown in preview",crop,committed)
+        val ratio=(crop.right-crop.left)/(crop.bottom-crop.top)
+        assertEquals("1:1 aspect must stay constrained while dragging",1f,ratio,.03f)
     }
 }

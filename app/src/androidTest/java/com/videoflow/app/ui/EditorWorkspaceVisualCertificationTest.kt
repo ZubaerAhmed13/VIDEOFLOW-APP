@@ -1,6 +1,12 @@
 package com.videoflow.app.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -198,5 +204,70 @@ class LongTimelineWorkspaceSmokeTest {
         rule.onNodeWithContentDescription("Hide Video 1").fetchSemanticsNode()
         rule.onNodeWithContentDescription("Mute Audio 1").fetchSemanticsNode()
         rule.onNodeWithText("Opening").fetchSemanticsNode()
+    }
+
+    @Test
+    fun timelineViewportFitsThreeAndScrollsFourSixTenTracks() {
+        val trackCount = androidx.compose.runtime.mutableIntStateOf(3)
+        rule.setContent {
+            MaterialTheme {
+                Box(Modifier.height(320.dp).semantics { contentDescription = "Timeline certification viewport" }) {
+                    val count = trackCount.intValue
+                    val tracks = (1..count).map { index ->
+                        TimelineTrack(
+                            "track-$index",
+                            "project-geometry",
+                            when (index) { 1 -> TrackType.VIDEO; 2 -> TrackType.AUDIO; else -> TrackType.OVERLAY },
+                            "Track $index",
+                            index - 1
+                        )
+                    }
+                    TimelineWorkspace(
+                        tracks = tracks,
+                        clips = emptyList(),
+                        textOverlays = emptyList(),
+                        imageOverlays = emptyList(),
+                        keyframes = emptyList(),
+                        playheadUs = 0L,
+                        durationUs = 10_000_000L,
+                        pixelsPerSecond = 28f,
+                        selection = EditorSelection.None,
+                        mediaNames = emptyMap(),
+                        thumbnails = emptyMap(),
+                        waveforms = emptyMap(),
+                        onZoom = {},
+                        onSeek = {},
+                        onSelect = {},
+                        onClearSelection = {},
+                        onMoveClip = { _, _ -> },
+                        onToggleMute = {},
+                        onToggleVisible = {},
+                        onToggleLock = {},
+                        onTrackSettings = {}
+                    )
+                }
+            }
+        }
+        val viewport = rule.onNodeWithContentDescription("Timeline certification viewport")
+        val fixedHeight = viewport.fetchSemanticsNode().boundsInRoot.height
+        for (count in listOf(1, 2, 3, 4, 6, 10)) {
+            rule.runOnIdle { trackCount.intValue = count }
+            rule.waitForIdle()
+            val viewportBounds = viewport.fetchSemanticsNode().boundsInRoot
+            assertTrue("Timeline viewport must stay bounded for $count tracks", kotlin.math.abs(viewportBounds.height - fixedHeight) < 2f)
+            if (count <= 3) {
+                for (index in 1..count) {
+                    val row = rule.onNodeWithContentDescription("Open Track $index settings").fetchSemanticsNode().boundsInRoot
+                    assertTrue("Track $index should remain inside the visible 1-3 layer viewport", row.top >= viewportBounds.top - 2f && row.bottom <= viewportBounds.bottom + 2f)
+                }
+            } else {
+                val last = rule.onNodeWithContentDescription("Open Track $count settings")
+                last.performScrollTo()
+                rule.waitForIdle()
+                val row = last.fetchSemanticsNode().boundsInRoot
+                val afterScroll = viewport.fetchSemanticsNode().boundsInRoot
+                assertTrue("Vertical scrolling must reach Track $count", row.top >= afterScroll.top - 2f && row.bottom <= afterScroll.bottom + 2f)
+            }
+        }
     }
 }

@@ -63,6 +63,67 @@ class Step5ProductIntegrationTest {
             editor.trimClipEnd(id,imported.id,1_800_000L)
             val split=editor.splitClip(id,imported.id,1_200_000L)
             val clip=split.first
+            val certificationCrop=com.videoflow.app.domain.editor.CropRect(.47f,.08f,.97f,.82f)
+            val cropEntity=db.editorDao().getClips(id).first { it.id==clip.id }
+            db.editorDao().putClip(cropEntity.copy(
+                cropLeft=certificationCrop.left,
+                cropTop=certificationCrop.top,
+                cropRight=certificationCrop.right,
+                cropBottom=certificationCrop.bottom
+            ))
+            val cropOnlyOutput=resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME,"step5-crop-only.mp4")
+                put(MediaStore.Video.Media.MIME_TYPE,"video/mp4")
+                put(MediaStore.Video.Media.RELATIVE_PATH,"Movies/VideoFlowCertification")
+            })!!
+            try {
+                val cropCompiled=com.videoflow.app.data.export.ExportRepository(db,editor).compileFinalPlan(id)
+                assertTrue(cropCompiled.problems.toString(),cropCompiled.ready)
+                val cropPlan=checkNotNull(cropCompiled.plan)
+                val renderedCrop=cropPlan.editorPlan.clips.single { it.id==clip.id }.transform.crop
+                assertEquals(certificationCrop.left,renderedCrop.left,.0001f)
+                assertEquals(certificationCrop.top,renderedCrop.top,.0001f)
+                assertEquals(certificationCrop.right,renderedCrop.right,.0001f)
+                assertEquals(certificationCrop.bottom,renderedCrop.bottom,.0001f)
+                val cropSettings=com.videoflow.app.domain.export.ExportMath.resolve(
+                    com.videoflow.app.domain.export.ExportSize(320,240),
+                    com.videoflow.app.domain.editor.FrameRate.FPS_30,
+                    com.videoflow.app.domain.export.ExportSettings()
+                )
+                val cropEngine=com.videoflow.app.render.Media3RenderEngine(context,ai,AiModelPackManager(context))
+                val cropPrepared=cropEngine.prepare(cropPlan,com.videoflow.app.render.OutputDestination(cropOnlyOutput,"crop-only.mp4"),cropSettings)
+                assertTrue(cropPrepared.problems.toString(),cropPrepared.ready)
+                val cropResult=cropEngine.render(checkNotNull(cropPrepared.preparation),com.videoflow.app.render.RenderProgressListener {}).getOrThrow()
+                assertTrue(cropResult.validation.problems.toString(),cropResult.validation.passed)
+
+                fun frame(uri: android.net.Uri): android.graphics.Bitmap {
+                    val retriever=android.media.MediaMetadataRetriever()
+                    return try {
+                        retriever.setDataSource(context,uri)
+                        checkNotNull(retriever.getFrameAtTime(600_000L,android.media.MediaMetadataRetriever.OPTION_CLOSEST))
+                    } finally { retriever.release() }
+                }
+                fun rgbDistance(a:Int,b:Int):Double {
+                    val ar=android.graphics.Color.red(a); val ag=android.graphics.Color.green(a); val ab=android.graphics.Color.blue(a)
+                    val br=android.graphics.Color.red(b); val bg=android.graphics.Color.green(b); val bb=android.graphics.Color.blue(b)
+                    return (kotlin.math.abs(ar-br)+kotlin.math.abs(ag-bg)+kotlin.math.abs(ab-bb))/3.0
+                }
+                val sourceBitmap=frame(source)
+                val outputBitmap=frame(cropOnlyOutput)
+                try {
+                    val expectedX=(((certificationCrop.left+certificationCrop.right)/2f)*sourceBitmap.width).toInt().coerceIn(0,sourceBitmap.width-1)
+                    val expectedY=(((certificationCrop.top+certificationCrop.bottom)/2f)*sourceBitmap.height).toInt().coerceIn(0,sourceBitmap.height-1)
+                    val expected=sourceBitmap.getPixel(expectedX,expectedY)
+                    val actual=outputBitmap.getPixel(outputBitmap.width/2,outputBitmap.height/2)
+                    val uncroppedCenter=sourceBitmap.getPixel(sourceBitmap.width/2,sourceBitmap.height/2)
+                    val mappedDistance=rgbDistance(expected,actual)
+                    assertTrue("Crop render center must map to the selected source region; RGB distance=$mappedDistance",mappedDistance<130.0)
+                    assertTrue("Asymmetric crop must visibly move the source center",rgbDistance(uncroppedCenter,actual)>4.0)
+                } finally {
+                    sourceBitmap.recycle();outputBitmap.recycle()
+                }
+                instrumentation.sendStatus(0,android.os.Bundle().apply { putString("stream","FINAL_EDITOR_CROP_RENDER_CERTIFIED left=${certificationCrop.left} top=${certificationCrop.top} right=${certificationCrop.right} bottom=${certificationCrop.bottom}\n") })
+            } finally { resolver.delete(cropOnlyOutput,null,null) }
             val loaded=editor.load(id)
             val project=projects.getProject(id)!!
             val history=EditHistoryService(db,ai)

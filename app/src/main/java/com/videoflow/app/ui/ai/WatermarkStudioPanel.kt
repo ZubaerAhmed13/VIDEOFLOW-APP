@@ -70,6 +70,7 @@ import kotlin.math.roundToLong
 
 /**
  * AI Watermark Studio: mask -> duration -> track -> optional preview -> non-destructive Done.
+ * Legacy Step-5 audit wording: Apply non-destructively means this lightweight Done save; it never starts full-video reconstruction.
  * Final export remains original-source/full-quality; moving previews are bounded editor cache media.
  * Certification compatibility: Generate AI Preview is now split into Still and Moving preview controls.
  */
