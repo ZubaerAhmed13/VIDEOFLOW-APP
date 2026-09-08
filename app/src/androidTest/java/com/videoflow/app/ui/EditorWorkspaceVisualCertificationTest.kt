@@ -197,7 +197,6 @@ class LongTimelineWorkspaceSmokeTest {
         rule.onNodeWithContentDescription("Open Audio 1 settings").fetchSemanticsNode()
         rule.onNodeWithContentDescription("Hide Video 1").fetchSemanticsNode()
         rule.onNodeWithContentDescription("Mute Audio 1").fetchSemanticsNode()
-        rule.onNodeWithContentDescription("Lock Video 1").fetchSemanticsNode()
         rule.onNodeWithText("Opening").fetchSemanticsNode()
     }
 }

@@ -18,13 +18,32 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ProfessionalToolControlsTest {
     @get:Rule val rule=createComposeRule()
-    @Test fun contextualRailRoutesEveryProfessionalTool() {
-        var selected: ProfessionalEditorTool?=null
-        rule.setContent { MaterialTheme { EditorBottomToolbar(EditorSelection.Clip("clip"),"video/mp4",{},{},{},{ selected=it }) } }
-        for ((label,expected) in listOf("Audio" to ProfessionalEditorTool.AudioExtract("clip"),"Effects" to ProfessionalEditorTool.Effects("clip"),
-            "Enhance" to ProfessionalEditorTool.Enhance("clip"),"AI Tools" to ProfessionalEditorTool.AiWatermark("clip"),"Precise Trim" to ProfessionalEditorTool.PreciseTrim("clip"))) {
+    @Test fun contextualRailHasOneTrimAndRoutesProfessionalTools() {
+        var selectedTool: EditorTool?=null
+        var selectedProfessional: ProfessionalEditorTool?=null
+        rule.setContent {
+            MaterialTheme {
+                EditorBottomToolbar(
+                    EditorSelection.Clip("clip"),
+                    "video/mp4",
+                    {},
+                    { selectedTool=it },
+                    {},
+                    { selectedProfessional=it }
+                )
+            }
+        }
+        rule.onNodeWithContentDescription("Trim").performScrollTo().performClick()
+        assertEquals(EditorTool.Trim("clip"),selectedTool)
+        rule.onAllNodesWithContentDescription("Precise Trim").assertCountEquals(0)
+        for ((label,expected) in listOf(
+            "Audio" to ProfessionalEditorTool.AudioExtract("clip"),
+            "Effects" to ProfessionalEditorTool.Effects("clip"),
+            "Enhance" to ProfessionalEditorTool.Enhance("clip"),
+            "AI Tools" to ProfessionalEditorTool.AiWatermark("clip")
+        )) {
             rule.onNodeWithContentDescription(label).performScrollTo().performClick()
-            assertEquals(expected,selected)
+            assertEquals(expected,selectedProfessional)
         }
     }
     @Test fun preciseRangeKeepsHourScaleTimeAndSetStartEnd() {

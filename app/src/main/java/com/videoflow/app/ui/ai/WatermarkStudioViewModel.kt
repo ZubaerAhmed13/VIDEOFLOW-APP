@@ -3,11 +3,11 @@ package com.videoflow.app.ui.ai
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.videoflow.app.ai.watermark.AiModelPackManager
 import com.videoflow.app.ai.watermark.AiMovingPreviewLength
-import com.videoflow.app.ai.watermark.AiProcessedPreviewManager
+import com.videoflow.app.ai.watermark.AiPreviewCacheController
+import com.videoflow.app.ai.watermark.AiPreviewProcessClient
+import com.videoflow.app.ai.watermark.LocalPreviewFrameDecoder
 import com.videoflow.app.ai.watermark.LocalRoiTracker
-import com.videoflow.app.ai.watermark.LocalWatermarkPreviewEngine
 import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.data.history.AiWatermarkHistoryEntry
 import com.videoflow.app.data.history.EditHistoryService
@@ -62,9 +62,9 @@ data class WatermarkStudioState(
 @HiltViewModel
 class WatermarkStudioViewModel @Inject constructor(
     private val repository: AiWatermarkRepository,
-    private val modelPackManager: AiModelPackManager,
-    private val previewEngine: LocalWatermarkPreviewEngine,
-    private val processedPreviewManager: AiProcessedPreviewManager,
+    private val aiPreviewClient: AiPreviewProcessClient,
+    private val frameDecoder: LocalPreviewFrameDecoder,
+    private val previewCacheController: AiPreviewCacheController,
     private val tracker: LocalRoiTracker,
     private val historyService: EditHistoryService
 ) : ViewModel() {
@@ -108,8 +108,7 @@ class WatermarkStudioViewModel @Inject constructor(
             )
             runCatching {
                 val effects = repository.effectsForClip(projectId, clipId)
-                modelPackManager.ensurePackInstalled()
-                val runtime = modelPackManager.status()
+                val runtime = aiPreviewClient.runtimeStatus()
                 effects to runtime
             }.onSuccess { (effects, runtime) ->
                 _state.value = _state.value.copy(
@@ -142,7 +141,7 @@ class WatermarkStudioViewModel @Inject constructor(
             if (previousBusy == WatermarkStudioBusy.IDLE) {
                 _state.value = _state.value.copy(busy = WatermarkStudioBusy.LOADING_FRAME, error = null)
             }
-            runCatching { previewEngine.decodeFrame(sourceUri, sourceTimeUs, maxDimensionPx = 960) }
+            runCatching { frameDecoder.decodeFrame(sourceUri, sourceTimeUs, maxDimensionPx = 960) }
                 .onSuccess { bitmap ->
                     replaceSourceFrame(bitmap)
                     if (_state.value.busy == WatermarkStudioBusy.LOADING_FRAME) {
@@ -278,7 +277,7 @@ class WatermarkStudioViewModel @Inject constructor(
             }
             val sourceTimeUs = clip.sourceStartUs + (clipLocalTimeUs.toDouble() * clip.speed).roundToLong()
             runCatching {
-                previewEngine.render(
+                aiPreviewClient.renderStill(
                     sourceUri = sourceUri,
                     sourceTimeUs = sourceTimeUs.coerceIn(clip.sourceStartUs, clip.sourceEndUs - 1L),
                     roi = previewRoi,
@@ -323,10 +322,8 @@ class WatermarkStudioViewModel @Inject constructor(
                 error = null
             )
             runCatching {
-                processedPreviewManager.prepareDraftWindow(
-                    projectId = effect.projectId,
-                    clipId = effect.clipId,
-                    draftEffect = effect,
+                aiPreviewClient.renderMoving(
+                    effect = effect,
                     centerLocalUs = centerLocalUs,
                     length = length
                 ) { progress ->
@@ -342,7 +339,7 @@ class WatermarkStudioViewModel @Inject constructor(
                     movingPreviewPath = ready.path,
                     movingPreviewStartUs = ready.clipLocalStartUs,
                     movingPreviewEndUs = ready.clipLocalEndUs,
-                    movingPreviewProvider = processedPreviewManager.state.value.provider,
+                    movingPreviewProvider = ready.provider,
                     error = null
                 )
             }.onFailure { error ->
@@ -391,7 +388,7 @@ class WatermarkStudioViewModel @Inject constructor(
             // The edit definition is now durable. Do not synchronously prepare a full moving
             // preview here: Done must return promptly and heavy reconstruction belongs to explicit
             // Preview or final export.
-            processedPreviewManager.invalidateProject(effect.projectId)
+            previewCacheController.invalidateProject(effect.projectId)
             _state.value = _state.value.copy(
                 busy = WatermarkStudioBusy.IDLE,
                 progress = 1f,
@@ -417,7 +414,7 @@ class WatermarkStudioViewModel @Inject constructor(
                         after = after
                     )
                 )
-                processedPreviewManager.invalidateProject(effect.projectId)
+                previewCacheController.invalidateProject(effect.projectId)
             }.onFailure { error -> _state.value = _state.value.copy(error = error.message) }
         }
     }
@@ -437,14 +434,13 @@ class WatermarkStudioViewModel @Inject constructor(
                         after = after
                     )
                 )
-                processedPreviewManager.invalidateProject(effect.projectId)
+                previewCacheController.invalidateProject(effect.projectId)
             }.onFailure { error -> _state.value = _state.value.copy(error = error.message) }
         }
     }
 
     fun cancelWork() {
         workJob?.cancel()
-        viewModelScope.launch { processedPreviewManager.cancel() }
         _state.value = _state.value.copy(busy = WatermarkStudioBusy.IDLE, progress = 0f)
     }
 

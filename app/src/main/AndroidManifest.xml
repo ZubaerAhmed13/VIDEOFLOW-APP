@@ -38,7 +38,14 @@
             android:authorities="${applicationId}.derived" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/derived_paths" />
         </provider>
-        <!-- Heavy codec/GL/ONNX export work is intentionally isolated from the editor process.
+        <!-- Editor-time LaMa/Media3 preview work is isolated from the editor process. A fatal
+             ONNX/GPU/codec worker failure therefore cannot terminate MainActivity/editor state. -->
+        <service
+            android:name=".ai.watermark.AiPreviewIsolatedService"
+            android:exported="false"
+            android:process=":ai_preview" />
+
+        <!-- Heavy codec/GL/ONNX final export work remains isolated independently in :export.
              All job inputs/state are persisted and rebuilt through repositories in this process. -->
         <service
             android:name=".export.ExportForegroundService"

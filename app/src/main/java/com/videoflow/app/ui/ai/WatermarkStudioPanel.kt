@@ -69,7 +69,7 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /**
- * AI Watermark Studio: mask -> time -> track -> still/moving preview -> non-destructive Apply.
+ * AI Watermark Studio: mask -> duration -> track -> optional preview -> non-destructive Done.
  * Final export remains original-source/full-quality; moving previews are bounded editor cache media.
  * Certification compatibility: Generate AI Preview is now split into Still and Moving preview controls.
  */
@@ -331,7 +331,7 @@ fun WatermarkStudioPanel(
                 val confidence = state.trackingConfidence ?: activeAnchors.takeIf { it.isNotEmpty() }?.map { it.confidence }?.average()?.toFloat()
                 confidence?.let {
                     Text(
-                        "Average tracking confidence ${(it * 100f).roundToInt()}%${if (it < 0.45f) " — review ROI before Apply" else ""}",
+                        "Average tracking confidence ${(it * 100f).roundToInt()}%${if (it < 0.45f) " — review ROI before Done" else ""}",
                         color = if (it >= 0.45f) VideoFlowEditorColors.SecondaryText else VideoFlowEditorColors.WarningColor
                     )
                 }
@@ -465,8 +465,8 @@ fun WatermarkStudioPanel(
                 )
             }
             if (stage == 4) {
-                StepTitle("4", "Apply non-destructively")
-                Text("Apply saves the editable AI effect, then prepares bounded processed segments for normal timeline playback. Source media is never overwritten.", color = VideoFlowEditorColors.SecondaryText)
+                StepTitle("4", "Done")
+                Text("Done saves the editable AI effect immediately and returns to the editor. Moving preview runs only when you request it in Preview; final reconstruction happens only during Export. Source media is never overwritten.", color = VideoFlowEditorColors.SecondaryText)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
                     Button(
@@ -484,8 +484,8 @@ fun WatermarkStudioPanel(
                             }
                         },
                         enabled = state.runtimeReady && state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE,
-                        modifier = Modifier.weight(1f).semantics { contentDescription = "Apply AI removal" }
-                    ) { Text(if (editingEffectId == null) "Apply" else "Update") }
+                        modifier = Modifier.weight(1f).semantics { contentDescription = "Save AI removal" }
+                    ) { Text(if (editingEffectId == null) "Done" else "Save") }
                 }
 
                 if (state.existingEffects.isNotEmpty()) {

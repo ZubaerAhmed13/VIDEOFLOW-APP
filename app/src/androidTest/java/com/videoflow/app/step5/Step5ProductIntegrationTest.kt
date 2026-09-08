@@ -69,8 +69,14 @@ class Step5ProductIntegrationTest {
             val toolsVm=ProfessionalToolsViewModel(ai,history,AudioExtractionService(context,db,editor,projects,history),context)
             val manager=AiModelPackManager(context)
             val previewEngine=LocalWatermarkPreviewEngine(context,manager)
-            val processedPreviewManager=AiProcessedPreviewManager(context,editor,projects,ai,manager)
-            val aiVm=WatermarkStudioViewModel(ai,manager,previewEngine,processedPreviewManager,LocalRoiTracker(previewEngine),history)
+            val aiVm=WatermarkStudioViewModel(
+                ai,
+                AiPreviewProcessClient(context),
+                LocalPreviewFrameDecoder(context),
+                AiPreviewCacheController(context),
+                LocalRoiTracker(previewEngine),
+                history
+            )
             store.put("tools",toolsVm);store.put("ai",aiVm)
             var tool by mutableStateOf<ProfessionalEditorTool?>(ProfessionalEditorTool.AudioExtract(clip.id))
             rule.setContent { com.videoflow.app.ui.theme.VideoFlowTheme(com.videoflow.app.ui.product.AppAppearance.DARK) { Surface(Modifier.fillMaxSize(),color=com.videoflow.app.ui.editor.VideoFlowEditorColors.EditorSurfaceElevated,contentColor=com.videoflow.app.ui.editor.VideoFlowEditorColors.PrimaryText) {
@@ -122,7 +128,7 @@ class Step5ProductIntegrationTest {
 
             rule.runOnIdle { tool=ProfessionalEditorTool.AiWatermark(clip.id) }
             rule.waitUntil(120_000) { aiVm.state.value.runtimeReady && aiVm.state.value.sourceFrame!=null && aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
-            rule.onNodeWithText("Time",substring=false).performClick()
+            rule.onNodeWithText("Duration",substring=false).performClick()
             rule.onNodeWithContentDescription("AI preview playhead").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.25f) }
             rule.onNodeWithText("Set Start").performScrollTo().performClick()
             rule.onNodeWithContentDescription("AI preview playhead").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.75f) }
@@ -133,7 +139,7 @@ class Step5ProductIntegrationTest {
             rule.waitUntil(90_000) { aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
             assertTrue("Automatic tracking produced no anchors",aiVm.state.value.trackedAnchors.isNotEmpty())
             rule.onNodeWithText("Add correction").performScrollTo().performClick()
-            rule.onNodeWithText("Select",substring=false).performClick()
+            rule.onNodeWithText("Cover",substring=false).performClick()
             rule.onNodeWithText("Move left").performScrollTo().performClick()
             rule.onNodeWithText("Preview",substring=false).performClick()
             rule.waitUntil(30_000) { aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
@@ -143,19 +149,14 @@ class Step5ProductIntegrationTest {
             rule.onNodeWithText("Before",substring=false).performClick()
             rule.onNodeWithText("After",substring=false).performClick()
             screenshot("ai-preview")
-            // Stage chip and commit button both say Apply; the chip exists before opening the stage.
-            rule.onNodeWithContentDescription("AI stage Apply").performClick()
-            rule.onNodeWithContentDescription("Apply AI removal").assertIsEnabled().performScrollTo().performClick()
-            // Apply now atomically persists the edit and then prepares the real processed moving
-            // timeline-preview media before closing the panel. Prove that modern lifecycle is
-            // entered, then allow the same bounded AI budget used by the explicit preview test.
-            rule.waitUntil(30_000) {
-                tool==null || aiVm.state.value.error!=null ||
-                    aiVm.state.value.busy==WatermarkStudioBusy.PREPARING_EDITOR_PREVIEW
-            }
-            rule.waitUntil(180_000) { tool==null || aiVm.state.value.error!=null }
-            assertNull("AI commit or processed editor-preview preparation failed",aiVm.state.value.error)
-            assertNull("Applied panel must close after processed editor preview is ready",tool)
+            // Done is a lightweight non-destructive save; Preview remains explicit and optional.
+            rule.onNodeWithContentDescription("AI stage Done").performClick()
+            rule.onNodeWithContentDescription("Save AI removal").assertIsEnabled().performScrollTo().performClick()
+            // Done atomically persists one non-destructive edit definition and returns promptly.
+            // Moving preview is an explicit Preview action; final reconstruction remains in Export.
+            rule.waitUntil(30_000) { tool==null || aiVm.state.value.error!=null }
+            assertNull("AI Done failed",aiVm.state.value.error)
+            assertNull("Done must return to the editor promptly",tool)
             val saved=ai.load(id).single()
             assertEquals(Math.round(clip.timelineDurationUs*.25),saved.clipLocalStartUs)
             assertEquals(Math.round(clip.timelineDurationUs*.75),saved.clipLocalEndUs)

@@ -1,6 +1,5 @@
 package com.videoflow.app.ai.watermark
 
-import android.app.Application
 import android.app.Service
 import android.content.Intent
 import android.graphics.Bitmap
@@ -16,6 +15,7 @@ import com.videoflow.app.domain.ai.AiModelRole
 import com.videoflow.app.domain.ai.AiWatermarkEffect
 import com.videoflow.app.domain.ai.NormalizedRoi
 import com.videoflow.app.domain.ai.RoiMotionAnchor
+import com.videoflow.app.export.ExportProcessIdentity
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import java.io.FileOutputStream
@@ -52,7 +52,7 @@ class AiPreviewIsolatedService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        check(Application.getProcessName() == "$packageName:ai_preview") {
+        check(ExportProcessIdentity.currentProcessName(this) == "$packageName:ai_preview") {
             "AiPreviewIsolatedService must run in :ai_preview"
         }
         pruneStaleStillFiles()
@@ -76,7 +76,7 @@ class AiPreviewIsolatedService : Service() {
                 serviceScope.launch { runCatching { processedPreviewManager.cancel() } }
             }
             CMD_PING -> sendSuccess(reply, requestId, Bundle().apply {
-                putString(KEY_PROCESS_NAME, Application.getProcessName())
+                putString(KEY_PROCESS_NAME, ExportProcessIdentity.currentProcessName(this@AiPreviewIsolatedService))
             })
             CMD_RUNTIME -> launchRequest(requestId, reply) {
                 modelPackManager.ensurePackInstalled()

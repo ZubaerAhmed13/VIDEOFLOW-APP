@@ -83,6 +83,14 @@ cat step4-emulator-reports/step5-process-recovery.txt
 ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/step5-process-recovery.txt || exit 1
 grep -E -q 'OK \(1 test\)' step4-emulator-reports/step5-process-recovery.txt
 
+# Kill the dedicated editor-time AI preview worker from inside that worker process. The
+# instrumentation/main process must retain the same PID and then successfully bind a fresh worker.
+adb shell am instrument -w -r -e class com.videoflow.app.ai.AiPreviewProcessIsolationInstrumentedTest "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/ai-preview-process-isolation.txt 2>&1
+cat step4-emulator-reports/ai-preview-process-isolation.txt
+! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/ai-preview-process-isolation.txt || exit 1
+grep -E -q 'OK \(1 test\)' step4-emulator-reports/ai-preview-process-isolation.txt
+grep -q 'AI_PREVIEW_PROCESS_ISOLATION_CERTIFIED' step4-emulator-reports/ai-preview-process-isolation.txt
+
 adb shell am instrument -w -r -e class com.videoflow.app.step5.Step5AiOutsideRoiTest,com.videoflow.app.step5.Step5RecoverySecurityTest,com.videoflow.app.step5.Step5QualityExportTest,com.videoflow.app.step5.Step5CompositionGeometryTest,com.videoflow.app.step5.Step5AudioVideoSyncTest,com.videoflow.app.step5.Step5CheckpointOverlayTest,com.videoflow.app.step5.Step5ProductIntegrationTest "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/step5-integration.txt 2>&1
 cat step4-emulator-reports/step5-integration.txt
 adb pull /sdcard/Android/data/$PACKAGE_ID/files/step5-evidence step4-emulator-reports/ || true
