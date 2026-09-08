@@ -6,6 +6,7 @@ on:
       - step5-final-hardening-certification
     paths:
       - scripts/apply_ai_preview_isolation.py
+      - scripts/apply_final_editor_cleanup.py
       - .github/workflows/ai-preview-isolation-apply.yml
   workflow_dispatch:
 
@@ -67,6 +68,9 @@ jobs:
       - name: Apply deterministic AI preview isolation patch
         run: python3 scripts/apply_ai_preview_isolation.py
 
+      - name: Apply final editor cleanup
+        run: python3 scripts/apply_final_editor_cleanup.py
+
       - name: Validate patch formatting and architecture guards
         shell: bash
         run: |
@@ -78,6 +82,10 @@ jobs:
           ! grep -q 'previewEngine.render' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt
           ! grep -q 'processedPreviewManager.prepareDraftWindow' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt
           ! grep -q 'modelPackManager.ensurePackInstalled' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt
+          ! grep -R -q 'ProfessionalEditorTool.PreciseTrim' app/src/main app/src/androidTest
+          ! grep -q 'data class PreciseTrim' app/src/main/java/com/videoflow/app/ui/editor/ProfessionalEditorTool.kt
+          grep -q 'AI stage Done' app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
+          grep -q 'Save AI removal' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
 
       - name: Compile production, unit tests and instrumentation source
         run: ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin --no-daemon --stacktrace
@@ -95,6 +103,10 @@ jobs:
           git add app/src/main/AndroidManifest.xml \
                   app/src/main/java/com/videoflow/app/ai/watermark/AiPreviewIsolatedService.kt \
                   app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt \
+                  app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt \
+                  app/src/main/java/com/videoflow/app/ui/editor/ProfessionalEditorTool.kt \
+                  app/src/androidTest/java/com/videoflow/app/ui/ProfessionalToolControlsTest.kt \
+                  app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt \
                   scripts/step5/run_api35.sh \
                   .github/workflows/android-step5-certification.yml
           git commit -m 'fix: isolate editor AI preview runtime from main process'
