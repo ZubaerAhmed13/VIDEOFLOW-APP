@@ -201,7 +201,7 @@ fun TimelineWorkspace(
                 }
             }
 
-            if (!hasTimelineItems) {
+            if (!hasTimelineItems && tracks.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Start your video", color = VideoFlowEditorColors.PrimaryText, style = MaterialTheme.typography.titleMedium)
