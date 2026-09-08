@@ -56,10 +56,8 @@ jobs:
           from pathlib import Path
           path = Path('app/src/main/java/com/videoflow/app/ui/ContextualEditingViewModel.kt')
           text = path.read_text(encoding='utf-8')
-          current = '''        if (sourceStartUs != before.sourceStartUs) editorRepository.trimClipStart(projectId, clipId, sourceStartUs)
-        if (sourceEndUs != before.sourceEndUs) editorRepository.trimClipEnd(projectId, clipId, sourceEndUs)'''
-          matcher_shape = '''            if (sourceStartUs != before.sourceStartUs) editorRepository.trimClipStart(clipId, sourceStartUs)
-            if (sourceEndUs != before.sourceEndUs) editorRepository.trimClipEnd(clipId, sourceEndUs)'''
+          current = '        if (sourceStartUs != before.sourceStartUs) editorRepository.trimClipStart(projectId, clipId, sourceStartUs)\n        if (sourceEndUs != before.sourceEndUs) editorRepository.trimClipEnd(projectId, clipId, sourceEndUs)'
+          matcher_shape = '            if (sourceStartUs != before.sourceStartUs) editorRepository.trimClipStart(clipId, sourceStartUs)\n            if (sourceEndUs != before.sourceEndUs) editorRepository.trimClipEnd(clipId, sourceEndUs)'
           if current in text:
               path.write_text(text.replace(current, matcher_shape), encoding='utf-8')
           elif matcher_shape not in text:
@@ -100,4 +98,4 @@ jobs:
           git commit -m "fix: correct final editor physical-device blockers"
           git push origin HEAD:step5-final-hardening-certification
 
-# Trigger marker: 2026-09-08 final editor correction pass v3
+# Trigger marker: 2026-09-08 final editor correction pass v4
