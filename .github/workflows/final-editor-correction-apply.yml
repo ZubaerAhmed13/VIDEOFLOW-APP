@@ -69,17 +69,16 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
           path = Path('app/src/main/java/com/videoflow/app/ui/screens/Step4WatermarkEditorRoute.kt')
           text = path.read_text(encoding='utf-8')
-          current = '''Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .heightIn(max = maxHeight * 0.82f)'''
           matcher_shape = 'Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = maxHeight * 0.82f)'
-          if current in text:
-              path.write_text(text.replace(current, matcher_shape), encoding='utf-8')
-          elif matcher_shape not in text:
-              raise SystemExit('Professional panel phone modifier was not found in the expected current or normalized form')
+          if matcher_shape not in text:
+              pattern = r'Modifier\s*\.align\(Alignment\.BottomCenter\)\s*\.fillMaxWidth\(\)\s*\.heightIn\(max = maxHeight \* 0\.82f\)'
+              text, count = re.subn(pattern, matcher_shape, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'Professional panel phone modifier match count was {count}, expected 1')
+              path.write_text(text, encoding='utf-8')
           PY
 
       - name: Apply deterministic correction patch
@@ -116,4 +115,4 @@ jobs:
           git commit -m "fix: correct final editor physical-device blockers"
           git push origin HEAD:step5-final-hardening-certification
 
-# Trigger marker: 2026-09-08 final editor correction pass v5
+# Trigger marker: 2026-09-08 final editor correction pass v6
