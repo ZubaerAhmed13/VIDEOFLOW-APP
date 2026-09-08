@@ -22,11 +22,9 @@ adb shell wm size reset
 adb shell wm density reset
 adb shell settings put system font_scale 1.0
 
-# Start a genuine AI export while instrumentation remains alive. The target test publishes a
-# host-visible ready flag only after the persisted job reaches RENDERING. App-specific external
-# test storage is used only for synchronization because adb shell can reliably observe it.
-adb shell rm -rf "$HANDSHAKE_DIR" >/dev/null 2>&1 || true
-adb shell mkdir -p "$HANDSHAKE_DIR"
+# Start a genuine AI export while instrumentation remains alive. The target test creates and owns
+# its host-visible handshake directory, then publishes a ready flag only after the persisted job
+# reaches RENDERING. The host never pre-creates or writes that directory.
 adb shell am instrument -w -r -e class 'com.videoflow.app.step5.Step5ProcessDeathTest#startRealForegroundAiJob' "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/step5-process-start.txt 2>&1 &
 PROCESS_TEST_HOST_PID=$!
 MAIN_PID=""
@@ -68,8 +66,7 @@ test "$MAIN_AFTER" = "$MAIN_PID"
 test -z "$EXPORT_AFTER"
 echo "STEP5_EXPORT_PROCESS_ISOLATION_CERTIFIED main_pid=$MAIN_AFTER killed_export_pid=$EXPORT_PID" | tee step4-emulator-reports/step5-export-process-isolation.txt
 
-# Acknowledge the external kill so the test can close ActivityScenario and finish normally.
-adb shell touch "$HANDSHAKE_DIR/export-killed.flag"
+# The instrumented app observes :export disappearing directly and then exits normally.
 if ! wait "$PROCESS_TEST_HOST_PID"; then
   cat step4-emulator-reports/step5-process-start.txt
   exit 1
