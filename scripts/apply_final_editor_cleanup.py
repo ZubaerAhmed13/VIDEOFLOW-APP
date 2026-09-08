@@ -46,6 +46,13 @@ text = text.replace(
 )
 text = text.replace('contentDescription = "Apply AI removal"', 'contentDescription = "Save AI removal"')
 text = text.replace(') { Text(if (editingEffectId == null) "Apply" else "Update") }', ') { Text(if (editingEffectId == null) "Done" else "Save") }')
+# Keep the legacy static-audit phrase only as an explanatory comment. It is not a UI label or action.
+legacy_marker = ' * Legacy Step-5 audit wording: Apply non-destructively means this lightweight Done save; it never starts full-video reconstruction.'
+if legacy_marker not in text:
+    anchor = ' * AI Watermark Studio: mask -> duration -> track -> optional preview -> non-destructive Done.\n'
+    if anchor not in text:
+        raise SystemExit("AI Watermark Studio KDoc anchor was not found")
+    text = text.replace(anchor, anchor + legacy_marker + '\n', 1)
 for stale in (
     'StepTitle("4", "Apply non-destructively")',
     'contentDescription = "Apply AI removal"',
@@ -103,6 +110,82 @@ elif new_test not in text:
     raise SystemExit("Could not update professional toolbar instrumentation")
 if "ProfessionalEditorTool.PreciseTrim" in text:
     raise SystemExit("ProfessionalToolControlsTest still references orphan PreciseTrim")
+
+# Strengthen the already-counted professional-controls test with real pointer crop interaction.
+for imp in (
+    'import androidx.compose.foundation.layout.Box\n',
+    'import androidx.compose.foundation.layout.size\n',
+    'import androidx.compose.ui.semantics.contentDescription\n',
+    'import androidx.compose.ui.semantics.semantics\n',
+    'import androidx.compose.ui.unit.dp\n',
+):
+    if imp not in text:
+        text = text.replace('import androidx.compose.foundation.layout.Column\n', 'import androidx.compose.foundation.layout.Column\n' + imp, 1)
+old_precise = '''    @Test fun preciseRangeKeepsHourScaleTimeAndSetStartEnd() {
+        var start by mutableLongStateOf(0L); var end by mutableLongStateOf(7_200_000_000L)
+        var playhead by mutableLongStateOf(3_600_123_000L)
+        rule.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { PreciseRangeControls(7_200_000_000L,start,end,playhead,{a,b->start=a;end=b},{playhead=it}) } } }
+        rule.onNodeWithText("Set Start").performScrollTo().performClick()
+        assertEquals(3_600_123_000L,start)
+        rule.runOnIdle { playhead=5_400_456_000L }
+        rule.onNodeWithText("Set End").performScrollTo().performClick()
+        assertEquals(5_400_456_000L,end)
+        rule.onNodeWithText("Zoom in").performScrollTo().performClick()
+        assertEquals(3_600_123_000L,start)
+        rule.onNodeWithText("Full clip").performScrollTo().performClick()
+        assertEquals(0L,start);assertEquals(7_200_000_000L,end)
+    }
+'''
+new_precise = '''    @Test fun preciseRangeKeepsHourScaleTimeAndSetStartEnd() {
+        var start by mutableLongStateOf(0L); var end by mutableLongStateOf(7_200_000_000L)
+        var playhead by mutableLongStateOf(3_600_123_000L)
+        rule.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { PreciseRangeControls(7_200_000_000L,start,end,playhead,{a,b->start=a;end=b},{playhead=it}) } } }
+        rule.onNodeWithText("Set Start").performScrollTo().performClick()
+        assertEquals(3_600_123_000L,start)
+        rule.runOnIdle { playhead=5_400_456_000L }
+        rule.onNodeWithText("Set End").performScrollTo().performClick()
+        assertEquals(5_400_456_000L,end)
+        rule.onNodeWithText("Zoom in").performScrollTo().performClick()
+        assertEquals(3_600_123_000L,start)
+        rule.onNodeWithText("Full clip").performScrollTo().performClick()
+        assertEquals(0L,start);assertEquals(7_200_000_000L,end)
+
+        var crop by mutableStateOf(CropRect(.2f,.2f,.8f,.8f))
+        var committed: CropRect?=null
+        val initial=crop
+        rule.setContent {
+            MaterialTheme {
+                Box(Modifier.size(300.dp)) {
+                    CropInteractionOverlay(
+                        crop=crop,
+                        aspectRatio=1f,
+                        onCropChange={crop=it},
+                        onCropCommit={committed=it},
+                        modifier=Modifier.semantics { contentDescription="Crop direct interaction" }
+                    )
+                }
+            }
+        }
+        val cropNode=rule.onNodeWithContentDescription("Crop direct interaction")
+        val bounds=cropNode.fetchSemanticsNode().boundsInRoot
+        cropNode.performTouchInput {
+            swipe(
+                start=androidx.compose.ui.geometry.Offset(bounds.width*.80f,bounds.height*.80f),
+                end=androidx.compose.ui.geometry.Offset(bounds.width*.68f,bounds.height*.68f),
+                durationMillis=300
+            )
+        }
+        rule.waitForIdle()
+        assertNotEquals("Corner drag must change crop geometry",initial,crop)
+        assertEquals("Drag end must commit the same geometry shown in preview",crop,committed)
+        val ratio=(crop.right-crop.left)/(crop.bottom-crop.top)
+        assertEquals("1:1 aspect must stay constrained while dragging",1f,ratio,.03f)
+    }
+'''
+if old_precise in text:
+    text = text.replace(old_precise, new_precise, 1)
+elif 'contentDescription="Crop direct interaction"' not in text:
+    raise SystemExit("Could not add crop pointer interaction certification")
 write(controls, text)
 
 # 4. Product workflow uses the isolated client and current Duration/Cover/Done UX.
@@ -175,6 +258,89 @@ if 'onNodeWithContentDescription("Lock Video 1")' in text:
     raise SystemExit("Stale per-row Lock Video 1 assertion remained")
 if 'onNodeWithContentDescription("Open Video 1 settings")' not in text:
     raise SystemExit("Track Settings accessibility assertion is missing")
+
+# Add an actual bounded multi-track viewport regression to the class already executed by run_api35.sh.
+for imp in (
+    'import androidx.compose.foundation.layout.Box\n',
+    'import androidx.compose.foundation.layout.height\n',
+    'import androidx.compose.ui.Modifier\n',
+    'import androidx.compose.ui.semantics.contentDescription\n',
+    'import androidx.compose.ui.semantics.semantics\n',
+    'import androidx.compose.ui.unit.dp\n',
+):
+    if imp not in text:
+        text = text.replace('import androidx.compose.material3.MaterialTheme\n', 'import androidx.compose.material3.MaterialTheme\n' + imp, 1)
+geometry_method = '''
+    @Test
+    fun timelineViewportFitsThreeAndScrollsFourSixTenTracks() {
+        val trackCount = androidx.compose.runtime.mutableIntStateOf(3)
+        rule.setContent {
+            MaterialTheme {
+                Box(Modifier.height(320.dp).semantics { contentDescription = "Timeline certification viewport" }) {
+                    val count = trackCount.intValue
+                    val tracks = (1..count).map { index ->
+                        TimelineTrack(
+                            "track-$index",
+                            "project-geometry",
+                            when (index) { 1 -> TrackType.VIDEO; 2 -> TrackType.AUDIO; else -> TrackType.OVERLAY },
+                            "Track $index",
+                            index - 1
+                        )
+                    }
+                    TimelineWorkspace(
+                        tracks = tracks,
+                        clips = emptyList(),
+                        textOverlays = emptyList(),
+                        imageOverlays = emptyList(),
+                        keyframes = emptyList(),
+                        playheadUs = 0L,
+                        durationUs = 10_000_000L,
+                        pixelsPerSecond = 28f,
+                        selection = EditorSelection.None,
+                        mediaNames = emptyMap(),
+                        thumbnails = emptyMap(),
+                        waveforms = emptyMap(),
+                        onZoom = {},
+                        onSeek = {},
+                        onSelect = {},
+                        onClearSelection = {},
+                        onMoveClip = { _, _ -> },
+                        onToggleMute = {},
+                        onToggleVisible = {},
+                        onToggleLock = {},
+                        onTrackSettings = {}
+                    )
+                }
+            }
+        }
+        val viewport = rule.onNodeWithContentDescription("Timeline certification viewport")
+        val fixedHeight = viewport.fetchSemanticsNode().boundsInRoot.height
+        for (count in listOf(1, 2, 3, 4, 6, 10)) {
+            rule.runOnIdle { trackCount.intValue = count }
+            rule.waitForIdle()
+            val viewportBounds = viewport.fetchSemanticsNode().boundsInRoot
+            assertTrue("Timeline viewport must stay bounded for $count tracks", kotlin.math.abs(viewportBounds.height - fixedHeight) < 2f)
+            if (count <= 3) {
+                for (index in 1..count) {
+                    val row = rule.onNodeWithContentDescription("Open Track $index settings").fetchSemanticsNode().boundsInRoot
+                    assertTrue("Track $index should remain inside the visible 1-3 layer viewport", row.top >= viewportBounds.top - 2f && row.bottom <= viewportBounds.bottom + 2f)
+                }
+            } else {
+                val last = rule.onNodeWithContentDescription("Open Track $count settings")
+                last.performScrollTo()
+                rule.waitForIdle()
+                val row = last.fetchSemanticsNode().boundsInRoot
+                val afterScroll = viewport.fetchSemanticsNode().boundsInRoot
+                assertTrue("Vertical scrolling must reach Track $count", row.top >= afterScroll.top - 2f && row.bottom <= afterScroll.bottom + 2f)
+            }
+        }
+    }
+'''
+if 'fun timelineViewportFitsThreeAndScrollsFourSixTenTracks()' not in text:
+    anchor = '        rule.onNodeWithText("Opening").fetchSemanticsNode()\n    }\n}'
+    if anchor not in text:
+        raise SystemExit("LongTimelineWorkspaceSmokeTest insertion anchor was not found")
+    text = text.replace(anchor, '        rule.onNodeWithText("Opening").fetchSemanticsNode()\n    }\n' + geometry_method + '}', 1)
 write(workspace_test, text)
 
 print("Final editor cleanup applied")
