@@ -52,6 +52,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
+private const val AI_PREVIEW_MAX_DELAY_BETWEEN_MUXER_SAMPLES_MS = 120_000L
+
 /** A bounded, editor-quality AI segment. Times are clip-local timeline times. */
 data class AiPreviewReadySegment(
     val projectId: String,
@@ -531,6 +533,7 @@ class AiProcessedPreviewManager @Inject constructor(
             transformer = Transformer.Builder(context)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
+                .setMaxDelayBetweenMuxerSamplesMs(AI_PREVIEW_MAX_DELAY_BETWEEN_MUXER_SAMPLES_MS)
                 .addListener(listener)
                 .build()
             activeTransformer = transformer
