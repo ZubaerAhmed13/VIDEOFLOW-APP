@@ -8,8 +8,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -209,9 +207,9 @@ fun TimelineWorkspace(
                     }
                 }
             } else {
-                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                    item("timed-edits") { TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs) }
-                    items(tracks.sortedBy { it.orderIndex },key={it.id}) { track ->
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)
+                    tracks.sortedBy { it.orderIndex }.forEach { track ->
                         TrackRow(
                             track = track,
                             originUs = originUs,
