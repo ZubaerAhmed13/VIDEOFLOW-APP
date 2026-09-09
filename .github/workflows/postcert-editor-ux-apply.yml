@@ -1,0 +1,115 @@
+name: Apply Post-Cert Editor UX Corrections
+
+on:
+  push:
+    branches:
+      - postcert-editor-ux-safety
+    paths:
+      - scripts/apply_postcert_editor_ux.py
+      - .github/workflows/postcert-editor-ux-apply.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: postcert-editor-ux-apply
+  cancel-in-progress: false
+
+jobs:
+  apply-and-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Checkout isolated safety branch
+        uses: actions/checkout@v4
+        with:
+          ref: postcert-editor-ux-safety
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install Android API 37 platform and build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM_URL='https://dl.google.com/android/repository/platform-37.0_r02.zip'
+          PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
+          curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
+          echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
+          mkdir -p "$ANDROID_HOME/platforms"
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
+          sdkmanager 'build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0 --gradle-distribution-sha256-sum bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01
+          chmod +x gradlew
+
+      - name: Apply deterministic post-cert editor UX patch
+        run: python3 scripts/apply_postcert_editor_ux.py
+
+      - name: Validate requested UX corrections and architecture guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -q 'StudioHeader("Remove Watermark"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'contentDescription = "AI active range"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'contentDescription = "Track watermark"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'contentDescription = "Preview watermark removal"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'contentDescription = "Refine watermark removal"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          ! grep -q 'listOf("Cover", "Duration", "Track", "Preview", "Done")' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'sampleTrimFilmstrip' app/src/main/java/com/videoflow/app/ui/EditorViewModel.kt
+          grep -q 'loadOrGenerateExact' app/src/main/java/com/videoflow/app/data/media/ThumbnailService.kt
+          grep -q 'TrimFilmstripPreview' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+          grep -q '1f / 3f' app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt
+          grep -q '2f / 3f' app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt
+          grep -q 'Contextual tool panel' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+          grep -q 'Video 1 track row' app/src/androidTest/java/com/videoflow/app/ui/TrimOpenGeometryComposeTest.kt
+          grep -q 'row.bottom <= panel.top + 1f' app/src/androidTest/java/com/videoflow/app/ui/TrimOpenGeometryComposeTest.kt
+          grep -q 'TrimOpenGeometryComposeTest' scripts/step5/run_api35.sh
+          grep -q 'android:process=":ai_preview"' app/src/main/AndroidManifest.xml
+          ! grep -q 'previewEngine.render' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt
+
+      - name: Compile production, JVM tests and instrumentation source
+        run: ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin --no-daemon --stacktrace
+
+      - name: Commit verified generated candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/src/main/java/com/videoflow/app/data/media/ThumbnailService.kt \
+            app/src/main/java/com/videoflow/app/ui/EditorViewModel.kt \
+            app/src/main/java/com/videoflow/app/ui/TrimFilmstripPreview.kt \
+            app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt \
+            app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt \
+            app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt \
+            app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt \
+            app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt \
+            app/src/androidTest/java/com/videoflow/app/step5/Step5ProductIntegrationTest.kt \
+            app/src/androidTest/java/com/videoflow/app/ui/TrimOpenGeometryComposeTest.kt \
+            scripts/step5/run_api35.sh
+          git commit -m 'feat: finish editor UX correction pass'
+          git push origin HEAD:postcert-editor-ux-safety
