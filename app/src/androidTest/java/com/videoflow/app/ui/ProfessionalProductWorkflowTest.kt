@@ -139,7 +139,7 @@ class ProfessionalProductWorkflowTest {
             rule.onNodeWithText("Before",substring=false).performClick()
             rule.onNodeWithText("After",substring=false).performClick()
             screenshot("ai-preview")
-            rule.onNodeWithContentDescription("Save AI removal").assertIsEnabled().performScrollTo().performClick()
+            rule.onNodeWithContentDescription("Save AI removal").assertIsDisplayed().assertIsEnabled().performClick()
             // Done persists one non-destructive edit definition and returns promptly. Heavy moving
             // preview is explicit in Preview; final reconstruction remains isolated in Export.
             rule.waitUntil(30_000) { tool==null || aiVm.state.value.error!=null }
