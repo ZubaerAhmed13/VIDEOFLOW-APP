@@ -477,7 +477,6 @@ class AiProcessedPreviewManager @Inject constructor(
         remapped.sortedWith(compareBy<AiWatermarkEffect> { it.clipLocalStartUs }.thenBy { it.id }).forEach { effect ->
             videoEffects += OnnxWatermarkEffectFactory.createEffects(effect, effectWidth, effectHeight, runtime)
         }
-
         val media = MediaItem.Builder()
             .setUri(Uri.parse(source.uri))
             .setClippingConfiguration(
@@ -517,16 +516,19 @@ class AiProcessedPreviewManager @Inject constructor(
             val holder = ProgressHolder()
             lateinit var transformer: Transformer
             lateinit var poll: Runnable
+            var finished = false
             val listener = object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, result: ExportResult) {
+                    finished = true
                     handler.removeCallbacks(poll)
-                    activeTransformer = null
+                    if (activeTransformer === transformer) activeTransformer = null
                     if (continuation.isActive) continuation.resume(result)
                 }
 
                 override fun onError(composition: Composition, result: ExportResult, exception: ExportException) {
+                    finished = true
                     handler.removeCallbacks(poll)
-                    activeTransformer = null
+                    if (activeTransformer === transformer) activeTransformer = null
                     if (continuation.isActive) continuation.resumeWithException(exception)
                 }
             }
@@ -545,10 +547,17 @@ class AiProcessedPreviewManager @Inject constructor(
                 }
             }
             continuation.invokeOnCancellation {
-                handler.removeCallbacks(poll)
-                transformer.cancel()
-                activeTransformer = null
-                output.delete()
+                // Cancellation handlers run on the cancelling thread. Media3 Transformer is
+                // main-looper confined, so marshal cancel/cleanup back to its application thread.
+                handler.post {
+                    handler.removeCallbacks(poll)
+                    if (!finished) {
+                        transformer.cancel()
+                        finished = true
+                    }
+                    if (activeTransformer === transformer) activeTransformer = null
+                    output.delete()
+                }
             }
             transformer.start(edited, output.absolutePath)
             handler.post(poll)
