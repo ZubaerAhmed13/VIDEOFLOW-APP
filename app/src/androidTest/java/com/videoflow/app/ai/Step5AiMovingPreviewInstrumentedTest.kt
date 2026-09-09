@@ -10,17 +10,35 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.fetchSemanticsNodes
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.videoflow.app.ai.watermark.AiModelPackManager
+import com.videoflow.app.ai.watermark.AiPreviewCacheController
 import com.videoflow.app.ai.watermark.AiPreviewCacheStore
+import com.videoflow.app.ai.watermark.AiPreviewProcessClient
 import com.videoflow.app.ai.watermark.AiProcessedPreviewManager
+import com.videoflow.app.ai.watermark.LocalPreviewFrameDecoder
+import com.videoflow.app.ai.watermark.LocalRoiTracker
+import com.videoflow.app.ai.watermark.LocalWatermarkPreviewEngine
 import com.videoflow.app.data.ai.AiWatermarkRepository
 import com.videoflow.app.data.db.VideoFlowDatabase
 import com.videoflow.app.data.diagnostics.LocalDiagnosticLog
 import com.videoflow.app.data.editor.EditorRepository
+import com.videoflow.app.data.history.EditHistoryService
 import com.videoflow.app.data.media.MediaAnalyzer
 import com.videoflow.app.data.media.UriFingerprintService
 import com.videoflow.app.data.project.AddMediaResult
@@ -30,18 +48,38 @@ import com.videoflow.app.domain.ai.AiWatermarkEffect
 import com.videoflow.app.domain.ai.NormalizedRoi
 import com.videoflow.app.domain.ai.RoiMotionAnchor
 import com.videoflow.app.domain.editor.AiPreviewPlaybackResolver
+import com.videoflow.app.ui.ai.WatermarkStudioBusy
+import com.videoflow.app.ui.ai.WatermarkStudioPanel
+import com.videoflow.app.ui.ai.WatermarkStudioViewModel
+import com.videoflow.app.ui.editor.PreviewWorkspace
+import com.videoflow.app.ui.product.AppAppearance
+import com.videoflow.app.ui.theme.VideoFlowTheme
 import java.io.File
 import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Decisive moving-preview gate: real LaMa media, stitched ranges, tracking and audio. */
+/**
+ * Decisive editor-AI gate: real LaMa media, stitched ranges, tracking/audio, and the real
+ * Save -> automatic preparation -> normal editor playback product flow.
+ */
 @RunWith(AndroidJUnit4::class)
 class Step5AiMovingPreviewInstrumentedTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
     @Test
     fun processedPreview_isRealMovingMediaWithAudioAndInvalidatesOnEdit() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -52,6 +90,7 @@ class Step5AiMovingPreviewInstrumentedTest {
         val db = Room.inMemoryDatabaseBuilder(context, VideoFlowDatabase::class.java).allowMainThreadQueries().build()
         val aiRepository = AiWatermarkRepository(context)
         var cleanupProjectId: String? = null
+        var certificationScope: CoroutineScope? = null
         try {
             resolver.openOutputStream(sourceUri, "w")!!.use { output ->
                 testContext.assets.open("sample_av.mp4").use { it.copyTo(output, 64 * 1024) }
@@ -142,7 +181,8 @@ class Step5AiMovingPreviewInstrumentedTest {
             }
 
             // An edit makes every old segment stale before any regeneration happens.
-            aiRepository.upsert(moving.copy(roi = NormalizedRoi(.50f, .50f, .82f, .80f)))
+            val updatedMoving = moving.copy(roi = NormalizedRoi(.50f, .50f, .82f, .80f))
+            aiRepository.upsert(updatedMoving)
             val stale = AiPreviewCacheStore(context).resolveReadySegments(
                 requireNotNull(projects.getProject(projectId)),
                 editor.load(projectId),
@@ -150,14 +190,109 @@ class Step5AiMovingPreviewInstrumentedTest {
             )
             assertTrue(stale.isEmpty())
 
+            // Product-flow blocker certification: open the real Watermark Studio on the persisted
+            // region, press the real Save control WITHOUT invoking still/moving Preview, return to
+            // the normal editor, and require editor playback to become AI-processed automatically.
+            val preparationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            certificationScope = preparationScope
+            val cacheController = AiPreviewCacheController(context).apply {
+                setPreparationRequesterForCertification { requestedProjectId ->
+                    preparationScope.launch { manager.prepareClip(requestedProjectId, clip.id) }
+                }
+            }
+            val history = EditHistoryService(db, aiRepository)
+            val aiVm = WatermarkStudioViewModel(
+                aiRepository,
+                AiPreviewProcessClient(context),
+                LocalPreviewFrameDecoder(context),
+                cacheController,
+                LocalRoiTracker(LocalWatermarkPreviewEngine(context, models)),
+                history
+            )
+            val showStudio = mutableStateOf(true)
+            val playbackPlayheadUs = clip.timelineStartUs + 90_000L
+            val productProject = requireNotNull(projects.getProject(projectId))
+            val productEditor = editor.load(projectId)
+
+            composeRule.setContent {
+                VideoFlowTheme(AppAppearance.DARK) {
+                    Surface(Modifier.fillMaxSize()) {
+                        if (showStudio.value) {
+                            WatermarkStudioPanel(
+                                projectId = projectId,
+                                clipId = clip.id,
+                                project = productProject,
+                                editor = productEditor,
+                                playheadUs = playbackPlayheadUs,
+                                onDismiss = { showStudio.value = false },
+                                refreshEditor = {},
+                                initialEffectId = updatedMoving.id,
+                                vm = aiVm
+                            )
+                        } else {
+                            PreviewWorkspace(
+                                project = productProject,
+                                editor = productEditor,
+                                playheadUs = playbackPlayheadUs,
+                                isPlaying = true,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+            }
+
+            composeRule.waitUntil(120_000L) {
+                aiVm.state.value.runtimeReady &&
+                    aiVm.state.value.sourceFrame != null &&
+                    aiVm.state.value.existingEffects.any { it.id == updatedMoving.id } &&
+                    aiVm.state.value.busy == WatermarkStudioBusy.IDLE
+            }
+            composeRule.onNodeWithContentDescription("Save AI removal")
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .performClick()
+            composeRule.waitUntil(30_000L) { !showStudio.value }
+
+            val savedAfterProductSave = aiRepository.load(projectId).first { it.id == updatedMoving.id }
+            assertEquals(updatedMoving.projectId, savedAfterProductSave.projectId)
+            assertEquals(updatedMoving.clipId, savedAfterProductSave.clipId)
+
+            var postSaveCached = emptyList<com.videoflow.app.ai.watermark.AiPreviewReadySegment>()
+            withTimeout(240_000L) {
+                while (postSaveCached.isEmpty()) {
+                    manager.state.value.error?.let { error("Automatic post-Save AI preparation failed: $it") }
+                    postSaveCached = AiPreviewCacheStore(context).resolveReadySegments(
+                        requireNotNull(projects.getProject(projectId)),
+                        editor.load(projectId),
+                        clip
+                    )
+                    if (postSaveCached.isEmpty()) delay(250L)
+                }
+            }
+            assertTrue(postSaveCached.any { playbackPlayheadUs - clip.timelineStartUs in it.clipLocalStartUs until it.clipLocalEndUs })
+            val postSaveStitched = AiPreviewPlaybackResolver.build(asset.sourceUri, clip, postSaveCached)
+            assertTrue("Post-Save editor playlist contains no processed segment", postSaveStitched.any { it.aiProcessed })
+
+            composeRule.waitUntil(30_000L) {
+                composeRule.onAllNodesWithText("AI Preview", substring = false)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText("AI Preview", substring = false).assertIsDisplayed()
+
             InstrumentationRegistry.getInstrumentation().sendStatus(
                 0,
                 Bundle().apply {
-                    putString("stream", "STEP5_AI_MOVING_PREVIEW_CERTIFIED ranges=${ready.size} audio=true tracking=true invalidation=true\n")
+                    putString(
+                        "stream",
+                        "STEP5_AI_MOVING_PREVIEW_CERTIFIED ranges=${ready.size} audio=true tracking=true invalidation=true postSaveAutoPrepare=true editorPlayback=true\n"
+                    )
                 }
             )
             manager.invalidateProject(projectId)
+            aiVm.closeSession()
         } finally {
+            certificationScope?.cancel()
             cleanupProjectId?.let { aiRepository.deleteProjectState(it) }
             db.close()
             resolver.delete(sourceUri, null, null)
