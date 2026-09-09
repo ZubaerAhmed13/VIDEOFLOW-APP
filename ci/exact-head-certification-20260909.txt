@@ -1,0 +1,4 @@
+VideoFlow Step 5 exact-head certification trigger
+Generated implementation parent: 89df782f254d238f98aa15af574ea4a79cdbd2ba
+Purpose: authenticated push to trigger the unchanged Step-5 certification workflow after the guarded GitHub Actions bot implementation commit.
+This file does not alter product code, tests, runtime behavior, or certification gates.
