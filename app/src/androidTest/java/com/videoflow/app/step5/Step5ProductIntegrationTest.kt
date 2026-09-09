@@ -207,7 +207,7 @@ class Step5ProductIntegrationTest {
             rule.onNodeWithText("Before",substring=false).performClick()
             rule.onNodeWithText("After",substring=false).performClick()
             screenshot("ai-preview")
-            rule.onNodeWithContentDescription("Save AI removal").assertIsEnabled().performScrollTo().performClick()
+            rule.onNodeWithContentDescription("Save AI removal").assertIsDisplayed().assertIsEnabled().performClick()
             // Done atomically persists one non-destructive edit definition and returns promptly.
             // Moving preview is an explicit Preview action; final reconstruction remains in Export.
             rule.waitUntil(30_000) { tool==null || aiVm.state.value.error!=null }
