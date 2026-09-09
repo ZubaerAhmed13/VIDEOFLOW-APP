@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import com.videoflow.app.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -60,14 +61,36 @@ class LocalPreviewFrameDecoder @Inject constructor(
     }
 }
 
-/** Cache invalidation has no model/session dependency and is safe in the editor process. */
+/**
+ * Cache invalidation has no model/session dependency and is safe in the editor process.
+ *
+ * A durable AI mutation must also enqueue normal editor playback preparation. The preparation is
+ * deliberately application-scoped rather than Watermark-Studio-scoped, so Save can return to the
+ * editor immediately without losing the background work when the panel is disposed.
+ */
 @Singleton
 class AiPreviewCacheController @Inject constructor(
-    @ApplicationContext context: Context
+    @ApplicationContext private val context: Context
 ) {
     private val cache = AiPreviewCacheStore(context)
 
+    @Volatile
+    private var certificationPreparationRequester: ((String) -> Unit)? = null
+
     suspend fun invalidateProject(projectId: String) {
         cache.removeProject(projectId)
+        val requester = certificationPreparationRequester
+        if (requester != null) requester(projectId)
+        else AiEditorPlaybackAutoPreparation.request(context, projectId)
+    }
+
+    /**
+     * Keeps instrumentation using an in-memory certification database on the exact same Save path.
+     * Production callers never set this. The guard prevents release builds from replacing the
+     * application-scoped preparation coordinator.
+     */
+    fun setPreparationRequesterForCertification(requester: ((String) -> Unit)?) {
+        check(BuildConfig.DEBUG) { "AI preview certification override is debug-only." }
+        certificationPreparationRequester = requester
     }
 }
