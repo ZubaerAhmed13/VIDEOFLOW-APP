@@ -189,29 +189,24 @@ class Step5ProductIntegrationTest {
 
             rule.runOnIdle { tool=ProfessionalEditorTool.AiWatermark(clip.id) }
             rule.waitUntil(120_000) { aiVm.state.value.runtimeReady && aiVm.state.value.sourceFrame!=null && aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
-            rule.onNodeWithText("Duration",substring=false).performClick()
+            rule.onNodeWithContentDescription("Refine watermark removal").performClick()
             rule.onNodeWithContentDescription("AI preview playhead").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.25f) }
             rule.onNodeWithText("Set Start").performScrollTo().performClick()
             rule.onNodeWithContentDescription("AI preview playhead").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.75f) }
             rule.onNodeWithText("Set End").performScrollTo().performClick()
             rule.onNodeWithText("Jump to start").performScrollTo().performClick()
-            rule.onNodeWithText("Track",substring=false).performClick()
             rule.onNode(hasText("Track movement",substring=false) and hasClickAction()).performScrollTo().performClick()
             rule.waitUntil(90_000) { aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
             assertTrue("Automatic tracking produced no anchors",aiVm.state.value.trackedAnchors.isNotEmpty())
             rule.onNodeWithText("Add correction").performScrollTo().performClick()
-            rule.onNodeWithText("Cover",substring=false).performClick()
             rule.onNodeWithText("Move left").performScrollTo().performClick()
-            rule.onNodeWithText("Preview",substring=false).performClick()
             rule.waitUntil(30_000) { aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
-            rule.onNodeWithText("Generate Still Preview").performScrollTo().performClick()
+            rule.onNodeWithContentDescription("Preview watermark removal").performClick()
             rule.waitUntil(180_000) { aiVm.state.value.aiPreview!=null || aiVm.state.value.error!=null }
             assertNotNull(aiVm.state.value.error,aiVm.state.value.aiPreview)
             rule.onNodeWithText("Before",substring=false).performClick()
             rule.onNodeWithText("After",substring=false).performClick()
             screenshot("ai-preview")
-            // Done is a lightweight non-destructive save; Preview remains explicit and optional.
-            rule.onNodeWithContentDescription("AI stage Done").performClick()
             rule.onNodeWithContentDescription("Save AI removal").assertIsEnabled().performScrollTo().performClick()
             // Done atomically persists one non-destructive edit definition and returns promptly.
             // Moving preview is an explicit Preview action; final reconstruction remains in Export.

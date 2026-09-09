@@ -69,8 +69,8 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /**
- * AI Watermark Studio: mask -> duration -> track -> optional preview -> non-destructive Done.
- * Legacy Step-5 audit wording: Apply non-destructively means this lightweight Done save; it never starts full-video reconstruction.
+ * Remove Watermark uses progressive disclosure: drag box -> active range -> Track/Preview/Refine -> save.
+ * Engineering controls stay inside Refine; heavy AI work remains isolated from the editor process.
  * Final export remains original-source/full-quality; moving previews are bounded editor cache media.
  * Certification compatibility: Generate AI Preview is now split into Still and Moving preview controls.
  */
@@ -102,7 +102,7 @@ fun WatermarkStudioPanel(
     var startUs by rememberSaveable(clipId) { mutableStateOf(0L) }
     var endUs by rememberSaveable(clipId) { mutableStateOf(durationUs) }
     var diagnosticsExpanded by rememberSaveable(clipId) { mutableStateOf(false) }
-    var stage by rememberSaveable(clipId) { mutableStateOf(0) }
+    var refineExpanded by rememberSaveable(clipId) { mutableStateOf(false) }
     var detailedPreview by rememberSaveable(clipId) { mutableStateOf(false) }
     var showBefore by rememberSaveable(clipId) { mutableStateOf(false) }
     var showMovingBefore by rememberSaveable(clipId) { mutableStateOf(false) }
@@ -144,7 +144,6 @@ fun WatermarkStudioPanel(
     fun resetNewDraft() {
         editingEffectId = null
         draftEffectId = UUID.randomUUID().toString()
-        stage = 0
         loadedAnchors = emptyList()
         roi = NormalizedRoi(0.68f, 0.76f, 0.97f, 0.96f)
         startUs = 0L; endUs = durationUs; correctionRoi = null
@@ -181,7 +180,7 @@ fun WatermarkStudioPanel(
     }
 
     Column(Modifier.fillMaxSize()) {
-        StudioHeader("AI Watermark Studio", "", onDismiss)
+        StudioHeader("Remove Watermark", "")
         if (shownBitmap != null) {
             InteractiveRoiPreview(
                 bitmap = shownBitmap,
@@ -208,34 +207,67 @@ fun WatermarkStudioPanel(
             },
             modifier = Modifier.padding(horizontal = 18.dp).semantics { contentDescription = "AI preview playhead" }
         )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf("Cover", "Duration", "Track", "Preview", "Done").forEachIndexed { index, label ->
-                TextButton(
-                    onClick = { stage = index },
-                    modifier = Modifier.weight(1f).height(48.dp)
-                        .background(if (stage == index) VideoFlowEditorColors.SelectionAccent.copy(alpha = .22f) else Color.Transparent)
-                        .semantics { contentDescription = "AI stage $label" },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp)
-                ) {
-                    Text(label, maxLines = 1, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
-                }
-            }
+        Text(
+            "Active range  ${formatDurationUs(startUs)} – ${formatDurationUs(endUs)}",
+            modifier = Modifier.padding(horizontal = 18.dp),
+            color = VideoFlowEditorColors.SecondaryText
+        )
+        androidx.compose.material3.RangeSlider(
+            value = (startUs.toDouble() / durationUs).toFloat().coerceIn(0f, 1f)..(endUs.toDouble() / durationUs).toFloat().coerceIn(0f, 1f),
+            onValueChange = { range ->
+                val nextStart = (range.start.toDouble() * durationUs).roundToLong().coerceIn(0L, durationUs - 1L)
+                val nextEnd = (range.endInclusive.toDouble() * durationUs).roundToLong().coerceIn(nextStart + 1L, durationUs)
+                startUs = nextStart
+                endUs = nextEnd
+                studioLocalUs = studioLocalUs.coerceIn(startUs, endUs - 1L)
+                vm.clearPreviewOnly()
+            },
+            valueRange = 0f..1f,
+            modifier = Modifier.padding(horizontal = 18.dp).semantics { contentDescription = "AI active range" }
+        )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    val from = if (activeAnchors.any { it.manual }) previewLocalUs else startUs
+                    loadedAnchors = activeAnchors.filter { it.manual || it.clipLocalTimeUs < from }
+                    vm.track(asset.sourceUri, clip, correctionRoi ?: draftEffect.roiAt(from), from, endUs)
+                },
+                enabled = state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE,
+                modifier = Modifier.weight(1f).semantics { contentDescription = "Track watermark" }
+            ) { Text("Track") }
+            OutlinedButton(
+                onClick = {
+                    val width = asset.width
+                    val height = asset.height
+                    if (width != null && height != null) {
+                        vm.preview(asset.sourceUri, clip, previewLocalUs, roi, width, height, featherPx.roundToInt(), activeAnchors, detailed = false)
+                    }
+                },
+                enabled = state.runtimeReady && state.busy == WatermarkStudioBusy.IDLE && asset.width != null && asset.height != null && previewLocalUs in startUs until endUs,
+                modifier = Modifier.weight(1f).semantics { contentDescription = "Preview watermark removal" }
+            ) { Text("Preview") }
+            OutlinedButton(
+                onClick = { refineExpanded = !refineExpanded },
+                modifier = Modifier.weight(1f).semantics { contentDescription = "Refine watermark removal" }
+            ) { Text("Refine") }
         }
         Column(
             Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            val statusText = when (asset.sourceStatus) {
-                SourceStatus.AVAILABLE -> "Source ready"
-                else -> "Source ${asset.sourceStatus.name.lowercase().replace('_', ' ')}"
+            if (refineExpanded) {
+                val statusText = when (asset.sourceStatus) {
+                    SourceStatus.AVAILABLE -> "Source ready"
+                    else -> "Source ${asset.sourceStatus.name.lowercase().replace('_', ' ')}"
+                }
+                Text(
+                    "$statusText • ${asset.width ?: "?"}×${asset.height ?: "?"} • ${asset.displayName}",
+                    color = if (asset.sourceStatus == SourceStatus.AVAILABLE) VideoFlowEditorColors.SecondaryText else VideoFlowEditorColors.WarningColor
+                )
+                Text(if (state.runtimeReady) "Local AI ready" else "Preparing local AI", color = VideoFlowEditorColors.SecondaryText)
+                TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }) { Text(if (diagnosticsExpanded) "Hide Advanced" else "Advanced") }
+                if (diagnosticsExpanded) Text(state.runtimeDetail, color = VideoFlowEditorColors.SecondaryText)
             }
-            Text(
-                "$statusText • ${asset.width ?: "?"}×${asset.height ?: "?"} • ${asset.displayName}",
-                color = if (asset.sourceStatus == SourceStatus.AVAILABLE) VideoFlowEditorColors.SecondaryText else VideoFlowEditorColors.WarningColor
-            )
-            Text(if (state.runtimeReady) "Local AI ready" else "Preparing local AI", color = VideoFlowEditorColors.SecondaryText)
-            TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }) { Text(if (diagnosticsExpanded) "Hide Advanced" else "Advanced") }
-            if (diagnosticsExpanded) Text(state.runtimeDetail, color = VideoFlowEditorColors.SecondaryText)
             state.error?.let { Text(it, color = VideoFlowEditorColors.ErrorColor) }
             if (state.busy != WatermarkStudioBusy.IDLE) {
                 LinearProgressIndicator(
@@ -261,7 +293,7 @@ fun WatermarkStudioPanel(
                 }
             }
 
-            if (stage == 0) {
+            if (refineExpanded) {
                 StepTitle("1", "Mask and timing")
                 Text("Move or resize the box in the preview, then choose Time or Track.")
                 Column {
@@ -280,14 +312,14 @@ fun WatermarkStudioPanel(
                     }
                 }
             }
-            if (stage == 1) {
+            if (refineExpanded) {
                 com.videoflow.app.ui.editor.PreciseRangeControls(
                     durationUs, startUs, endUs, studioLocalUs,
                     onRange = { a, b -> startUs = a; endUs = b; vm.clearPreviewOnly() },
                     onSeek = { studioLocalUs = it; vm.clearPreviewOnly() }
                 )
             }
-            if (stage == 2) {
+            if (refineExpanded) {
                 StepTitle("2", "Track movement")
                 Text("Tracking samples small local frames and creates motion anchors; no video is uploaded.", color = VideoFlowEditorColors.SecondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -337,7 +369,7 @@ fun WatermarkStudioPanel(
                     )
                 }
             }
-            if (stage == 3) {
+            if (refineExpanded) {
                 StepTitle("3", "AI Preview")
                 Row {
                     androidx.compose.material3.FilterChip(!detailedPreview, { detailedPreview = false; vm.clearPreviewOnly() }, { Text("Fast still") })
@@ -465,33 +497,9 @@ fun WatermarkStudioPanel(
                     modifier = Modifier.semantics { contentDescription = "Watermark temporal stability" }
                 )
             }
-            if (stage == 4) {
-                StepTitle("4", "Done")
-                Text("Done saves the editable AI effect immediately and returns to the editor. Moving preview runs only when you request it in Preview; final reconstruction happens only during Export. Source media is never overwritten.", color = VideoFlowEditorColors.SecondaryText)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                    Button(
-                        onClick = {
-                            val effect = draftEffect.copy(
-                                motionAnchors = activeAnchors,
-                                contextPaddingPx = contextPx.roundToInt().coerceIn(0, 256),
-                                featherPx = featherPx.roundToInt().coerceIn(0, 128),
-                                temporalStability = stability.coerceIn(0f, 0.5f),
-                                modelId = AiModelCatalog.FINAL_512.id
-                            )
-                            vm.apply(effect) {
-                                refreshEditor()
-                                onDismiss()
-                            }
-                        },
-                        enabled = state.runtimeReady && state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE,
-                        modifier = Modifier.weight(1f).semantics { contentDescription = "Save AI removal" }
-                    ) { Text(if (editingEffectId == null) "Done" else "Save") }
-                }
-
-                if (state.existingEffects.isNotEmpty()) {
-                    HorizontalDivider(color = VideoFlowEditorColors.EditorDivider)
-                    Text("Applied AI effects", color = VideoFlowEditorColors.PrimaryText)
+            if (refineExpanded && state.existingEffects.isNotEmpty()) {
+                HorizontalDivider(color = VideoFlowEditorColors.EditorDivider)
+                Text("Saved removals", color = VideoFlowEditorColors.PrimaryText)
                     state.existingEffects.forEachIndexed { index, effect ->
                         AppliedEffectRow(
                             index = index,
@@ -504,7 +512,6 @@ fun WatermarkStudioPanel(
                             onEdit = {
                                 editingEffectId = effect.id
                                 draftEffectId = effect.id
-                                stage = 0
                                 roi = effect.roi
                                 startUs = effect.clipLocalStartUs.coerceAtMost(durationUs - 1)
                                 endUs = effect.clipLocalEndUs.coerceIn(startUs + 1, durationUs)
@@ -516,9 +523,26 @@ fun WatermarkStudioPanel(
                             }
                         )
                     }
-                }
             }
             Spacer(Modifier.height(8.dp))
+        }
+        HorizontalDivider(color = VideoFlowEditorColors.EditorDivider)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+            Button(
+                onClick = {
+                    val effect = draftEffect.copy(
+                        motionAnchors = activeAnchors,
+                        contextPaddingPx = contextPx.roundToInt().coerceIn(0, 256),
+                        featherPx = featherPx.roundToInt().coerceIn(0, 128),
+                        temporalStability = stability.coerceIn(0f, 0.5f),
+                        modelId = AiModelCatalog.FINAL_512.id
+                    )
+                    vm.apply(effect) { refreshEditor(); onDismiss() }
+                },
+                enabled = state.runtimeReady && state.busy == WatermarkStudioBusy.IDLE && asset.sourceStatus == SourceStatus.AVAILABLE,
+                modifier = Modifier.weight(1f).semantics { contentDescription = "Save AI removal" }
+            ) { Text("✓") }
         }
     }
 }

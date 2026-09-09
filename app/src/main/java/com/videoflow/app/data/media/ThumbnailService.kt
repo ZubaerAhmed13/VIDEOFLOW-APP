@@ -35,7 +35,8 @@ class ThumbnailService @Inject constructor(
     suspend fun loadOrGenerate(
         assetId: String,
         timeUs: Long = 0L,
-        maxDimensionPx: Int = DEFAULT_MAX_DIMENSION_PX
+        maxDimensionPx: Int = DEFAULT_MAX_DIMENSION_PX,
+        exactVideoSample: Boolean = false
     ): ThumbnailResult? = decoderSlots.withPermit {
         require(maxDimensionPx in 64..1024)
         withContext(Dispatchers.IO) {
@@ -43,7 +44,8 @@ class ThumbnailService @Inject constructor(
             val cacheDir = File(context.cacheDir, "step2-thumbnails").apply { mkdirs() }
             val identity = asset.fingerprintSha256?.take(16) ?: "uri-${asset.sourceUri.hashCode().toUInt()}"
             val bucketUs = if (asset.mimeType?.startsWith("video/") == true) {
-                (timeUs.coerceAtLeast(0L) / VIDEO_BUCKET_US) * VIDEO_BUCKET_US
+                if (exactVideoSample) timeUs.coerceAtLeast(0L)
+                else (timeUs.coerceAtLeast(0L) / VIDEO_BUCKET_US) * VIDEO_BUCKET_US
             } else {
                 0L
             }
@@ -59,7 +61,8 @@ class ThumbnailService @Inject constructor(
                     timeUs = timeUs.coerceAtLeast(0L),
                     sourceWidth = asset.width,
                     sourceHeight = asset.height,
-                    maxDimensionPx = maxDimensionPx
+                    maxDimensionPx = maxDimensionPx,
+                    exactVideoSample = exactVideoSample
                 )
                 else -> null
             } ?: return@withContext null
@@ -77,6 +80,17 @@ class ThumbnailService @Inject constructor(
             }
         }
     }
+
+    suspend fun loadOrGenerateExact(
+        assetId: String,
+        timeUs: Long,
+        maxDimensionPx: Int = 192
+    ): ThumbnailResult? = loadOrGenerate(
+        assetId = assetId,
+        timeUs = timeUs,
+        maxDimensionPx = maxDimensionPx,
+        exactVideoSample = true
+    )
 
     suspend fun clearAsset(assetId: String) = withContext(Dispatchers.IO) {
         val cacheDir = File(context.cacheDir, "step2-thumbnails")
@@ -108,21 +122,23 @@ class ThumbnailService @Inject constructor(
         timeUs: Long,
         sourceWidth: Int?,
         sourceHeight: Int?,
-        maxDimensionPx: Int
+        maxDimensionPx: Int,
+        exactVideoSample: Boolean
     ): Bitmap? {
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(context, Uri.parse(sourceUri))
+            val seekOption = if (exactVideoSample) MediaMetadataRetriever.OPTION_CLOSEST else MediaMetadataRetriever.OPTION_CLOSEST_SYNC
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && sourceWidth != null && sourceHeight != null) {
                 val (targetWidth, targetHeight) = boundedSize(sourceWidth, sourceHeight, maxDimensionPx)
                 retriever.getScaledFrameAtTime(
                     timeUs,
-                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    seekOption,
                     targetWidth,
                     targetHeight
                 )
             } else {
-                val decoded = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                val decoded = retriever.getFrameAtTime(timeUs, seekOption)
                     ?: return null
                 scaleDownIfNeeded(decoded, maxDimensionPx)
             }

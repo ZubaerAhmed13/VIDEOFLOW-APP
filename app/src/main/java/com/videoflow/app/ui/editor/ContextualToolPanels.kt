@@ -50,6 +50,7 @@ import com.videoflow.app.domain.editor.TimelineClip
 import com.videoflow.app.domain.editor.TrimTimecode
 import com.videoflow.app.domain.model.VideoFlowProject
 import com.videoflow.app.ui.CachedThumbnailPreview
+import com.videoflow.app.ui.TrimFilmstripPreview
 import com.videoflow.app.ui.ContextualEditingViewModel
 import com.videoflow.app.ui.EditorViewModel
 import com.videoflow.app.ui.OverlayAdvancedViewModel
@@ -81,8 +82,56 @@ fun ContextualToolHost(
     if (tool == null || editor == null) return
     val timeline = editor.timeline
 
-    // Non-modal contextual inspector: the preview remains touchable for Crop/Transform.
-    // Portrait uses a bounded bottom panel; landscape/expanded width uses a side inspector.
+    ContextualToolPanelSurface {
+        when (tool) {
+            is EditorTool.Trim -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                val filmstripPaths by androidx.compose.runtime.produceState(
+                    initialValue = emptyList<String>(),
+                    key1 = clip.assetId,
+                    key2 = clip.sourceStartUs,
+                    key3 = clip.sourceEndUs
+                ) {
+                    value = editorVm.sampleTrimFilmstrip(clip.assetId, clip.sourceStartUs, clip.sourceEndUs, 8)
+                }
+                TrimPanel(
+                    tool = tool,
+                    clip = clip,
+                    project = project,
+                    thumbnails = thumbnails,
+                    filmstripPaths = filmstripPaths,
+                    waveforms = waveforms,
+                    playheadUs = playheadUs,
+                    onPreviewSeek = onPreviewSeek,
+                    onCommitTrim = { startUs, endUs ->
+                        contextualVm.commitTrim(projectId, clip.id, startUs, endUs) {
+                            refresh()
+                            onDismiss()
+                        }
+                    },
+                    onDismiss = onDismiss
+                )
+            }
+            is EditorTool.Speed -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip -> SpeedPanel(clip, editorVm, onDismiss) }
+            is EditorTool.Crop -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                CropPanel(tool, clip, project, previewDraft, onPreviewDraftChange, contextualVm, projectId, refresh, onDismiss)
+            }
+            is EditorTool.Transform -> TransformPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
+            is EditorTool.Opacity -> OpacityPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
+            is EditorTool.Volume -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip -> VolumePanel(projectId, clip, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss) }
+            is EditorTool.Fade -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip -> FadePanel(clip, previewDraft, onPreviewDraftChange, editorVm, waveforms, onDismiss) }
+            is EditorTool.TextEditor -> TextEditorPanel(tool, projectId, playheadUs, editor, editorVm, contextualVm, previewDraft, onPreviewDraftChange, onSelect, refresh, onDismiss)
+            is EditorTool.TextStyle -> TextStylePanel(tool, projectId, editor, contextualVm, overlayVm, previewDraft, onPreviewDraftChange, refresh, onDismiss)
+            is EditorTool.Timing -> TimingPanel(tool, projectId, editor, contextualVm, refresh, onDismiss)
+            is EditorTool.Keyframes -> KeyframePanel(tool, projectId, editor, playheadUs, contextualVm, editorVm, refresh, onDismiss)
+            is EditorTool.More -> MorePanel(tool, projectId, editor, editorVm, contextualVm, onSelect, onOpenTool, refresh, onDismiss)
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun ContextualToolPanelSurface(content: @Composable () -> Unit) {
+    // Shared production geometry used by the editor and Trim-open regression test.
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth > maxHeight || maxWidth.value >= 700f
         val panelModifier = if (wide) {
@@ -91,37 +140,11 @@ fun ContextualToolHost(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = maxHeight * 0.36f)
         }
         Surface(
-            modifier = panelModifier.imePadding(),
+            modifier = panelModifier.imePadding().semantics { contentDescription = "Contextual tool panel" },
             color = VideoFlowEditorColors.EditorSurfaceElevated,
             tonalElevation = 8.dp
         ) {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                when (tool) {
-                    is EditorTool.Trim -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
-                        TrimPanel(tool, clip, project, thumbnails, waveforms, contextualVm, projectId, playheadUs, onPreviewSeek, refresh, onDismiss)
-                    }
-                    is EditorTool.Speed -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
-                        SpeedPanel(clip, editorVm, onDismiss)
-                    }
-                    is EditorTool.Crop -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
-                        CropPanel(tool, clip, project, previewDraft, onPreviewDraftChange, contextualVm, projectId, refresh, onDismiss)
-                    }
-                    is EditorTool.Transform -> TransformPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
-                    is EditorTool.Opacity -> OpacityPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
-                    is EditorTool.Volume -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
-                        VolumePanel(projectId, clip, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
-                    }
-                    is EditorTool.Fade -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
-                        FadePanel(clip, previewDraft, onPreviewDraftChange, editorVm, waveforms, onDismiss)
-                    }
-                    is EditorTool.TextEditor -> TextEditorPanel(tool, projectId, playheadUs, editor, editorVm, contextualVm, previewDraft, onPreviewDraftChange, onSelect, refresh, onDismiss)
-                    is EditorTool.TextStyle -> TextStylePanel(tool, projectId, editor, contextualVm, overlayVm, previewDraft, onPreviewDraftChange, refresh, onDismiss)
-                    is EditorTool.Timing -> TimingPanel(tool, projectId, editor, contextualVm, refresh, onDismiss)
-                    is EditorTool.Keyframes -> KeyframePanel(tool, projectId, editor, playheadUs, contextualVm, editorVm, refresh, onDismiss)
-                    is EditorTool.More -> MorePanel(tool, projectId, editor, editorVm, contextualVm, onSelect, onOpenTool, refresh, onDismiss)
-                }
-                Spacer(Modifier.height(24.dp))
-            }
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { content() }
         }
     }
 }
@@ -144,17 +167,16 @@ private fun ActionRow(onCancel: () -> Unit, onReset: (() -> Unit)? = null, onDon
 }
 
 @Composable
-private fun TrimPanel(
+fun TrimPanel(
     tool: EditorTool.Trim,
     clip: TimelineClip,
     project: VideoFlowProject?,
     thumbnails: Map<String, String>,
+    filmstripPaths: List<String>,
     waveforms: Map<String, FloatArray>,
-    contextualVm: ContextualEditingViewModel,
-    projectId: String,
     playheadUs: Long,
     onPreviewSeek: (Long) -> Unit,
-    refresh: () -> Unit,
+    onCommitTrim: (Long, Long) -> Unit,
     onDismiss: () -> Unit
 ) {
     val asset = project?.mediaAssets?.firstOrNull { it.id == clip.assetId }
@@ -205,10 +227,11 @@ private fun TrimPanel(
             if (isAudio) {
                 WaveformPreview(waveforms[clip.assetId], Modifier.fillMaxWidth().height(52.dp), VideoFlowEditorColors.SelectionAccent)
             } else {
-                // A single truthful cached representative frame is preferable to faking a
-                // filmstrip by repeating the same frame six times. Bounded multi-frame extraction
-                // can replace this cache when available.
-                CachedThumbnailPreview(thumbnails[clip.assetId], Modifier.fillMaxWidth().height(52.dp))
+                TrimFilmstripPreview(
+                    sampledPaths = filmstripPaths,
+                    fallbackPath = thumbnails[clip.assetId],
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                )
             }
             val startFraction = (draftStartUs.toDouble() / sourceDuration.toDouble()).toFloat().coerceIn(0f, 1f)
             val endFraction = (draftEndUs.toDouble() / sourceDuration.toDouble()).toFloat().coerceIn(startFraction, 1f)
@@ -283,10 +306,7 @@ private fun TrimPanel(
         onReset = { setDraft(0L, sourceDuration, 0L) },
         onDone = {
             if (TrimTimecode.validationMessage(draftStartUs, draftEndUs, sourceDuration, minimumGapUs) == null) {
-                contextualVm.commitTrim(projectId, clip.id, draftStartUs, draftEndUs) {
-                    refresh()
-                    onDismiss()
-                }
+                onCommitTrim(draftStartUs, draftEndUs)
             }
         }
     )

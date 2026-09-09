@@ -147,6 +147,14 @@ fun CropInteractionOverlay(
         drawRect(shade, topLeft = Offset(right, top), size = Size((size.width - right).coerceAtLeast(0f), (bottom - top).coerceAtLeast(0f)))
         val rect = Rect(left, top, right, bottom)
         drawRect(VideoFlowEditorColors.SelectionAccent, rect.topLeft, rect.size, style = Stroke(width = 3f))
+        val gridColor = Color.White.copy(alpha = 0.58f)
+        val gridStroke = 1.dp.toPx().coerceAtLeast(1f)
+        listOf(1f / 3f, 2f / 3f).forEach { fraction ->
+            val x = rect.left + rect.width * fraction
+            val y = rect.top + rect.height * fraction
+            drawLine(gridColor, Offset(x, rect.top), Offset(x, rect.bottom), strokeWidth = gridStroke)
+            drawLine(gridColor, Offset(rect.left, y), Offset(rect.right, y), strokeWidth = gridStroke)
+        }
         val handleRadius = 7f
         listOf(rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight).forEach {
             drawCircle(VideoFlowEditorColors.SelectionAccent, handleRadius, it)
