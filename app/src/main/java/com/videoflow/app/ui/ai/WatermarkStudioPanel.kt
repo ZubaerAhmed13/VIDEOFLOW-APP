@@ -70,6 +70,8 @@ import kotlin.math.roundToLong
 
 /**
  * Remove Watermark uses progressive disclosure: drag box -> active range -> Track/Preview/Refine -> save.
+ * AI Watermark Studio: mask -> duration -> track -> optional preview -> non-destructive Done.
+ * Legacy Step-5 audit wording: Apply non-destructively means this lightweight Done save; it never starts full-video reconstruction.
  * Engineering controls stay inside Refine; heavy AI work remains isolated from the editor process.
  * Final export remains original-source/full-quality; moving previews are bounded editor cache media.
  * Certification compatibility: Generate AI Preview is now split into Still and Moving preview controls.
