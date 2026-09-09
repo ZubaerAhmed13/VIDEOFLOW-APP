@@ -55,7 +55,29 @@ class ProfessionalToolControlsTest {
     @Test fun preciseRangeKeepsHourScaleTimeAndSetStartEnd() {
         var start by mutableLongStateOf(0L); var end by mutableLongStateOf(7_200_000_000L)
         var playhead by mutableLongStateOf(3_600_123_000L)
-        rule.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { PreciseRangeControls(7_200_000_000L,start,end,playhead,{a,b->start=a;end=b},{playhead=it}) } } }
+var showCrop by mutableStateOf(false)
+var crop by mutableStateOf(CropRect(.2f,.2f,.8f,.8f))
+var committed: CropRect?=null
+val initial=crop
+        rule.setContent {
+    MaterialTheme {
+        if (showCrop) {
+            Box(Modifier.size(300.dp)) {
+                CropInteractionOverlay(
+                    crop=crop,
+                    aspectRatio=1f,
+                    onCropChange={crop=it},
+                    onCropCommit={committed=it},
+                    modifier=Modifier.semantics { contentDescription="Crop direct interaction" }
+                )
+            }
+        } else {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                PreciseRangeControls(7_200_000_000L,start,end,playhead,{a,b->start=a;end=b},{playhead=it})
+            }
+        }
+    }
+}
         rule.onNodeWithText("Set Start").performScrollTo().performClick()
         assertEquals(3_600_123_000L,start)
         rule.runOnIdle { playhead=5_400_456_000L }
@@ -66,22 +88,8 @@ class ProfessionalToolControlsTest {
         rule.onNodeWithText("Full clip").performScrollTo().performClick()
         assertEquals(0L,start);assertEquals(7_200_000_000L,end)
 
-        var crop by mutableStateOf(CropRect(.2f,.2f,.8f,.8f))
-        var committed: CropRect?=null
-        val initial=crop
-        rule.setContent {
-            MaterialTheme {
-                Box(Modifier.size(300.dp)) {
-                    CropInteractionOverlay(
-                        crop=crop,
-                        aspectRatio=1f,
-                        onCropChange={crop=it},
-                        onCropCommit={committed=it},
-                        modifier=Modifier.semantics { contentDescription="Crop direct interaction" }
-                    )
-                }
-            }
-        }
+        rule.runOnIdle { showCrop=true }
+        rule.waitForIdle()
         val cropNode=rule.onNodeWithContentDescription("Crop direct interaction")
         val bounds=cropNode.fetchSemanticsNode().boundsInRoot
         cropNode.performTouchInput {
