@@ -34,6 +34,23 @@ jobs:
           test = Path('app/src/androidTest/java/com/videoflow/app/ui/ProfessionalToolControlsTest.kt')
           text = test.read_text()
 
+          # Remove the invalid second Compose root using exact boundary anchors.
+          crop_state = '        var crop by mutableStateOf(CropRect(.2f,.2f,.8f,.8f))\n'
+          crop_node = '        val cropNode=rule.onNodeWithContentDescription("Crop direct interaction")\n'
+          if text.count(crop_state) != 1:
+              raise SystemExit(f'guard failed: original crop state count={text.count(crop_state)}')
+          if text.count(crop_node) != 1:
+              raise SystemExit(f'guard failed: crop assertion anchor count={text.count(crop_node)}')
+          crop_start = text.index(crop_state)
+          crop_end = text.index(crop_node, crop_start)
+          if crop_end <= crop_start:
+              raise SystemExit('guard failed: invalid crop block boundaries')
+          old_crop_block = text[crop_start:crop_end]
+          if old_crop_block.count('rule.setContent') != 1:
+              raise SystemExit(f'guard failed: crop block must contain exactly one setContent, found {old_crop_block.count("rule.setContent")}')
+          text = text[:crop_start] + '        rule.runOnIdle { showCrop=true }\n        rule.waitForIdle()\n' + text[crop_end:]
+
+          # Move crop state alongside the precise-range state so both phases share one root composition.
           anchor = '        var playhead by mutableLongStateOf(3_600_123_000L)\n'
           inserted = '''        var playhead by mutableLongStateOf(3_600_123_000L)
           var showCrop by mutableStateOf(false)
@@ -45,6 +62,7 @@ jobs:
               raise SystemExit(f'guard failed: precise test state anchor count={text.count(anchor)}')
           text = text.replace(anchor, inserted, 1)
 
+          # Replace the original precise-only root with one state-switched root.
           old_content = '        rule.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) { PreciseRangeControls(7_200_000_000L,start,end,playhead,{a,b->start=a;end=b},{playhead=it}) } } }\n'
           new_content = '''        rule.setContent {
               MaterialTheme {
@@ -69,30 +87,6 @@ jobs:
           if text.count(old_content) != 1:
               raise SystemExit(f'guard failed: first setContent count={text.count(old_content)}')
           text = text.replace(old_content, new_content, 1)
-
-          old_second = '''        var crop by mutableStateOf(CropRect(.2f,.2f,.8f,.8f))
-          var committed: CropRect?=null
-          val initial=crop
-          rule.setContent {
-              MaterialTheme {
-                  Box(Modifier.size(300.dp)) {
-                      CropInteractionOverlay(
-                          crop=crop,
-                          aspectRatio=1f,
-                          onCropChange={crop=it},
-                          onCropCommit={committed=it},
-                          modifier=Modifier.semantics { contentDescription="Crop direct interaction" }
-                      )
-                  }
-              }
-          }
-          '''
-          new_second = '''        rule.runOnIdle { showCrop=true }
-          rule.waitForIdle()
-          '''
-          if text.count(old_second) != 1:
-              raise SystemExit(f'guard failed: second setContent block count={text.count(old_second)}')
-          text = text.replace(old_second, new_second, 1)
           test.write_text(text)
           PY
 
@@ -105,6 +99,8 @@ jobs:
           from pathlib import Path
           text = Path('app/src/androidTest/java/com/videoflow/app/ui/ProfessionalToolControlsTest.kt').read_text()
           marker = '@Test fun preciseRangeKeepsHourScaleTimeAndSetStartEnd()'
+          if text.count(marker) != 1:
+              raise SystemExit(f'precise/crop test marker count={text.count(marker)}')
           body = text.split(marker,1)[1]
           next_test = body.find('\n    @Test ')
           if next_test >= 0:
@@ -123,7 +119,9 @@ jobs:
           missing = [item for item in required if item not in body]
           if missing:
               raise SystemExit(f'coverage guard failed; missing assertions: {missing}')
-          print('Coverage guards PASS: all precise-trim and crop assertions retained')
+          if 'rule.runOnIdle { showCrop=true }' not in body:
+              raise SystemExit('state-switch guard failed')
+          print('Coverage guards PASS: all precise-trim and crop assertions retained in one Compose root')
           PY
 
           git diff -- app/src/main/java/com/videoflow/app/ui/editor/EditorChrome.kt app/src/androidTest/java/com/videoflow/app/ui/ProfessionalToolControlsTest.kt
