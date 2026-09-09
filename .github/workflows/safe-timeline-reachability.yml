@@ -27,88 +27,29 @@ jobs:
           path = Path('app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt')
           text = path.read_text()
 
-          for old in [
-              'import androidx.compose.foundation.lazy.LazyColumn\n',
-              'import androidx.compose.foundation.lazy.items\n',
-          ]:
-              if text.count(old) != 1:
-                  raise SystemExit(f'guard failed for import: {old!r}')
-              text = text.replace(old, '', 1)
+          replacements = [
+              ('import androidx.compose.foundation.lazy.LazyColumn\n', ''),
+              ('import androidx.compose.foundation.lazy.items\n', ''),
+              (
+                  '                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {',
+                  '                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {'
+              ),
+              (
+                  '                    item("timed-edits") { TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs) }',
+                  '                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)'
+              ),
+              (
+                  '                    items(tracks.sortedBy { it.orderIndex },key={it.id}) { track ->',
+                  '                    tracks.sortedBy { it.orderIndex }.forEach { track ->'
+              ),
+          ]
 
-          old = '''                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                    item("timed-edits") { TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs) }
-                    items(tracks.sortedBy { it.orderIndex },key={it.id}) { track ->
-                        TrackRow(
-                            track = track,
-                            originUs = originUs,
-                            windowEndUs = windowEndUs,
-                            clips = clips.filter { it.trackId == track.id },
-                            textOverlays = textOverlays.filter { it.trackId == track.id },
-                            imageOverlays = imageOverlays.filter { it.trackId == track.id },
-                            keyframes = keyframes,
-                            playheadUs = playheadUs,
-                            totalWidth = totalWidth,
-                            pixelsPerSecond = pixelsPerSecond,
-                            horizontal = horizontal,
-                            selection = selection,
-                            mediaNames = mediaNames,
-                            thumbnails = thumbnails,
-                            waveforms = waveforms,
-                            onSeek = onSeek,
-                            onSelect = onSelect,
-                            onClearSelection = onClearSelection,
-                            onMoveClip = onMoveClip,
-                            onTrimClipStart = onTrimClipStart,
-                            onTrimClipEnd = onTrimClipEnd,
-                            onToggleMute = { onToggleMute(track) },
-                            onToggleVisible = { onToggleVisible(track) },
-                            onToggleLock = { onToggleLock(track) },
-                            onTrackSettings = { onTrackSettings(track) }
-                        )
-                    }
-                }'''
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'guard failed: expected exactly one occurrence of {old!r}, found {count}')
+              text = text.replace(old, new, 1)
 
-          new = '''                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)
-                    tracks.sortedBy { it.orderIndex }.forEach { track ->
-                        TrackRow(
-                            track = track,
-                            originUs = originUs,
-                            windowEndUs = windowEndUs,
-                            clips = clips.filter { it.trackId == track.id },
-                            textOverlays = textOverlays.filter { it.trackId == track.id },
-                            imageOverlays = imageOverlays.filter { it.trackId == track.id },
-                            keyframes = keyframes,
-                            playheadUs = playheadUs,
-                            totalWidth = totalWidth,
-                            pixelsPerSecond = pixelsPerSecond,
-                            horizontal = horizontal,
-                            selection = selection,
-                            mediaNames = mediaNames,
-                            thumbnails = thumbnails,
-                            waveforms = waveforms,
-                            onSeek = onSeek,
-                            onSelect = onSelect,
-                            onClearSelection = onClearSelection,
-                            onMoveClip = onMoveClip,
-                            onTrimClipStart = onTrimClipStart,
-                            onTrimClipEnd = onTrimClipEnd,
-                            onToggleMute = { onToggleMute(track) },
-                            onToggleVisible = { onToggleVisible(track) },
-                            onToggleLock = { onToggleLock(track) },
-                            onTrackSettings = { onTrackSettings(track) }
-                        )
-                    }
-                }'''
-
-          if text.count(old) != 1:
-              raise SystemExit('guard failed: expected exactly one LazyColumn track block')
-          text = text.replace(old, new, 1)
           path.write_text(text)
           PY
 
