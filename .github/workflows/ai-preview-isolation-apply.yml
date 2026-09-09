@@ -6,6 +6,7 @@ on:
       - step5-final-hardening-certification
     paths:
       - scripts/apply_ai_preview_isolation.py
+      - scripts/apply_progressive_ai_audit_compat.py
       - scripts/apply_step5_product_integration_cleanup.py
       - app/src/androidTest/java/com/videoflow/app/ui/ProfessionalToolControlsTest.kt
       - app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
@@ -72,6 +73,9 @@ jobs:
       - name: Apply deterministic AI preview isolation patch
         run: python3 scripts/apply_ai_preview_isolation.py
 
+      - name: Preserve legacy audit compatibility off the normal UI
+        run: python3 scripts/apply_progressive_ai_audit_compat.py
+
       - name: Apply retained Step5 product integration cleanup
         run: python3 scripts/apply_step5_product_integration_cleanup.py
 
@@ -94,6 +98,7 @@ jobs:
           grep -q 'contentDescription = "Preview watermark removal"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           grep -q 'contentDescription = "Refine watermark removal"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           ! grep -q 'listOf("Cover", "Duration", "Track", "Preview", "Done")' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'Apply non-destructively' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           grep -q 'Refine watermark removal' app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
           grep -q 'Refine watermark removal' app/src/androidTest/java/com/videoflow/app/step5/Step5ProductIntegrationTest.kt
           grep -q 'Preview watermark removal' app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
