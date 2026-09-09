@@ -6,7 +6,6 @@ on:
       - step5-final-hardening-certification
     paths:
       - scripts/apply_ai_preview_isolation.py
-      - scripts/apply_final_editor_cleanup.py
       - scripts/apply_step5_product_integration_cleanup.py
       - app/src/androidTest/java/com/videoflow/app/ui/ProfessionalToolControlsTest.kt
       - app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
@@ -73,13 +72,10 @@ jobs:
       - name: Apply deterministic AI preview isolation patch
         run: python3 scripts/apply_ai_preview_isolation.py
 
-      - name: Apply final editor cleanup
-        run: python3 scripts/apply_final_editor_cleanup.py
-
       - name: Apply retained Step5 product integration cleanup
         run: python3 scripts/apply_step5_product_integration_cleanup.py
 
-      - name: Validate patch formatting and architecture guards
+      - name: Validate isolation, progressive UX and retained editor guards
         shell: bash
         run: |
           set -euo pipefail
@@ -92,11 +88,23 @@ jobs:
           ! grep -q 'modelPackManager.ensurePackInstalled' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioViewModel.kt
           ! grep -R -q 'ProfessionalEditorTool.PreciseTrim' app/src/main app/src/androidTest
           ! grep -q 'data class PreciseTrim' app/src/main/java/com/videoflow/app/ui/editor/ProfessionalEditorTool.kt
-          grep -q 'AI stage Done' app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
-          grep -q 'AI stage Done' app/src/androidTest/java/com/videoflow/app/step5/Step5ProductIntegrationTest.kt
+          grep -q 'StudioHeader("Remove Watermark"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'contentDescription = "AI active range"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'contentDescription = "Track watermark"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'contentDescription = "Preview watermark removal"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'contentDescription = "Refine watermark removal"' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          ! grep -q 'listOf("Cover", "Duration", "Track", "Preview", "Done")' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
+          grep -q 'Refine watermark removal' app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
+          grep -q 'Refine watermark removal' app/src/androidTest/java/com/videoflow/app/step5/Step5ProductIntegrationTest.kt
+          grep -q 'Preview watermark removal' app/src/androidTest/java/com/videoflow/app/ui/ProfessionalProductWorkflowTest.kt
+          grep -q 'Preview watermark removal' app/src/androidTest/java/com/videoflow/app/step5/Step5ProductIntegrationTest.kt
           grep -q 'Save AI removal' app/src/main/java/com/videoflow/app/ui/ai/WatermarkStudioPanel.kt
           ! grep -q 'Lock Video 1' app/src/androidTest/java/com/videoflow/app/ui/EditorWorkspaceVisualCertificationTest.kt
           grep -q 'Open Video 1 settings' app/src/androidTest/java/com/videoflow/app/ui/EditorWorkspaceVisualCertificationTest.kt
+          grep -q 'TrimOpenGeometryComposeTest' scripts/step5/run_api35.sh
+          grep -q 'sampleTrimFilmstrip' app/src/main/java/com/videoflow/app/ui/EditorViewModel.kt
+          grep -q '1f / 3f' app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt
+          grep -q '2f / 3f' app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt
 
       - name: Compile production, unit tests and instrumentation source
         run: ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin --no-daemon --stacktrace
