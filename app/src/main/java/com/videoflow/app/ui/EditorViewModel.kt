@@ -94,6 +94,22 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    suspend fun sampleTrimFilmstrip(
+        assetId: String,
+        sourceStartUs: Long,
+        sourceEndUs: Long,
+        frameCount: Int = 8
+    ): List<String> {
+        val count = frameCount.coerceIn(2, 10)
+        val start = sourceStartUs.coerceAtLeast(0L)
+        val endExclusive = sourceEndUs.coerceAtLeast(start + 1L)
+        val spanMinusOne = (endExclusive - start - 1L).coerceAtLeast(0L)
+        return (0 until count).mapNotNull { index ->
+            val offset = if (count <= 1) 0L else (spanMinusOne * index.toLong()) / (count - 1).toLong()
+            thumbnailService.loadOrGenerateExact(assetId, start + offset, 192)?.path
+        }.distinct()
+    }
+
     fun setPlayheadUs(value: Long) {
         val duration = _editor.value?.timeline?.durationUs ?: Long.MAX_VALUE
         _playheadUs.value = value.coerceIn(0L, maxOf(0L, duration))

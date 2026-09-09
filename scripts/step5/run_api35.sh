@@ -148,7 +148,7 @@ adb shell wm size reset
 adb shell wm density reset
 adb shell settings put system font_scale 1.0
 
-adb shell am instrument -w -r -e class com.videoflow.app.ui.HomeComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/editor-regression.txt 2>&1
+adb shell am instrument -w -r -e class com.videoflow.app.ui.HomeComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.ContextualToolbarComposeTest,com.videoflow.app.ui.TrimOpenGeometryComposeTest "$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner" > step4-emulator-reports/editor-regression.txt 2>&1
 cat step4-emulator-reports/editor-regression.txt
 ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' step4-emulator-reports/editor-regression.txt || exit 1
 grep -E -q 'OK \([0-9]+ tests?\)' step4-emulator-reports/editor-regression.txt

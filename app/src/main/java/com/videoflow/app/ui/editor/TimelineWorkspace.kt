@@ -274,7 +274,7 @@ private fun TrackRow(
 ) {
     val density = LocalDensity.current
     val laneHeight = 88.dp
-    Row(Modifier.fillMaxWidth().height(laneHeight)) {
+    Row(Modifier.fillMaxWidth().height(laneHeight).semantics { contentDescription = "${track.name} track row" }) {
         Surface(color = VideoFlowEditorColors.TimelineTrackHeader, modifier = Modifier.width(TrackHeaderWidth).fillMaxHeight()) {
             Row(
                 Modifier.fillMaxSize().padding(start = 7.dp),

@@ -124,26 +124,21 @@ class ProfessionalProductWorkflowTest {
 
             rule.runOnIdle { tool=ProfessionalEditorTool.AiWatermark(clip.id) }
             rule.waitUntil(120_000) { aiVm.state.value.runtimeReady && aiVm.state.value.sourceFrame!=null && aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
-            rule.onNodeWithText("Duration",substring=false).performClick()
+            rule.onNodeWithContentDescription("Refine watermark removal").performClick()
             rule.onNodeWithContentDescription("AI preview playhead").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.25f) }
             rule.onNodeWithText("Set Start").performScrollTo().performClick()
             rule.onNodeWithContentDescription("AI preview playhead").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.75f) }
             rule.onNodeWithText("Set End").performScrollTo().performClick()
             rule.onNodeWithText("Jump to start").performScrollTo().performClick()
-            rule.onNodeWithText("Track",substring=false).performClick()
             rule.onNodeWithText("Add correction").performScrollTo().performClick()
-            rule.onNodeWithText("Cover",substring=false).performClick()
             rule.onNodeWithText("Move left").performScrollTo().performClick()
-            rule.onNodeWithText("Preview",substring=false).performClick()
             rule.waitUntil(30_000) { aiVm.state.value.busy==WatermarkStudioBusy.IDLE }
-            rule.onNodeWithText("Generate Still Preview").performScrollTo().performClick()
+            rule.onNodeWithContentDescription("Preview watermark removal").performClick()
             rule.waitUntil(180_000) { aiVm.state.value.aiPreview!=null || aiVm.state.value.error!=null }
             assertNotNull(aiVm.state.value.error,aiVm.state.value.aiPreview)
             rule.onNodeWithText("Before",substring=false).performClick()
             rule.onNodeWithText("After",substring=false).performClick()
             screenshot("ai-preview")
-            // Stage chip and commit button both say Apply; the chip exists before opening the stage.
-            rule.onNodeWithContentDescription("AI stage Done").performClick()
             rule.onNodeWithContentDescription("Save AI removal").assertIsEnabled().performScrollTo().performClick()
             // Done persists one non-destructive edit definition and returns promptly. Heavy moving
             // preview is explicit in Preview; final reconstruction remains isolated in Export.
