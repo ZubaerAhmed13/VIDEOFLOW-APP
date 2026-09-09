@@ -18,10 +18,20 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0 --gradle-distribution-sha256-sum bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01
+          chmod +x gradlew
       - name: Guard and correct persistent AI save assertions
         shell: bash
         run: |
@@ -69,9 +79,7 @@ jobs:
           print(f'Corrected {path}; repository now has {new_count} displayed+enabled persistent-save assertions and zero scroll assumptions.')
           PY
       - name: Compile corrected instrumentation sources
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin
+        run: ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin
       - name: Commit exact duplicate assertion correction
         shell: bash
         run: |
