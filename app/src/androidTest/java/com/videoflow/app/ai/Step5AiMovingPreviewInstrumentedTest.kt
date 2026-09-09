@@ -16,9 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.fetchSemanticsNodes
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -274,10 +272,10 @@ class Step5AiMovingPreviewInstrumentedTest {
             val postSaveStitched = AiPreviewPlaybackResolver.build(asset.sourceUri, clip, postSaveCached)
             assertTrue("Post-Save editor playlist contains no processed segment", postSaveStitched.any { it.aiProcessed })
 
-            composeRule.waitUntil(30_000L) {
-                composeRule.onAllNodesWithText("AI Preview", substring = false)
-                    .fetchSemanticsNodes().isNotEmpty()
-            }
+            // The cache bus is emitted by the completed prepareClip call above. Once Compose has
+            // drained the resulting state update, the normal editor must visibly acknowledge that
+            // its current playback segment is the processed AI media. No Preview action is pressed.
+            composeRule.waitForIdle()
             composeRule.onNodeWithText("AI Preview", substring = false).assertIsDisplayed()
 
             InstrumentationRegistry.getInstrumentation().sendStatus(
