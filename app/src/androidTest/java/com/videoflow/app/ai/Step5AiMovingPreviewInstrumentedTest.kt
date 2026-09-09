@@ -246,6 +246,16 @@ class Step5AiMovingPreviewInstrumentedTest {
                     aiVm.state.value.existingEffects.any { it.id == updatedMoving.id } &&
                     aiVm.state.value.busy == WatermarkStudioBusy.IDLE
             }
+            // ViewModel readiness and Compose semantics publication are asynchronous. Certify the
+            // actual product control is enabled before pressing the same real Save action.
+            composeRule.waitUntil(30_000L) {
+                runCatching {
+                    composeRule.onNodeWithContentDescription("Save AI removal")
+                        .assertIsDisplayed()
+                        .assertIsEnabled()
+                    true
+                }.getOrDefault(false)
+            }
             composeRule.onNodeWithContentDescription("Save AI removal")
                 .assertIsDisplayed()
                 .assertIsEnabled()
