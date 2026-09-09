@@ -8,9 +8,10 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -70,7 +71,7 @@ class Step5ToolbarGeometryComposeTest {
                 rule.waitForIdle()
 
                 // Unified Trim is the only toolbar trim entry; precision lives inside that panel.
-                rule.onNodeWithContentDescription("Precise Trim").assertDoesNotExist()
+                rule.onAllNodesWithContentDescription("Precise Trim").assertCountEquals(0)
 
                 // Certify leading content padding before any scroll operation changes viewport state.
                 val first = rule.onNodeWithContentDescription("Split").fetchSemanticsNode().boundsInRoot
@@ -135,7 +136,7 @@ class Step5ToolbarGeometryComposeTest {
                 }
                 rule.waitForIdle()
 
-                rule.onNodeWithContentDescription("Precise Trim").assertDoesNotExist()
+                rule.onAllNodesWithContentDescription("Precise Trim").assertCountEquals(0)
                 rule.onNodeWithContentDescription(rightLabel).performScrollTo()
                 rule.waitForIdle()
                 val left = rule.onNodeWithContentDescription(leftLabel).fetchSemanticsNode().boundsInRoot
@@ -178,7 +179,7 @@ class Step5ToolbarGeometryComposeTest {
         }
         rule.onNodeWithContentDescription("Canvas").assertIsDisplayed()
         rule.onNodeWithContentDescription("More").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Precise Trim").assertDoesNotExist()
+        rule.onAllNodesWithContentDescription("Precise Trim").assertCountEquals(0)
         val last = rule.onNodeWithContentDescription("More").fetchSemanticsNode().boundsInRoot
         assertTrue("last-cell trailing padding missing", last.right <= widthDp - 11f)
     }
