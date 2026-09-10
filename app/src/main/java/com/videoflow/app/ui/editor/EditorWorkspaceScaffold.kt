@@ -11,8 +11,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.rememberScrollState
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -261,9 +262,12 @@ private fun FocusedToolActionBar(
         ) {
             IconButton(
                 onClick = onCancel,
-                modifier = Modifier.testTag("focused-tool-cancel")
+                modifier = Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .semantics { contentDescription = "Cancel" }
+                    .testTag("focused-tool-cancel")
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Cancel")
+                Icon(Icons.Default.Close, contentDescription = null)
             }
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 if (onReset != null) {
@@ -273,9 +277,12 @@ private fun FocusedToolActionBar(
             IconButton(
                 onClick = { onDone?.invoke() },
                 enabled = onDone != null,
-                modifier = Modifier.testTag("focused-tool-done")
+                modifier = Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .semantics { contentDescription = "Done" }
+                    .testTag("focused-tool-done")
             ) {
-                Icon(Icons.Default.Check, contentDescription = "Done")
+                Icon(Icons.Default.Check, contentDescription = null)
             }
         }
     }
