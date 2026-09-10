@@ -31,7 +31,12 @@ jobs:
           BASE='0123b734f687dfdbf0589b6040aeb4d8642c5968'
           test "$(git merge-base "$BASE" HEAD)" = "$BASE"
       - name: Apply deterministic Step-2 patch
-        run: python3 scripts/ux_step2/apply_trim_speed_crop.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ux_step2/crop_overlay_anchor_adapter.py prepare
+          python3 scripts/ux_step2/apply_trim_speed_crop.py
+          python3 scripts/ux_step2/crop_overlay_anchor_adapter.py finish
       - name: Validate generated patch
         shell: bash
         run: |
@@ -41,6 +46,8 @@ jobs:
           grep -q 'trimSourceRangeKeepingTimelineAnchor' app/src/main/java/com/videoflow/app/domain/editor/TimelineEngine.kt
           grep -q 'effectivePreviewSpeed' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
           grep -q 'uniformCropPreviewGeometry' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          grep -q 'Crop rectangle. Drag to move' app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt
+          ! grep -q 'UX_STEP2_ANCHOR_SHIM' app/src/main/java/com/videoflow/app/ui/editor/PreviewInteraction.kt
           test -f .github/workflows/android-ux-step2-trim-speed-crop-certification.yml
           test -f UX_STEP_2_TRIM_SPEED_CROP_COMPLETION_REPORT.md
       - name: Commit generated Step-2 implementation
