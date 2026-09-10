@@ -118,10 +118,15 @@ fun ContextualToolHost(
                 )
             }
             is EditorTool.Speed -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
-                SpeedPanel(clip, previewDraft, onPreviewDraftChange, editorVm, onDismiss)
+                SpeedPanel(clip, previewDraft, onPreviewDraftChange, onCommitSpeed = { factor ->
+                    editorVm.selectClip(clip.id)
+                    editorVm.setSpeed(factor)
+                }, onDismiss = onDismiss)
             }
             is EditorTool.Crop -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
-                CropPanel(tool, clip, project, previewDraft, onPreviewDraftChange, contextualVm, projectId, refresh, onDismiss)
+                CropPanel(tool, clip, project, previewDraft, onPreviewDraftChange, onCommitCrop = { committed ->
+                    contextualVm.setClipCrop(projectId, clip.id, committed) { refresh(); onDismiss() }
+                }, onDismiss = onDismiss)
             }
             is EditorTool.Transform -> TransformPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
             is EditorTool.Opacity -> OpacityPanel(projectId, tool, editor, playheadUs, previewDraft, onPreviewDraftChange, contextualVm, refresh, onDismiss)
@@ -330,11 +335,11 @@ fun TrimPanel(
 }
 
 @Composable
-private fun SpeedPanel(
+fun SpeedPanel(
     clip: TimelineClip,
     previewDraft: ContextualPreviewDraft,
     onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
-    editorVm: EditorViewModel,
+    onCommitSpeed: (Double) -> Unit,
     onDismiss: () -> Unit
 ) {
     var speed by remember(clip.id) { mutableFloatStateOf((previewDraft.speed ?: clip.speed).toFloat()) }
@@ -364,23 +369,20 @@ private fun SpeedPanel(
         onCancel = onDismiss,
         onReset = { updateSpeed(1f) },
         onDone = {
-            editorVm.selectClip(clip.id)
-            editorVm.setSpeed(speed.toDouble())
+            onCommitSpeed(speed.toDouble())
             onDismiss()
         }
     )
 }
 
 @Composable
-private fun CropPanel(
+fun CropPanel(
     tool: EditorTool.Crop,
     clip: TimelineClip,
     project: VideoFlowProject?,
     previewDraft: ContextualPreviewDraft,
     onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
-    contextualVm: ContextualEditingViewModel,
-    projectId: String,
-    refresh: () -> Unit,
+    onCommitCrop: (CropRect) -> Unit,
     onDismiss: () -> Unit
 ) {
     val asset = project?.mediaAssets?.firstOrNull { it.id == clip.assetId }
@@ -419,7 +421,7 @@ private fun CropPanel(
     ActionRow(
         onCancel = onDismiss,
         onReset = { update(CropRect(), null) },
-        onDone = { contextualVm.setClipCrop(projectId, tool.clipId, crop) { refresh(); onDismiss() } }
+        onDone = { onCommitCrop(crop); onDismiss() }
     )
 }
 
