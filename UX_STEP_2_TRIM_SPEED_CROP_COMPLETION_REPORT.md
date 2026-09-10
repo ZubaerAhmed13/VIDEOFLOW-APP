@@ -21,6 +21,7 @@ Trim/Speed/Crop use focused draft sessions. Cancel does not persist drafts. Done
 ## Tests / CI
 Added `UXStep2TrimSpeedCropCoreTest` covering focused Trim anchoring, direct-edge non-regression, human duration, speed arithmetic, uniform crop geometry, and rotation-aware dimensions.
 Dedicated workflow: `VideoFlow UX Step 2 Trim Speed Crop Certification`.
+Source implementation landed at `e4be484eeca6525f9979f9ed825d891f7a79a37a`; this report update intentionally triggers a user-authored exact-head certification run after the Actions-generated source commit, because GitHub does not recursively trigger workflows from `GITHUB_TOKEN` pushes.
 
 ## Files changed
 Use `git diff 0123b734f687dfdbf0589b6040aeb4d8642c5968...HEAD --name-only` as the authoritative list.
