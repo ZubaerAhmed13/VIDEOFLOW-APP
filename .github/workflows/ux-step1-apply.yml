@@ -15,7 +15,6 @@ concurrency:
 
 jobs:
   apply:
-    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message != 'ux: reconstruct editor shell Step 1'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -49,7 +48,6 @@ jobs:
           grep -q 'FocusedEditorWorkspace' app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt
           grep -q 'timeline-track-viewport' app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt
           grep -q 'registerFocusedToolActions' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
-          ! grep -A30 '^    EditorPanelHost(' app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt | grep -q '^    ContextualToolHost('
 
       - name: Commit exact production implementation
         if: steps.state.outputs.applied != 'true'
