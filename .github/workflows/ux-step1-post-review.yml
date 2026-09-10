@@ -2,77 +2,44 @@ name: Apply UX Step 1 Post Review Corrections
 
 on:
   push:
-    branches: [ux-step1-editor-shell-layout]
+    branches:
+      - ux-step1-editor-shell-layout
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: ux-step1-post-review-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   correct:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
         with:
           ref: ux-step1-editor-shell-layout
           fetch-depth: 0
+
       - name: Apply exact post-review corrections
+        run: python3 scripts/ux_step1/post_review.py
+
+      - name: Verify correction shape
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          timeline_path = Path('app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt')
-          text = timeline_path.read_text()
-          marker = 'TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)'
-          if text.count(marker) == 1:
-              text = text.replace('                    ' + marker + '\n', '', 1)
-              tail = '''                            laneHeight = trackRowHeight
-                        )
-                    }
-                }
-'''
-              replacement = '''                            laneHeight = trackRowHeight
-                        )
-                    }
-                    // Keep the first three real tracks at the top of the bounded viewport.
-                    // Legacy effect lanes remain reachable after the track stack instead of
-                    // consuming one of the three primary visible track rows.
-                    ''' + marker + '''
-                }
-'''
-              if text.count(tail) != 1:
-                  raise SystemExit('timeline forEach tail changed unexpectedly')
-              text = text.replace(tail, replacement, 1)
-          text = text.replace('contentDescription = "More options for ${track.name}"', 'contentDescription = "Open ${track.name} settings"')
-          timeline_path.write_text(text)
-
-          scaffold_path = Path('app/src/main/java/com/videoflow/app/ui/editor/EditorWorkspaceScaffold.kt')
-          text = scaffold_path.read_text()
-          if 'import androidx.compose.foundation.layout.heightIn' not in text:
-              text = text.replace('import androidx.compose.foundation.layout.height\n', 'import androidx.compose.foundation.layout.height\nimport androidx.compose.foundation.layout.heightIn\n')
-          target = '''                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .testTag("editor-preview-slot")
-'''
-          replacement = '''                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = metrics.minimumPreviewHeight)
-                    .weight(1f)
-                    .testTag("editor-preview-slot")
-'''
-          if target in text:
-              text = text.replace(target, replacement, 1)
-          scaffold_path.write_text(text)
-          PY
+          set -euo pipefail
           git diff --check
-          grep -A3 'tracks.sortedBy' app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt >/dev/null
           grep -q 'heightIn(min = metrics.minimumPreviewHeight)' app/src/main/java/com/videoflow/app/ui/editor/EditorWorkspaceScaffold.kt
-      - name: Commit correction if needed
+          grep -q 'Legacy effect lanes remain reachable after the track stack' app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt
+          grep -q 'contentDescription = "Open ${track.name} settings"' app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt
+
+      - name: Commit exact correction if needed
         shell: bash
         run: |
+          set -euo pipefail
           if git diff --quiet; then exit 0; fi
           git config user.name 'VideoFlow UX Automation'
           git config user.email 'actions@users.noreply.github.com'
