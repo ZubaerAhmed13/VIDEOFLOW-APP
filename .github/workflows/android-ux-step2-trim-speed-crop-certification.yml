@@ -105,21 +105,32 @@ jobs:
           test "$(git merge-base "$BASE" HEAD)" = "$BASE"
           git diff --name-only "$BASE"...HEAD | tee ux-step2-changed-files.txt
           ! grep -E '^app/src/main/java/com/videoflow/app/(ai|data/proxy|domain/ai)/' ux-step2-changed-files.txt
+
+          # Focused Trim: source range changes while timeline anchor stays stable.
           grep -q 'trimSourceRangeKeepingTimelineAnchor' app/src/main/java/com/videoflow/app/domain/editor/TimelineEngine.kt
           grep -q 'trimClipContentsKeepingTimelineAnchor' app/src/main/java/com/videoflow/app/data/editor/EditorRepository.kt
           grep -q 'fadeInUs = clip.fadeInUs.coerceAtMost(newDurationUs)' app/src/main/java/com/videoflow/app/domain/editor/TimelineEngine.kt
           grep -q 'formatHumanDurationUs' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
           grep -q 'sampleTrimFilmstrip(clip.assetId, clip.sourceStartUs, clip.sourceEndUs, 10)' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+
+          # Speed: draft/live preview plus readable authoritative duration math.
           grep -q 'speedAdjustedDurationUs' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
           grep -q 'String.format(java.util.Locale.US, "%.2f", value)' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
           grep -q 'effectivePreviewSpeed' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+
+          # Crop: one normalized source-space contract is shared by preview and final render.
           grep -q 'aspectCropAroundCurrentCenter' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
-          grep -q 'uniformCropPreviewGeometry' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
-          ! grep -q 'CropRect.FULL' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          grep -q 'normalizedCropToMedia3Bounds' app/src/main/java/com/videoflow/app/render/effects/Media3CropEffect.kt
+          grep -q 'Crop(bounds.left, bounds.right, bounds.bottom, bounds.top)' app/src/main/java/com/videoflow/app/render/effects/Media3CropEffect.kt
+          grep -q 'media3CropEffectOrNull' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          grep -q 'media3CropEffectOrNull(clip.transform.crop)' app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt
+          ! grep -q 'uniformCropPreviewGeometry' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          ! grep -q 'cropCenterX' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
           ! grep -q 't.scaleX / cropWidth' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
           ! grep -q 't.scaleY / cropHeight' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
-          grep -q 'Crop(' app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt
           grep -q 'return factor to factor' app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt
+          grep -q 'onDone = { onCommitCrop(crop) }' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+
           test -s app/src/test/java/com/videoflow/app/ui/editor/UXStep2TrimSpeedCropCoreTest.kt
           test -s app/src/androidTest/java/com/videoflow/app/ui/editor/UXStep2TrimSpeedCropProductComposeTest.kt
           test -s app/src/androidTest/java/com/videoflow/app/step5/UXStep2CropRenderGeometryTest.kt
@@ -266,7 +277,7 @@ jobs:
               find ux-step2-evidence -name "$required" -type f -size +0c | grep -q .
             done
 
-            find ux-step2-evidence -type f -maxdepth 4 -print | sort > ux-step2-emulator-reports/evidence-files.txt
+            find ux-step2-evidence -maxdepth 4 -type f -print | sort > ux-step2-emulator-reports/evidence-files.txt
             grep -q 'step2-crop-geometry.jsonl' ux-step2-emulator-reports/evidence-files.txt
             grep -q 'av-sync.jsonl' ux-step2-emulator-reports/evidence-files.txt
 
