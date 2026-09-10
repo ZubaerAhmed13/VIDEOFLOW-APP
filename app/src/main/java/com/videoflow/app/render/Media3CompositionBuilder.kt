@@ -7,7 +7,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.SpeedProvider
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.effect.Crop
+import com.videoflow.app.render.effects.media3CropEffectOrNull
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -230,15 +230,7 @@ class Media3CompositionBuilder(
 
         // Shared preview/final source-space adjustments precede crop and canvas composition.
         effects += com.videoflow.app.render.effects.VisualEffectPipeline.create(visualEdits, clip.id, -visualTimeOffsetUs)
-        val crop = clip.transform.crop
-        if (crop.left > 0f || crop.top > 0f || crop.right < 1f || crop.bottom < 1f) {
-            effects += Crop(
-                crop.left * 2f - 1f,
-                crop.right * 2f - 1f,
-                1f - crop.bottom * 2f,
-                1f - crop.top * 2f
-            )
-        }
+        media3CropEffectOrNull(clip.transform.crop)?.let { effects += it }
         val item = EditedMediaItem.Builder(clippedMediaItem(source.sourceUri, clip.sourceStartUs, clip.sourceEndUs))
             .setRemoveAudio(true)
             .setSpeed(ConstantSpeedProvider(clip.speed.toFloat()))

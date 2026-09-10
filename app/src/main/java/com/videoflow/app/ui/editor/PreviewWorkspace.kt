@@ -39,6 +39,7 @@ import com.videoflow.app.domain.editor.TimelineEngine
 import com.videoflow.app.domain.editor.TrackType
 import com.videoflow.app.domain.model.SourceStatus
 import com.videoflow.app.domain.model.VideoFlowProject
+import com.videoflow.app.render.effects.media3CropEffectOrNull
 import com.videoflow.app.ui.BoundedImagePreview
 import com.videoflow.app.ui.NativeAudioPreview
 import com.videoflow.app.ui.NativeVideoPlayer
@@ -189,22 +190,21 @@ fun PreviewWorkspace(
                 previewSource != null && activeAsset?.mimeType?.startsWith("video/") == true -> {
                     val t = transform ?: EvaluatedPreviewTransform()
                     val cropEditing = (activeTool as? EditorTool.Crop)?.takeIf { it.clipId == activeVideoClip?.id } != null
-                    val crop = if (cropEditing) CropRect() else activeVideoClip?.transform?.crop ?: CropRect()
-                    val cropCenterX = (crop.left + crop.right) / 2f
-                    val cropCenterY = (crop.top + crop.bottom) / 2f
-                    val displaySize = activeAsset?.let { asset ->
-                        val w = asset.width
-                        val h = asset.height
-                        if (w != null && h != null && w > 0 && h > 0) displayDimensionsForRotation(w, h, asset.rotationDegrees) else null
+                    // Crop is a source-space operation. While editing, show the undistorted full source
+                    // beneath the interactive mask. Outside Crop mode, preview the committed crop with
+                    // the exact same Media3 Crop conversion used by final render.
+                    val previewTransform = if (cropEditing) EvaluatedPreviewTransform() else t
+                    val previewVideoEffects = androidx.compose.runtime.remember(visualState.value, activeVideoClip, cropEditing) {
+                        activeVideoClip?.let { clip ->
+                            buildList {
+                                addAll(com.videoflow.app.render.effects.VisualEffectPipeline.create(visualState.value, clip.id, clip.sourceStartUs, clip.speed))
+                                if (!cropEditing) media3CropEffectOrNull(clip.transform.crop)?.let { add(it) }
+                            }
+                        }.orEmpty()
                     }
-                    val cropGeometry = displaySize?.let { (sw, sh) ->
-                        uniformCropPreviewGeometry(sw, sh, maxWidth.value.coerceAtLeast(1f), maxHeight.value.coerceAtLeast(1f), crop)
-                    } ?: UniformCropPreviewGeometry(1f, 1f, 1f)
                     NativeVideoPlayer(
                         uri = previewSource,
-                        videoEffects = androidx.compose.runtime.remember(visualState.value, activeVideoClip) {
-                            activeVideoClip?.let { com.videoflow.app.render.effects.VisualEffectPipeline.create(visualState.value, it.id, it.sourceStartUs, it.speed) }.orEmpty()
-                        },
+                        videoEffects = previewVideoEffects,
                         startPositionMs = sourcePositionMs,
                         playWhenReady = isPlaying,
                         speed = effectivePreviewSpeed.toFloat(),
@@ -214,17 +214,16 @@ fun PreviewWorkspace(
                         modifier = Modifier
                             .fillMaxSize()
                             .offset(
-                                x = maxWidth * (t.x - 0.5f),
-                                y = maxHeight * (t.y - 0.5f)
+                                x = maxWidth * (previewTransform.x - 0.5f),
+                                y = maxHeight * (previewTransform.y - 0.5f)
                             )
                             .graphicsLayer {
-                                val cropScale = cropGeometry.scale
-                                scaleX = (t.scaleX * cropScale) * if (t.flipHorizontal) -1f else 1f
-                                scaleY = (t.scaleY * cropScale) * if (t.flipVertical) -1f else 1f
-                                rotationZ = t.rotation
-                                alpha = t.opacity.coerceIn(0f, 1f)
-                                translationX = (0.5f - cropCenterX) * size.width * cropGeometry.contentWidthFraction * cropScale
-                                translationY = (0.5f - cropCenterY) * size.height * cropGeometry.contentHeightFraction * cropScale
+                                // Crop itself never introduces independent X/Y scaling. Any non-uniform
+                                // transform here can only come from an explicit Transform edit.
+                                scaleX = previewTransform.scaleX * if (previewTransform.flipHorizontal) -1f else 1f
+                                scaleY = previewTransform.scaleY * if (previewTransform.flipVertical) -1f else 1f
+                                rotationZ = previewTransform.rotation
+                                alpha = previewTransform.opacity.coerceIn(0f, 1f)
                             }
                     )
                 }

@@ -421,7 +421,7 @@ fun CropPanel(
     ActionRow(
         onCancel = onDismiss,
         onReset = { update(CropRect(), null) },
-        onDone = { onCommitCrop(crop); onDismiss() }
+        onDone = { onCommitCrop(crop) }
     )
 }
 

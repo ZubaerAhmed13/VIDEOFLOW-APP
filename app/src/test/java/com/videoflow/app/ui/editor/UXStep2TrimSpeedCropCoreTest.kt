@@ -3,6 +3,7 @@ package com.videoflow.app.ui.editor
 import com.videoflow.app.domain.editor.CropRect
 import com.videoflow.app.domain.editor.TimelineClip
 import com.videoflow.app.domain.editor.TimelineEngine
+import com.videoflow.app.render.effects.normalizedCropToMedia3Bounds
 import com.videoflow.app.util.formatHumanDurationUs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -34,12 +35,14 @@ class UXStep2TrimSpeedCropCoreTest {
         assertEquals(198_000_000L, speedAdjustedDurationUs(99_000_000L, 0.5))
     }
 
-    @Test fun cropGeometry_usesOneUniformScale() {
-        val full = uniformCropPreviewGeometry(1920,1080,393f,221f,CropRect(0f,0f,1f,1f))
-        val portrait = uniformCropPreviewGeometry(1920,1080,393f,221f,CropRect(0.342f,0f,0.658f,1f))
-        assertEquals(1f, full.scale, 0.001f)
-        assertTrue(portrait.scale > 1f)
-        assertTrue(portrait.contentWidthFraction > 0f && portrait.contentHeightFraction > 0f)
+    @Test fun cropGeometry_usesSharedSourceSpaceMedia3Bounds() {
+        val bounds = normalizedCropToMedia3Bounds(CropRect(0.25f, 0.10f, 0.75f, 0.90f))
+        requireNotNull(bounds)
+        assertEquals(-0.50f, bounds.left, 0.001f)
+        assertEquals(0.50f, bounds.right, 0.001f)
+        assertEquals(-0.80f, bounds.bottom, 0.001f)
+        assertEquals(0.80f, bounds.top, 0.001f)
+        assertEquals(null, normalizedCropToMedia3Bounds(CropRect()))
     }
 
     @Test fun rotationAwareDisplayDimensions_areCorrect() {
