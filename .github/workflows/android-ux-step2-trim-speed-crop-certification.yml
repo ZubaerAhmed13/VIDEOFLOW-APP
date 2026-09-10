@@ -190,6 +190,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Reclaim hosted-runner disk space
         shell: bash
         run: |
