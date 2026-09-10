@@ -2,7 +2,8 @@ name: VideoFlow UX Step 2 Trim Speed Crop Certification
 
 on:
   push:
-    branches: [ux-step2-trim-speed-crop]
+    branches:
+      - ux-step2-trim-speed-crop
   workflow_dispatch:
 
 permissions:
@@ -14,16 +15,27 @@ concurrency:
 
 jobs:
   build-test-source-audit:
-    name: Source scope, compile, unit, lint, androidTest and APK
+    name: Source scope, fixtures, unit, lint, androidTest and APK
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '17'}
-      - uses: android-actions/setup-android@v3
-        with: {cmdline-tools-version: 15859902, packages: platform-tools}
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
       - name: Install Android API 37 platform and build tools
         shell: bash
         run: |
@@ -32,69 +44,174 @@ jobs:
           PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
           curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
           echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
-          rm -rf "$ANDROID_HOME/platforms/android-37.0"; mkdir -p "$ANDROID_HOME/platforms"
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          mkdir -p "$ANDROID_HOME/platforms"
           unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
           sdkmanager 'build-tools;36.0.0'
-      - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '9.6.0'}
-      - name: Bootstrap wrapper
-        run: gradle wrapper --gradle-version 9.6.0 && chmod +x gradlew
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x gradlew
+
+      - name: Generate deterministic Step 2 media fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          mkdir -p app/src/androidTest/assets
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=320x240:rate=30 \
+            -f lavfi -i sine=frequency=880:sample_rate=48000 \
+            -t 2 -shortest -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -c:a aac -b:a 96k -movflags +faststart \
+            app/src/androidTest/assets/sample_av.mp4
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "color=black:size=320x240:rate=30,drawbox=color=white:t=fill:enable='between(t,0.6,0.68)+between(t,1.5,1.58)'" \
+            -f lavfi -i "aevalsrc=0.7*sin(2*PI*1000*t)*(between(t\,0.6\,0.68)+between(t\,1.5\,1.58)):s=48000" \
+            -t 2 -shortest -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -c:a aac -b:a 96k -movflags +faststart \
+            app/src/androidTest/assets/step5-sync.mp4
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "color=black:size=320x240:rate=30,drawbox=x=140:y=100:w=40:h=40:color=white:t=fill" \
+            -f lavfi -i sine=frequency=880:sample_rate=48000 \
+            -t 2 -shortest -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -c:a aac -b:a 96k -movflags +faststart \
+            app/src/androidTest/assets/step2-geometry.mp4
+          test -s app/src/androidTest/assets/sample_av.mp4
+          test -s app/src/androidTest/assets/step5-sync.mp4
+          test -s app/src/androidTest/assets/step2-geometry.mp4
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height \
+            -of default=noprint_wrappers=1 app/src/androidTest/assets/step2-geometry.mp4 | tee ux-step2-fixture-info.txt
+          grep -q 'codec_name=h264' ux-step2-fixture-info.txt
+          grep -q 'width=320' ux-step2-fixture-info.txt
+          grep -q 'height=240' ux-step2-fixture-info.txt
+
       - name: Step 2 source-scope and hard invariant audit
         shell: bash
         run: |
           set -euo pipefail
           BASE='0123b734f687dfdbf0589b6040aeb4d8642c5968'
           test "$(git merge-base "$BASE" HEAD)" = "$BASE"
-          git diff --name-only "$BASE"...HEAD | tee /tmp/ux-step2-files.txt
-          ! grep -E '^app/src/main/java/com/videoflow/app/(ai|data/proxy|domain/ai)/' /tmp/ux-step2-files.txt
+          git diff --name-only "$BASE"...HEAD | tee ux-step2-changed-files.txt
+          ! grep -E '^app/src/main/java/com/videoflow/app/(ai|data/proxy|domain/ai)/' ux-step2-changed-files.txt
           grep -q 'trimSourceRangeKeepingTimelineAnchor' app/src/main/java/com/videoflow/app/domain/editor/TimelineEngine.kt
           grep -q 'trimClipContentsKeepingTimelineAnchor' app/src/main/java/com/videoflow/app/data/editor/EditorRepository.kt
+          grep -q 'fadeInUs = clip.fadeInUs.coerceAtMost(newDurationUs)' app/src/main/java/com/videoflow/app/domain/editor/TimelineEngine.kt
           grep -q 'formatHumanDurationUs' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+          grep -q 'sampleTrimFilmstrip(clip.assetId, clip.sourceStartUs, clip.sourceEndUs, 10)' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
           grep -q 'speedAdjustedDurationUs' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+          grep -q 'String.format(java.util.Locale.US, "%.2f", value)' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
           grep -q 'effectivePreviewSpeed' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          grep -q 'aspectCropAroundCurrentCenter' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
           grep -q 'uniformCropPreviewGeometry' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          ! grep -q 'CropRect.FULL' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
           ! grep -q 't.scaleX / cropWidth' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
           ! grep -q 't.scaleY / cropHeight' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
           grep -q 'Crop(' app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt
           grep -q 'return factor to factor' app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt
-      - name: Unit tests
+          test -s app/src/test/java/com/videoflow/app/ui/editor/UXStep2TrimSpeedCropCoreTest.kt
+          test -s app/src/androidTest/java/com/videoflow/app/ui/editor/UXStep2TrimSpeedCropProductComposeTest.kt
+          test -s app/src/androidTest/java/com/videoflow/app/step5/UXStep2CropRenderGeometryTest.kt
+          test -s UX_STEP_2_TRIM_SPEED_CROP_COMPLETION_REPORT.md
+
+      - name: Full unit regression
         run: ./gradlew test --stacktrace
-      - name: Lint
+
+      - name: Android lint
         run: ./gradlew lint --stacktrace
-      - name: Compile instrumentation
+
+      - name: Compile instrumentation and Compose tests
         run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
-      - name: Assemble runtime
+
+      - name: Assemble exact debug and instrumentation APKs
         run: ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace
+
       - name: Package exact-head runtime
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p ux-step2-runtime
           cp app/build/outputs/apk/debug/app-debug.apk ux-step2-runtime/VideoFlow_UXStep2_Debug.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ux-step2-runtime/VideoFlow_UXStep2_Debug-androidTest.apk
           git rev-parse HEAD > ux-step2-runtime/EXACT_HEAD.txt
+          cp ux-step2-fixture-info.txt ux-step2-changed-files.txt ux-step2-runtime/
           (cd ux-step2-runtime && sha256sum *.apk > SHA256SUMS.txt)
-      - uses: actions/upload-artifact@v4
-        with: {name: VideoFlow-UX-Step2-Runtime-Bundle, path: ux-step2-runtime/, if-no-files-found: error, retention-days: 30}
+
+      - name: Upload exact API 35 runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-UX-Step2-Runtime-Bundle
+          path: ux-step2-runtime/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build, unit and lint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-UX-Step2-Build-Evidence
+          path: |
+            app/build/reports/
+            app/build/test-results/
+            ux-step2-fixture-info.txt
+            ux-step2-changed-files.txt
+          if-no-files-found: warn
+          retention-days: 30
 
   api35-product-regression:
-    name: API 35 Step 1 regression and Step 2 product certification
+    name: API 35 Step 1 regression, Step 2 product and render certification
     needs: build-test-source-audit
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
-      - name: Reclaim disk
+      - name: Reclaim hosted-runner disk space
+        shell: bash
         run: |
+          set -euo pipefail
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
           sudo rm -rf "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake" "$ANDROID_HOME/system-images" "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/sources" "$ANDROID_HOME/extras" || true
           sudo apt-get clean || true
-      - uses: android-actions/setup-android@v3
-        with: {cmdline-tools-version: 15859902, packages: platform-tools}
-      - uses: actions/download-artifact@v4
-        with: {name: VideoFlow-UX-Step2-Runtime-Bundle, path: ux-step2-runtime}
-      - name: Verify runtime integrity
-        run: (cd ux-step2-runtime && sha256sum -c SHA256SUMS.txt)
-      - name: Enable KVM
-        run: test -e /dev/kvm && sudo chown "$USER":"$(id -gn)" /dev/kvm && sudo chmod 660 /dev/kvm
-      - name: Run API 35 production editor regression
+          df -h /
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Download exact runtime bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-UX-Step2-Runtime-Bundle
+          path: ux-step2-runtime
+
+      - name: Verify exact-head runtime integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat ux-step2-runtime/EXACT_HEAD.txt)" = "$GITHUB_SHA"
+          (cd ux-step2-runtime && sha256sum -c SHA256SUMS.txt)
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+
+      - name: Run API 35 production UX, render and retained-product certification
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -103,23 +220,99 @@ jobs:
           disable-animations: true
           disable-linux-hw-accel: false
           emulator-boot-timeout: 600
-          disk-size: 1536M
+          disk-size: 3072M
           script: |
-            set -e
+            set -euo pipefail
+            PACKAGE_ID='com.videoflow.app.debug'
+            TEST_RUNNER="$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner"
             mkdir -p ux-step2-emulator-reports ux-step2-evidence
             adb install -r ux-step2-runtime/VideoFlow_UXStep2_Debug.apk
             adb install -r ux-step2-runtime/VideoFlow_UXStep2_Debug-androidTest.apk
-            adb shell am instrument -w -r -e class 'com.videoflow.app.ui.UXStep1EditorShellComposeTest,com.videoflow.app.ui.UXStep1FontScaleComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.TrimOpenGeometryComposeTest,com.videoflow.app.ui.Step2ComplexPersistenceTest,com.videoflow.app.render.NativeRenderEngineInstrumentedTest' com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ux-step2-emulator-reports/instrumentation-output.txt 2>&1
-            cat ux-step2-emulator-reports/instrumentation-output.txt
-            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' ux-step2-emulator-reports/instrumentation-output.txt
-            grep -E -q 'OK \([0-9]+ tests?\)' ux-step2-emulator-reports/instrumentation-output.txt
-            adb exec-out run-as com.videoflow.app.debug sh -c 'cd files && tar -cf - ux-step1-evidence 2>/dev/null' | tar -xf - -C ux-step2-evidence || true
-      - uses: actions/upload-artifact@v4
+
+            run_suite() {
+              name="$1"
+              classes="$2"
+              out="ux-step2-emulator-reports/${name}.txt"
+              adb shell am instrument -w -r -e class "$classes" "$TEST_RUNNER" > "$out" 2>&1
+              cat "$out"
+              ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' "$out"
+              grep -E -q 'OK \([0-9]+ tests?\)' "$out"
+              grep -q 'INSTRUMENTATION_CODE: -1' "$out"
+            }
+
+            run_suite step1-shell-regression 'com.videoflow.app.ui.UXStep1EditorShellComposeTest,com.videoflow.app.ui.UXStep1FontScaleComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.ContextualToolbarComposeTest'
+            run_suite step2-trim-speed-crop-ui 'com.videoflow.app.ui.editor.UXStep2TrimSpeedCropProductComposeTest,com.videoflow.app.ui.ProfessionalToolControlsTest,com.videoflow.app.ui.TrimOpenGeometryComposeTest'
+            run_suite step2-room-history-persistence 'com.videoflow.app.db.RoomPersistenceTest,com.videoflow.app.db.Step2MigrationTest,com.videoflow.app.editor.Step2ComplexPersistenceTest'
+            run_suite step2-speed-av-sync 'com.videoflow.app.step5.Step5AudioVideoSyncTest#decodedFlashAndToneStayAlignedAfterTrimAndSpeedAndVisualProcessing'
+            run_suite step2-crop-real-render 'com.videoflow.app.step5.UXStep2CropRenderGeometryTest,com.videoflow.app.step5.Step5CompositionGeometryTest'
+            run_suite retained-player-proxy-render 'com.videoflow.app.media.MediaAnalyzerInstrumentationTest,com.videoflow.app.media.PlayerInstrumentationTest,com.videoflow.app.editor.ProxyManagerInstrumentationTest,com.videoflow.app.export.NativeRenderEngineInstrumentedTest,com.videoflow.app.export.SafMediaMuxerFactoryInstrumentedTest'
+
+            adb pull "/sdcard/Android/data/$PACKAGE_ID/files/ux-step2-evidence" ux-step2-evidence/ || true
+            adb pull "/sdcard/Android/data/$PACKAGE_ID/files/step5-evidence" ux-step2-evidence/ || true
+            adb logcat -d -v threadtime > ux-step2-emulator-reports/logcat.txt
+
+            for required in \
+              trim-normal.png \
+              trim-precise.png \
+              speed-1x.png \
+              speed-2x.png \
+              crop-free.png \
+              crop-1x1.png \
+              crop-9x16.png \
+              crop-rotated-portrait.png \
+              trim-compact-360x800.png \
+              crop-compact-360x800.png \
+              landscape-focused-crop.png; do
+              find ux-step2-evidence -name "$required" -type f -size +0c | grep -q .
+            done
+
+            find ux-step2-evidence -type f -maxdepth 4 -print | sort > ux-step2-emulator-reports/evidence-files.txt
+            grep -q 'step2-crop-geometry.jsonl' ux-step2-emulator-reports/evidence-files.txt
+            grep -q 'av-sync.jsonl' ux-step2-emulator-reports/evidence-files.txt
+
+      - name: Upload API 35 Step 2 certification evidence
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: VideoFlow-UX-Step2-API35-Evidence
           path: |
             ux-step2-emulator-reports/
             ux-step2-evidence/
           if-no-files-found: warn
+          retention-days: 30
+
+  exact-head-completion-report:
+    name: Exact-head completion report
+    needs:
+      - build-test-source-audit
+      - api35-product-regression
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact certified head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download exact runtime binding
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-UX-Step2-Runtime-Bundle
+          path: ux-step2-runtime
+
+      - name: Bind report to successful exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat ux-step2-runtime/EXACT_HEAD.txt)" = "$GITHUB_SHA"
+          python scripts/ux_step2/finalize_step2_certification_metadata.py
+          BASE='0123b734f687dfdbf0589b6040aeb4d8642c5968'
+          git diff --name-only "$BASE"..."$GITHUB_SHA" > ux-step2-final-report/CHANGED_FILES.txt
+          printf 'UX STEP 2 — TRIM / SPEED / CROP\nSOFTWARE IMPLEMENTATION: COMPLETE\nAUTOMATED CERTIFICATION: PASS\nSTEP 1 REGRESSION: PASS\nPHYSICAL DEVICE CERTIFICATION: NOT RUN\nEFFECTS / ENHANCE UX: DEFERRED TO STEP 3\nAI WATERMARK UX: DEFERRED TO STEP 4\nFINAL WHOLE-APP UX CERTIFICATION: NOT RUN\n' > ux-step2-final-report/STATUS.txt
+
+      - name: Upload authoritative exact-head completion report
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-UX-Step2-Completion-Report
+          path: ux-step2-final-report/
+          if-no-files-found: error
           retention-days: 30
