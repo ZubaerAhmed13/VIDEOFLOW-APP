@@ -44,6 +44,7 @@ import com.videoflow.app.ui.BoundedImagePreview
 import com.videoflow.app.ui.NativeAudioPreview
 import com.videoflow.app.ui.NativeVideoPlayer
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun PreviewWorkspace(
     project: VideoFlowProject?,
