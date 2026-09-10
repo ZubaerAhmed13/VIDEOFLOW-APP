@@ -184,6 +184,7 @@ data class ContextualPreviewDraft(
     val crop: CropRect? = null,
     /** Normalized crop width / normalized crop height. Null means unconstrained Free crop. */
     val cropNormalizedAspect: Float? = null,
+    val speed: Double? = null,
     val transform: PreviewTransformDraft? = null,
     val opacity: Float? = null,
     val gainDb: Float? = null,

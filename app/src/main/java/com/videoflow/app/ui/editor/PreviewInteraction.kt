@@ -26,6 +26,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.videoflow.app.domain.editor.CropRect
@@ -72,6 +74,7 @@ fun CropInteractionOverlay(
     Canvas(
         modifier = modifier
             .fillMaxSize()
+            .semantics { contentDescription = "Crop rectangle. Drag to move; drag edges or corners to resize." }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { p ->

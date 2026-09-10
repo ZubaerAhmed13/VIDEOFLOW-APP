@@ -261,6 +261,7 @@ fun EditorScreen(
         }
         previewDraft = when (tool) {
             is EditorTool.Crop -> clips.firstOrNull { it.id == tool.clipId }?.let { ContextualPreviewDraft(crop = it.transform.crop) } ?: ContextualPreviewDraft()
+            is EditorTool.Speed -> clips.firstOrNull { it.id == tool.clipId }?.let { ContextualPreviewDraft(speed = it.speed) } ?: ContextualPreviewDraft()
             is EditorTool.Volume -> clips.firstOrNull { it.id == tool.clipId }?.let { clip -> ContextualPreviewDraft(gainDb = evaluated(clip.id, KeyframeProperty.AUDIO_GAIN, clip.gainDb, clip.timelineStartUs, clip.timelineDurationUs)) } ?: ContextualPreviewDraft()
             is EditorTool.Fade -> clips.firstOrNull { it.id == tool.clipId }?.let { ContextualPreviewDraft(fadeInUs = it.fadeInUs, fadeOutUs = it.fadeOutUs) } ?: ContextualPreviewDraft()
             is EditorTool.Transform -> when (tool.ownerType) {

@@ -105,8 +105,13 @@ fun PreviewWorkspace(
     val effectiveAudioTrackIds = TimelineEngine.effectiveAudioTracks(tracks).map { it.id }.toSet()
     val activeLocalUs = activeVideoClip?.let { (playheadUs - it.timelineStartUs).coerceAtLeast(0L) } ?: 0L
     val activeFrames = activeVideoClip?.let { clip -> keyframes.filter { it.ownerId == clip.id } }.orEmpty()
+    val effectivePreviewSpeed = activeVideoClip?.let { clip ->
+        (activeTool as? EditorTool.Speed)?.takeIf { it.clipId == clip.id }?.let { previewDraft.speed } ?: clip.speed
+    } ?: 1.0
     val sourcePositionMs = activeVideoClip?.let { clip ->
-        ((clip.sourceStartUs + activeLocalUs * clip.speed) / 1000.0).toLong()
+        val sourceUs = (clip.sourceStartUs + activeLocalUs.toDouble() * effectivePreviewSpeed).toLong()
+            .coerceIn(clip.sourceStartUs, (clip.sourceEndUs - 1L).coerceAtLeast(clip.sourceStartUs))
+        sourceUs / 1_000L
     } ?: 0L
 
     fun evaluated(property: KeyframeProperty, base: Float): Float =
@@ -183,14 +188,18 @@ fun PreviewWorkspace(
             when {
                 previewSource != null && activeAsset?.mimeType?.startsWith("video/") == true -> {
                     val t = transform ?: EvaluatedPreviewTransform()
-                    val cropDraft = (activeTool as? EditorTool.Crop)
-                        ?.takeIf { it.clipId == activeVideoClip?.id }
-                        ?.let { previewDraft.crop }
-                    val crop = cropDraft ?: activeVideoClip?.transform?.crop
-                    val cropWidth = (crop?.right?.minus(crop.left) ?: 1f).coerceAtLeast(0.01f)
-                    val cropHeight = (crop?.bottom?.minus(crop.top) ?: 1f).coerceAtLeast(0.01f)
-                    val cropCenterX = ((crop?.left ?: 0f) + (crop?.right ?: 1f)) / 2f
-                    val cropCenterY = ((crop?.top ?: 0f) + (crop?.bottom ?: 1f)) / 2f
+                    val cropEditing = (activeTool as? EditorTool.Crop)?.takeIf { it.clipId == activeVideoClip?.id } != null
+                    val crop = if (cropEditing) CropRect.FULL else activeVideoClip?.transform?.crop ?: CropRect.FULL
+                    val cropCenterX = (crop.left + crop.right) / 2f
+                    val cropCenterY = (crop.top + crop.bottom) / 2f
+                    val displaySize = activeAsset?.let { asset ->
+                        val w = asset.width
+                        val h = asset.height
+                        if (w != null && h != null && w > 0 && h > 0) displayDimensionsForRotation(w, h, asset.rotationDegrees) else null
+                    }
+                    val cropGeometry = displaySize?.let { (sw, sh) ->
+                        uniformCropPreviewGeometry(sw, sh, maxWidth.value.coerceAtLeast(1f), maxHeight.value.coerceAtLeast(1f), crop)
+                    } ?: UniformCropPreviewGeometry(1f, 1f, 1f)
                     NativeVideoPlayer(
                         uri = previewSource,
                         videoEffects = androidx.compose.runtime.remember(visualState.value, activeVideoClip) {
@@ -198,7 +207,7 @@ fun PreviewWorkspace(
                         },
                         startPositionMs = sourcePositionMs,
                         playWhenReady = isPlaying,
-                        speed = activeVideoClip?.speed?.toFloat() ?: 1f,
+                        speed = effectivePreviewSpeed.toFloat(),
                         volume = videoVolume,
                         previewSegments = stitchedPreviewSegments,
                         clipSourceStartMs = (activeVideoClip?.sourceStartUs ?: 0L) / 1_000L,
@@ -209,12 +218,13 @@ fun PreviewWorkspace(
                                 y = maxHeight * (t.y - 0.5f)
                             )
                             .graphicsLayer {
-                                scaleX = (t.scaleX / cropWidth) * if (t.flipHorizontal) -1f else 1f
-                                scaleY = (t.scaleY / cropHeight) * if (t.flipVertical) -1f else 1f
+                                val cropScale = cropGeometry.scale
+                                scaleX = (t.scaleX * cropScale) * if (t.flipHorizontal) -1f else 1f
+                                scaleY = (t.scaleY * cropScale) * if (t.flipVertical) -1f else 1f
                                 rotationZ = t.rotation
                                 alpha = t.opacity.coerceIn(0f, 1f)
-                                translationX = (0.5f - cropCenterX) * size.width / cropWidth
-                                translationY = (0.5f - cropCenterY) * size.height / cropHeight
+                                translationX = (0.5f - cropCenterX) * size.width * cropGeometry.contentWidthFraction * cropScale
+                                translationY = (0.5f - cropCenterY) * size.height * cropGeometry.contentHeightFraction * cropScale
                             }
                     )
                 }
@@ -311,12 +321,24 @@ fun PreviewWorkspace(
                 is EditorTool.Crop -> {
                     val target = timeline?.clips?.firstOrNull { it.id == tool.clipId }
                     if (target != null) {
+                        val asset = project?.mediaAssets?.firstOrNull { it.id == target.assetId }
+                        val cropModifier = asset?.let { source ->
+                            val w = source.width
+                            val h = source.height
+                            if (w != null && h != null && w > 0 && h > 0) {
+                                val (displayW, displayH) = displayDimensionsForRotation(w, h, source.rotationDegrees)
+                                val sourceAspect = displayW.toFloat() / displayH.toFloat()
+                                val viewportAspect = if (maxHeight.value > 0f) maxWidth.value / maxHeight.value else sourceAspect
+                                if (viewportAspect > sourceAspect) Modifier.align(Alignment.Center).height(maxHeight).width(maxHeight * sourceAspect)
+                                else Modifier.align(Alignment.Center).width(maxWidth).height(maxWidth / sourceAspect)
+                            } else Modifier.fillMaxSize()
+                        } ?: Modifier.fillMaxSize()
                         CropInteractionOverlay(
                             crop = previewDraft.crop ?: target.transform.crop,
                             aspectRatio = previewDraft.cropNormalizedAspect,
                             onCropChange = onCropChange,
                             onCropCommit = onCropCommit,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = cropModifier
                         )
                     }
                 }

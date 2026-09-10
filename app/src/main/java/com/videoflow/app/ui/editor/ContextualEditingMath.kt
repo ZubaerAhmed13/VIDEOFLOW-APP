@@ -45,3 +45,40 @@ internal fun timelineAutoScrollDelta(
         else -> 0f
     }
 }
+
+
+internal fun speedAdjustedDurationUs(sourceDurationUs: Long, speed: Double): Long {
+    require(sourceDurationUs >= 0L)
+    require(speed.isFinite() && speed > 0.0)
+    return (sourceDurationUs.toDouble() / speed).toLong().coerceAtLeast(0L)
+}
+
+internal data class UniformCropPreviewGeometry(
+    val scale: Float,
+    val contentWidthFraction: Float,
+    val contentHeightFraction: Float
+)
+
+internal fun uniformCropPreviewGeometry(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    viewportWidth: Float,
+    viewportHeight: Float,
+    crop: com.videoflow.app.domain.editor.CropRect
+): UniformCropPreviewGeometry {
+    require(sourceWidth > 0 && sourceHeight > 0)
+    require(viewportWidth > 0f && viewportHeight > 0f)
+    val sw = sourceWidth.toFloat()
+    val sh = sourceHeight.toFloat()
+    val fullFit = minOf(viewportWidth / sw, viewportHeight / sh)
+    val cropWidth = (crop.right - crop.left).coerceAtLeast(0.0001f)
+    val cropHeight = (crop.bottom - crop.top).coerceAtLeast(0.0001f)
+    val croppedFit = minOf(viewportWidth / (sw * cropWidth), viewportHeight / (sh * cropHeight))
+    val fullRenderedWidth = sw * fullFit
+    val fullRenderedHeight = sh * fullFit
+    return UniformCropPreviewGeometry(
+        scale = (croppedFit / fullFit).coerceAtLeast(1f),
+        contentWidthFraction = (fullRenderedWidth / viewportWidth).coerceIn(0f, 1f),
+        contentHeightFraction = (fullRenderedHeight / viewportHeight).coerceIn(0f, 1f)
+    )
+}

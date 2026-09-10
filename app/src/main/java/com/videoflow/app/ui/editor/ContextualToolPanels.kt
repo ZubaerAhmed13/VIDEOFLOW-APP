@@ -56,6 +56,7 @@ import com.videoflow.app.ui.EditorViewModel
 import com.videoflow.app.ui.OverlayAdvancedViewModel
 import com.videoflow.app.ui.WaveformPreview
 import com.videoflow.app.util.formatDurationUs
+import com.videoflow.app.util.formatHumanDurationUs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -96,7 +97,7 @@ fun ContextualToolHost(
                     key2 = clip.sourceStartUs,
                     key3 = clip.sourceEndUs
                 ) {
-                    value = editorVm.sampleTrimFilmstrip(clip.assetId, clip.sourceStartUs, clip.sourceEndUs, 8)
+                    value = editorVm.sampleTrimFilmstrip(clip.assetId, clip.sourceStartUs, clip.sourceEndUs, 10)
                 }
                 TrimPanel(
                     tool = tool,
@@ -116,7 +117,9 @@ fun ContextualToolHost(
                     onDismiss = onDismiss
                 )
             }
-            is EditorTool.Speed -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip -> SpeedPanel(clip, editorVm, onDismiss) }
+            is EditorTool.Speed -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
+                SpeedPanel(clip, previewDraft, onPreviewDraftChange, editorVm, onDismiss)
+            }
             is EditorTool.Crop -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
                 CropPanel(tool, clip, project, previewDraft, onPreviewDraftChange, contextualVm, projectId, refresh, onDismiss)
             }
@@ -223,7 +226,7 @@ fun TrimPanel(
         }
     }
 
-    ToolHeader("Trim", if (preciseMode) "Precise — exact Long-microsecond boundaries" else if (isAudio) "Drag the waveform handles" else "Drag the trim handles")
+    ToolHeader("Trim", if (preciseMode) "Precise timecode" else if (isAudio) "Drag the waveform handles" else "Drag the trim handles")
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { preciseMode = false }) { Text(if (!preciseMode) "✓ Trim" else "Trim") }
         OutlinedButton(onClick = { preciseMode = true }) { Text(if (preciseMode) "✓ Precise" else "Precise") }
@@ -304,9 +307,16 @@ fun TrimPanel(
                 OutlinedButton(onClick = { setDraft((draftStartUs + 1_000L).coerceAtMost(draftEndUs - minimumGapUs), draftEndUs, draftStartUs + 1_000L) }) { Text("Start +1ms") }
             }
         }
-        Text("Start      ${TrimTimecode.formatUs(draftStartUs)}")
-        Text("End        ${TrimTimecode.formatUs(draftEndUs)}")
-        Text("Duration   ${TrimTimecode.formatUs(((draftEndUs - draftStartUs).toDouble() / clip.speed).roundToLong().coerceAtLeast(0L))}")
+        val visibleDurationUs = speedAdjustedDurationUs(draftEndUs - draftStartUs, clip.speed)
+        if (preciseMode) {
+            Text("Start      ${TrimTimecode.formatUs(draftStartUs)}")
+            Text("End        ${TrimTimecode.formatUs(draftEndUs)}")
+            Text("Duration   ${TrimTimecode.formatUs(visibleDurationUs)}")
+        } else {
+            Text("Start      ${formatHumanDurationUs(draftStartUs)}")
+            Text("End        ${formatHumanDurationUs(draftEndUs)}")
+            Text("Duration   ${formatHumanDurationUs(visibleDurationUs)}")
+        }
     }
     ActionRow(
         onCancel = onDismiss,
@@ -320,29 +330,44 @@ fun TrimPanel(
 }
 
 @Composable
-private fun SpeedPanel(clip: TimelineClip, editorVm: EditorViewModel, onDismiss: () -> Unit) {
-    var speed by remember(clip.id) { mutableFloatStateOf(clip.speed.toFloat()) }
-    ToolHeader("Speed", "Preview the resulting duration before applying")
+private fun SpeedPanel(
+    clip: TimelineClip,
+    previewDraft: ContextualPreviewDraft,
+    onPreviewDraftChange: (ContextualPreviewDraft) -> Unit,
+    editorVm: EditorViewModel,
+    onDismiss: () -> Unit
+) {
+    var speed by remember(clip.id) { mutableFloatStateOf((previewDraft.speed ?: clip.speed).toFloat()) }
+    fun updateSpeed(value: Float) {
+        speed = value.coerceIn(0.25f, 4f)
+        onPreviewDraftChange(previewDraft.copy(speed = speed.toDouble()))
+    }
+    ToolHeader("Speed")
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("${formatMultiplier(speed)}×", fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { contentDescription = "Current speed, ${formatMultiplier(speed)} times" })
+        Slider(value = speed, onValueChange = ::updateSpeed, valueRange = 0.25f..4f,
+            modifier = Modifier.semantics { contentDescription = "Speed slider, ${formatMultiplier(speed)} times" })
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            listOf(0.25f, 0.5f, 1f, 1.5f, 2f, 4f).forEach { preset ->
-                OutlinedButton(onClick = { speed = preset }) { Text("${formatMultiplier(preset)}×") }
+            listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f).forEach { preset ->
+                OutlinedButton(onClick = { updateSpeed(preset) }) {
+                    Text(if (kotlin.math.abs(speed - preset) < 0.001f) "✓ ${formatMultiplier(preset)}×" else "${formatMultiplier(preset)}×")
+                }
             }
         }
-        Slider(
-            value = speed,
-            onValueChange = { speed = it.coerceIn(0.25f, 4f) },
-            valueRange = 0.25f..4f,
-            modifier = Modifier.semantics { contentDescription = "Speed, ${formatMultiplier(speed)} times" }
-        )
-        Text("Speed              ${formatMultiplier(speed)}×")
-        Text("Current duration   ${formatDurationUs(clip.timelineDurationUs)}")
-        Text("New duration       ${formatDurationUs((clip.sourceDurationUs / speed).toLong())}")
+        val originalDurationUs = clip.sourceDurationUs
+        val resultDurationUs = speedAdjustedDurationUs(originalDurationUs, speed.toDouble())
+        Text("Original   ${formatHumanDurationUs(originalDurationUs)}")
+        Text("Result     ${formatHumanDurationUs(resultDurationUs)}")
     }
     ActionRow(
         onCancel = onDismiss,
-        onReset = { speed = 1f },
-        onDone = { editorVm.selectClip(clip.id); editorVm.setSpeed(speed.toDouble()); onDismiss() }
+        onReset = { updateSpeed(1f) },
+        onDone = {
+            editorVm.selectClip(clip.id)
+            editorVm.setSpeed(speed.toDouble())
+            onDismiss()
+        }
     )
 }
 
@@ -377,7 +402,7 @@ private fun CropPanel(
     Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = { update(crop, null) }) { Text(if (previewDraft.cropNormalizedAspect == null) "✓ Free" else "Free") }
-            OutlinedButton(onClick = { update(CropRect(), null) }) { Text("Original") }
+            OutlinedButton(onClick = { update(CropRect(), 1f) }) { Text(if (previewDraft.cropNormalizedAspect == 1f && crop == CropRect()) "✓ Original" else "Original") }
             listOf(1 to 1, 4 to 5, 3 to 4, 4 to 3, 3 to 2, 16 to 9, 9 to 16).forEach { (w, h) ->
                 OutlinedButton(onClick = { preset(w, h) }) { Text("$w:$h") }
             }

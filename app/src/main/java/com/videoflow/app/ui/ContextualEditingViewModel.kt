@@ -49,16 +49,12 @@ class ContextualEditingViewModel @Inject constructor(
         val beforeProject = editorRepository.load(projectId)
         val before = beforeProject.timeline.clips.first { it.id == clipId }
         val beforeFrames = beforeProject.timeline.keyframes.filter { it.ownerId == clipId }
-            // Mutate the boundary that expands the valid interval first. This prevents a
-            // transient invalid clip when the requested range moves completely before/after the
-            // previous source interval.
-            if (sourceEndUs < before.sourceStartUs) {
-                if (sourceStartUs != before.sourceStartUs) editorRepository.trimClipStart(projectId, clipId, sourceStartUs)
-                if (sourceEndUs != before.sourceEndUs) editorRepository.trimClipEnd(projectId, clipId, sourceEndUs)
-            } else {
-                if (sourceEndUs != before.sourceEndUs) editorRepository.trimClipEnd(projectId, clipId, sourceEndUs)
-                if (sourceStartUs != before.sourceStartUs) editorRepository.trimClipStart(projectId, clipId, sourceStartUs)
-            }
+        editorRepository.trimClipContentsKeepingTimelineAnchor(
+            projectId = projectId,
+            clipId = clipId,
+            newSourceStartUs = sourceStartUs,
+            newSourceEndUs = sourceEndUs
+        )
         val fresh = editorRepository.load(projectId)
         val after = fresh.timeline.clips.first { it.id == clipId }
         val afterFrames = fresh.timeline.keyframes.filter { it.ownerId == clipId }

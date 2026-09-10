@@ -21,6 +21,23 @@ object TimelineEngine {
         )
     }
 
+    /**
+     * Focused-tool trim semantics: alter only the retained source range while keeping the clip's
+     * timeline anchor stable. Direct timeline edge trim continues to use trimStart/trimEnd.
+     */
+    fun trimSourceRangeKeepingTimelineAnchor(
+        clip: TimelineClip,
+        newSourceStartUs: Long,
+        newSourceEndUs: Long,
+        assetDurationUs: Long
+    ): TimelineClip {
+        require(assetDurationUs > 0L)
+        val start = newSourceStartUs.coerceIn(0L, assetDurationUs - 1L)
+        val end = newSourceEndUs.coerceIn(start + 1L, assetDurationUs)
+        require(end > start)
+        return clip.copy(sourceStartUs = start, sourceEndUs = end)
+    }
+
     fun trimEnd(clip: TimelineClip, newSourceEndUs: Long, sourceDurationUs: Long): TimelineClip {
         require(newSourceEndUs > clip.sourceStartUs)
         require(newSourceEndUs <= sourceDurationUs)

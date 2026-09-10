@@ -181,6 +181,32 @@ class EditorRepository @Inject constructor(private val db: VideoFlowDatabase) {
         }
     }
 
+    /**
+     * Atomic focused Trim commit. Unlike direct timeline edge trimming, source trim-in does not
+     * move timelineStartUs; the selected clip remains anchored where the user placed it.
+     */
+    suspend fun trimClipContentsKeepingTimelineAnchor(
+        projectId: String,
+        clipId: String,
+        newSourceStartUs: Long,
+        newSourceEndUs: Long
+    ): TimelineClip = withContext(Dispatchers.IO) {
+        val assetDuration = db.editorDao().getClips(projectId).first { it.id == clipId }.let { clip ->
+            db.mediaAssetDao().get(clip.assetId)?.durationUs ?: error("Source duration unavailable")
+        }
+        mutateClip(projectId, clipId) { clip, track, clips, _ ->
+            requireUnlocked(track)
+            val trimmed = TimelineEngine.trimSourceRangeKeepingTimelineAnchor(
+                clip = clip,
+                newSourceStartUs = newSourceStartUs,
+                newSourceEndUs = newSourceEndUs,
+                assetDurationUs = assetDuration
+            )
+            ensureNoOverlap(trimmed, clips.filterNot { it.id == clip.id })
+            trimmed
+        }
+    }
+
     suspend fun splitClip(projectId: String, clipId: String, playheadUs: Long): Pair<TimelineClip, TimelineClip> = withContext(Dispatchers.IO) {
         db.withTransaction {
             val clips = db.editorDao().getClips(projectId).map { it.toDomain() }
