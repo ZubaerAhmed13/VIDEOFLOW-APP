@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.videoflow.app.domain.editor.ImageOverlay
 import com.videoflow.app.domain.editor.KeyframeEvaluator
@@ -47,7 +48,13 @@ import com.videoflow.app.ui.editor.EditorBottomToolbar
 import com.videoflow.app.ui.editor.EditorPanel
 import com.videoflow.app.ui.editor.EditorPanelHost
 import com.videoflow.app.ui.editor.EditorSelection
+import com.videoflow.app.ui.editor.EditorSelectionSaver
 import com.videoflow.app.ui.editor.EditorTool
+import com.videoflow.app.ui.editor.EditorToolSaver
+import com.videoflow.app.ui.editor.EditorWorkspaceMode
+import com.videoflow.app.ui.editor.FocusedEditorWorkspace
+import com.videoflow.app.ui.editor.MainEditorPortraitScaffold
+import com.videoflow.app.ui.editor.editorShellMetrics
 import com.videoflow.app.ui.editor.EditorTopBar
 import com.videoflow.app.ui.editor.EditorWarningBanner
 import com.videoflow.app.ui.editor.LandscapeInfoPane
@@ -97,9 +104,9 @@ fun EditorScreen(
 
     var isPlaying by rememberSaveable { mutableStateOf(false) }
     var pixelsPerSecond by rememberSaveable { mutableFloatStateOf(72f) }
-    var selection by remember { mutableStateOf<EditorSelection>(EditorSelection.None) }
+    var selection by rememberSaveable(stateSaver = EditorSelectionSaver) { mutableStateOf<EditorSelection>(EditorSelection.None) }
     var activePanel by remember { mutableStateOf<EditorPanel?>(null) }
-    var activeTool by remember { mutableStateOf<EditorTool?>(null) }
+    var activeTool by rememberSaveable(stateSaver = EditorToolSaver) { mutableStateOf<EditorTool?>(null) }
     var previewDraft by remember { mutableStateOf(ContextualPreviewDraft()) }
     var initialToolClip by remember { mutableStateOf<TimelineClip?>(null) }
     var initialToolText by remember { mutableStateOf<TextOverlay?>(null) }
@@ -179,6 +186,7 @@ fun EditorScreen(
     val selectedClipMime = selectedClip?.let { clip -> project?.mediaAssets?.firstOrNull { it.id == clip.assetId }?.mimeType }
     val offlineCount = project?.mediaAssets.orEmpty().count { it.sourceStatus !in setOf(SourceStatus.AVAILABLE, SourceStatus.CHANGED) }
     val changedCount = project?.mediaAssets.orEmpty().count { it.sourceStatus == SourceStatus.CHANGED }
+    val workspaceMode: EditorWorkspaceMode = activeTool?.let { EditorWorkspaceMode.FocusedTool(it) } ?: EditorWorkspaceMode.Main
 
     fun clearToolSession() {
         activeTool = null
@@ -357,6 +365,81 @@ fun EditorScreen(
 
     BackHandler(enabled = activeTool != null || activePanel != null || selection != EditorSelection.None, onBack = ::closeOrBack)
 
+    val previewContent: @Composable (Modifier) -> Unit = { previewModifier ->
+        PreviewWorkspace(
+            project = project,
+            editor = editor,
+            playheadUs = playheadUs,
+            isPlaying = isPlaying,
+            modifier = previewModifier,
+            activeTool = activeTool,
+            previewDraft = previewDraft,
+            onCropChange = { crop -> previewDraft = previewDraft.copy(crop = crop) },
+            onCropCommit = { },
+            onTransformGesture = ::transformGesture,
+            onTransformGestureEnd = { }
+        )
+    }
+    val warningContent: @Composable () -> Unit = {
+        EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
+    }
+    val transportContent: @Composable () -> Unit = {
+        TransportBar(
+            playheadUs = playheadUs,
+            durationUs = durationUs,
+            isPlaying = isPlaying,
+            onJumpStart = { isPlaying = false; vm.setPlayheadUs(0L) },
+            onPlayPause = { isPlaying = !isPlaying }
+        )
+    }
+    val timelineContent: @Composable (Modifier, Dp) -> Unit = { timelineModifier, rowHeight ->
+        TimelineWorkspace(
+            tracks = tracks,
+            clips = clips,
+            textOverlays = timeline?.textOverlays.orEmpty(),
+            imageOverlays = timeline?.imageOverlays.orEmpty(),
+            keyframes = timeline?.keyframes.orEmpty(),
+            playheadUs = playheadUs,
+            durationUs = durationUs,
+            pixelsPerSecond = pixelsPerSecond,
+            selection = selection,
+            mediaNames = mediaNames,
+            thumbnails = thumbnails,
+            waveforms = waveforms,
+            onZoom = { pixelsPerSecond = it },
+            onSeek = { isPlaying = false; vm.setPlayheadUs(it.coerceAtMost(durationUs)) },
+            onSelect = ::select,
+            onClearSelection = ::clearSelection,
+            onMoveClip = { clipId, deltaUs ->
+                vm.selectClip(clipId)
+                selection = EditorSelection.Clip(clipId)
+                vm.moveSelectedSnapped(deltaUs, pixelsPerSecond.toDouble())
+            },
+            onTrimClipStart = { clipId, deltaTimelineUs ->
+                clips.firstOrNull { it.id == clipId }?.let { clip ->
+                    vm.selectClip(clipId)
+                    selection = EditorSelection.Clip(clipId)
+                    vm.trimSelectedStart((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                }
+            },
+            onTrimClipEnd = { clipId, deltaTimelineUs ->
+                clips.firstOrNull { it.id == clipId }?.let { clip ->
+                    vm.selectClip(clipId)
+                    selection = EditorSelection.Clip(clipId)
+                    vm.trimSelectedEnd((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                }
+            },
+            onToggleMute = { vm.toggleTrackMute(it.id, !it.muted) },
+            onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
+            onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
+            onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
+            trackRowHeight = rowHeight,
+            revision = project?.updatedAt ?: 0L,
+            onProfessionalTool = onProfessionalTool,
+            modifier = timelineModifier
+        )
+    }
+
     Scaffold(
         containerColor = VideoFlowEditorColors.EditorBackground,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -369,18 +452,21 @@ fun EditorScreen(
                 onBack = ::closeOrBack,
                 onUndo = vm::undo,
                 onRedo = vm::redo,
-                onExport = onExport
+                onExport = onExport,
+                showExport = workspaceMode == EditorWorkspaceMode.Main
             )
         },
         bottomBar = {
-            EditorBottomToolbar(
-                selection = selection,
-                selectedClipMime = selectedClipMime,
-                onPanel = { clearToolSession(); activePanel = it },
-                onTool = ::openTool,
-                onSplit = { vm.splitSelected() },
-                onProfessionalTool = { clearToolSession(); activePanel = null; onProfessionalTool(it) }
-            )
+            if (workspaceMode == EditorWorkspaceMode.Main) {
+                EditorBottomToolbar(
+                    selection = selection,
+                    selectedClipMime = selectedClipMime,
+                    onPanel = { clearToolSession(); activePanel = it },
+                    onTool = ::openTool,
+                    onSplit = { vm.splitSelected() },
+                    onProfessionalTool = { clearToolSession(); activePanel = null; onProfessionalTool(it) }
+                )
+            }
         }
     ) { padding ->
         BoxWithConstraints(
@@ -389,192 +475,76 @@ fun EditorScreen(
                 .padding(padding)
                 .background(VideoFlowEditorColors.EditorBackground)
         ) {
-            val compactLandscape = maxWidth > maxHeight && maxHeight.value < 400f
-            val wide = maxWidth > maxHeight || maxWidth.value >= 700f
+            when (val mode = workspaceMode) {
+                is EditorWorkspaceMode.FocusedTool -> {
+                    FocusedEditorWorkspace(
+                        preview = { previewContent(Modifier.fillMaxSize()) },
+                        warning = warningContent,
+                        transport = transportContent,
+                        focusedTool = {
+                            ContextualToolHost(
+                                tool = mode.tool,
+                                projectId = id,
+                                project = project,
+                                editor = editor,
+                                playheadUs = playheadUs,
+                                thumbnails = thumbnails,
+                                waveforms = waveforms,
+                                editorVm = vm,
+                                contextualVm = contextualVm,
+                                overlayVm = overlayVm,
+                                previewDraft = previewDraft,
+                                onPreviewDraftChange = { previewDraft = it },
+                                onDismiss = ::clearToolSession,
+                                onSelect = ::select,
+                                onOpenTool = ::openTool,
+                                onPreviewSeek = { vm.setPlayheadUs(it) },
+                                refresh = { vm.load(id) },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    )
+                }
+                EditorWorkspaceMode.Main -> {
+                    val compactLandscape = maxWidth > maxHeight && maxHeight.value < 400f
+                    val wide = maxWidth > maxHeight || maxWidth.value >= 700f
+                    val rowHeight = editorShellMetrics(maxHeight).trackRowHeight
 
-            if (compactLandscape) {
-                Row(Modifier.fillMaxSize()) {
-                    Column(Modifier.weight(0.46f)) {
-                        PreviewWorkspace(
-                            project, editor, playheadUs, isPlaying, Modifier.weight(1f), activeTool, previewDraft,
-                            onCropChange = { crop -> previewDraft = previewDraft.copy(crop = crop) },
-                            onCropCommit = { },
-                            onTransformGesture = ::transformGesture,
-                            onTransformGestureEnd = { }
-                        )
-                        EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
-                        TransportBar(
-                            playheadUs = playheadUs,
-                            durationUs = durationUs,
-                            isPlaying = isPlaying,
-                            onJumpStart = { isPlaying = false; vm.setPlayheadUs(0L) },
-                            onPlayPause = { isPlaying = !isPlaying }
-                        )
-                    }
-                    TimelineWorkspace(
-                        tracks = tracks,
-                        clips = clips,
-                        textOverlays = timeline?.textOverlays.orEmpty(),
-                        imageOverlays = timeline?.imageOverlays.orEmpty(),
-                        keyframes = timeline?.keyframes.orEmpty(),
-                        playheadUs = playheadUs,
-                        durationUs = durationUs,
-                        pixelsPerSecond = pixelsPerSecond,
-                        selection = selection,
-                        mediaNames = mediaNames,
-                        thumbnails = thumbnails,
-                        waveforms = waveforms,
-                        onZoom = { pixelsPerSecond = it },
-                        onSeek = { isPlaying = false; vm.setPlayheadUs(it.coerceAtMost(durationUs)) },
-                        onSelect = ::select,
-                        onClearSelection = ::clearSelection,
-                        onMoveClip = { clipId, deltaUs -> vm.selectClip(clipId); selection = EditorSelection.Clip(clipId); vm.moveSelectedSnapped(deltaUs, pixelsPerSecond.toDouble()) },
-                        onTrimClipStart = { clipId, deltaTimelineUs ->
-                            clips.firstOrNull { it.id == clipId }?.let { clip ->
-                                vm.selectClip(clipId)
-                                selection = EditorSelection.Clip(clipId)
-                                vm.trimSelectedStart((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                    if (compactLandscape) {
+                        Row(Modifier.fillMaxSize()) {
+                            Column(Modifier.weight(0.46f)) {
+                                previewContent(Modifier.weight(1f))
+                                warningContent()
+                                transportContent()
                             }
-                        },
-                        onTrimClipEnd = { clipId, deltaTimelineUs ->
-                            clips.firstOrNull { it.id == clipId }?.let { clip ->
-                                vm.selectClip(clipId)
-                                selection = EditorSelection.Clip(clipId)
-                                vm.trimSelectedEnd((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
+                            timelineContent(Modifier.weight(0.54f), rowHeight)
+                        }
+                    } else if (wide) {
+                        Column(Modifier.fillMaxSize()) {
+                            Row(Modifier.weight(0.56f)) {
+                                previewContent(Modifier.weight(0.70f))
+                                LandscapeInfoPane(
+                                    selection = selection,
+                                    projectName = project?.name ?: "VideoFlow",
+                                    resolution = editor?.settings?.let { "${it.width}×${it.height}" } ?: "Project canvas",
+                                    modifier = Modifier.weight(0.30f)
+                                )
                             }
-                        },
-                        onToggleMute = { vm.toggleTrackMute(it.id, !it.muted) },
-                        onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
-                        onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
-                        onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
-                        revision = project?.updatedAt ?: 0L,
-                        onProfessionalTool = onProfessionalTool,
-                        modifier = Modifier.weight(0.54f)
-                    )
-                }
-            } else if (wide) {
-                Column(Modifier.fillMaxSize()) {
-                    Row(Modifier.weight(0.56f)) {
-                        PreviewWorkspace(
-                            project, editor, playheadUs, isPlaying, Modifier.weight(0.70f), activeTool, previewDraft,
-                            onCropChange = { crop -> previewDraft = previewDraft.copy(crop = crop) },
-                            onCropCommit = { },
-                            onTransformGesture = ::transformGesture,
-                            onTransformGestureEnd = { }
-                        )
-                        LandscapeInfoPane(
-                            selection = selection,
-                            projectName = project?.name ?: "VideoFlow",
-                            resolution = editor?.settings?.let { "${it.width}×${it.height}" } ?: "Project canvas",
-                            modifier = Modifier.weight(0.30f)
+                            warningContent()
+                            transportContent()
+                            timelineContent(Modifier.weight(0.44f), rowHeight)
+                        }
+                    } else {
+                        MainEditorPortraitScaffold(
+                            modifier = Modifier.fillMaxSize(),
+                            preview = { previewContent(Modifier.fillMaxSize()) },
+                            warning = warningContent,
+                            transport = transportContent,
+                            timeline = { responsiveRowHeight ->
+                                timelineContent(Modifier.fillMaxSize(), responsiveRowHeight)
+                            }
                         )
                     }
-                    EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
-                    TransportBar(
-                        playheadUs = playheadUs,
-                        durationUs = durationUs,
-                        isPlaying = isPlaying,
-                        onJumpStart = { isPlaying = false; vm.setPlayheadUs(0L) },
-                        onPlayPause = { isPlaying = !isPlaying }
-                    )
-                    TimelineWorkspace(
-                        tracks = tracks,
-                        clips = clips,
-                        textOverlays = timeline?.textOverlays.orEmpty(),
-                        imageOverlays = timeline?.imageOverlays.orEmpty(),
-                        keyframes = timeline?.keyframes.orEmpty(),
-                        playheadUs = playheadUs,
-                        durationUs = durationUs,
-                        pixelsPerSecond = pixelsPerSecond,
-                        selection = selection,
-                        mediaNames = mediaNames,
-                        thumbnails = thumbnails,
-                        waveforms = waveforms,
-                        onZoom = { pixelsPerSecond = it },
-                        onSeek = { isPlaying = false; vm.setPlayheadUs(it.coerceAtMost(durationUs)) },
-                        onSelect = ::select,
-                        onClearSelection = ::clearSelection,
-                        onMoveClip = { clipId, deltaUs -> vm.selectClip(clipId); selection = EditorSelection.Clip(clipId); vm.moveSelectedSnapped(deltaUs, pixelsPerSecond.toDouble()) },
-                        onTrimClipStart = { clipId, deltaTimelineUs ->
-                            clips.firstOrNull { it.id == clipId }?.let { clip ->
-                                vm.selectClip(clipId)
-                                selection = EditorSelection.Clip(clipId)
-                                vm.trimSelectedStart((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
-                            }
-                        },
-                        onTrimClipEnd = { clipId, deltaTimelineUs ->
-                            clips.firstOrNull { it.id == clipId }?.let { clip ->
-                                vm.selectClip(clipId)
-                                selection = EditorSelection.Clip(clipId)
-                                vm.trimSelectedEnd((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
-                            }
-                        },
-                        onToggleMute = { vm.toggleTrackMute(it.id, !it.muted) },
-                        onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
-                        onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
-                        onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
-                        revision = project?.updatedAt ?: 0L,
-                        onProfessionalTool = onProfessionalTool,
-                        modifier = Modifier.weight(0.44f)
-                    )
-                }
-            } else {
-                Column(Modifier.fillMaxSize()) {
-                    PreviewWorkspace(
-                        project, editor, playheadUs, isPlaying, Modifier.weight(0.48f), activeTool, previewDraft,
-                            onCropChange = { crop -> previewDraft = previewDraft.copy(crop = crop) },
-                            onCropCommit = { },
-                            onTransformGesture = ::transformGesture,
-                            onTransformGestureEnd = { }
-                    )
-                    EditorWarningBanner(offlineCount, changedCount) { activePanel = EditorPanel.Media }
-                    TransportBar(
-                        playheadUs = playheadUs,
-                        durationUs = durationUs,
-                        isPlaying = isPlaying,
-                        onJumpStart = { isPlaying = false; vm.setPlayheadUs(0L) },
-                        onPlayPause = { isPlaying = !isPlaying }
-                    )
-                    TimelineWorkspace(
-                        tracks = tracks,
-                        clips = clips,
-                        textOverlays = timeline?.textOverlays.orEmpty(),
-                        imageOverlays = timeline?.imageOverlays.orEmpty(),
-                        keyframes = timeline?.keyframes.orEmpty(),
-                        playheadUs = playheadUs,
-                        durationUs = durationUs,
-                        pixelsPerSecond = pixelsPerSecond,
-                        selection = selection,
-                        mediaNames = mediaNames,
-                        thumbnails = thumbnails,
-                        waveforms = waveforms,
-                        onZoom = { pixelsPerSecond = it },
-                        onSeek = { isPlaying = false; vm.setPlayheadUs(it.coerceAtMost(durationUs)) },
-                        onSelect = ::select,
-                        onClearSelection = ::clearSelection,
-                        onMoveClip = { clipId, deltaUs -> vm.selectClip(clipId); selection = EditorSelection.Clip(clipId); vm.moveSelectedSnapped(deltaUs, pixelsPerSecond.toDouble()) },
-                        onTrimClipStart = { clipId, deltaTimelineUs ->
-                            clips.firstOrNull { it.id == clipId }?.let { clip ->
-                                vm.selectClip(clipId)
-                                selection = EditorSelection.Clip(clipId)
-                                vm.trimSelectedStart((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
-                            }
-                        },
-                        onTrimClipEnd = { clipId, deltaTimelineUs ->
-                            clips.firstOrNull { it.id == clipId }?.let { clip ->
-                                vm.selectClip(clipId)
-                                selection = EditorSelection.Clip(clipId)
-                                vm.trimSelectedEnd((deltaTimelineUs.toDouble() * clip.speed).roundToLong())
-                            }
-                        },
-                        onToggleMute = { vm.toggleTrackMute(it.id, !it.muted) },
-                        onToggleVisible = { vm.toggleTrackVisible(it.id, !it.visible) },
-                        onToggleLock = { vm.toggleTrackLock(it.id, !it.locked) },
-                        onTrackSettings = { activePanel = EditorPanel.TrackSettings(it.id) },
-                        revision = project?.updatedAt ?: 0L,
-                        onProfessionalTool = onProfessionalTool,
-                        modifier = Modifier.weight(0.52f)
-                    )
                 }
             }
         }
@@ -601,25 +571,6 @@ fun EditorScreen(
         onOpenPanel = { activePanel = it }
     )
 
-    ContextualToolHost(
-        tool = activeTool,
-        projectId = id,
-        project = project,
-        editor = editor,
-        playheadUs = playheadUs,
-        thumbnails = thumbnails,
-        waveforms = waveforms,
-        editorVm = vm,
-        contextualVm = contextualVm,
-        overlayVm = overlayVm,
-        previewDraft = previewDraft,
-        onPreviewDraftChange = { previewDraft = it },
-        onDismiss = ::clearToolSession,
-        onSelect = ::select,
-        onOpenTool = ::openTool,
-        onPreviewSeek = { vm.setPlayheadUs(it) },
-        refresh = { vm.load(id) }
-    )
 
     pendingDeleteTrackId?.let { trackId ->
         val track = tracks.firstOrNull { it.id == trackId }

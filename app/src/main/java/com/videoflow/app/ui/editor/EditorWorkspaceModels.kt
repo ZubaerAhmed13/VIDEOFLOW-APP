@@ -1,5 +1,6 @@
 package com.videoflow.app.ui.editor
 
+import androidx.compose.runtime.saveable.Saver
 import com.videoflow.app.domain.editor.CropRect
 import com.videoflow.app.domain.editor.TimelineClip
 
@@ -84,6 +85,74 @@ sealed interface EditorTool {
     data class Keyframes(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
     data class More(val ownerId: String, val ownerType: VisualOwnerType) : EditorTool
 }
+
+/** Explicit, centralized editor layout state. */
+sealed interface EditorWorkspaceMode {
+    data object Main : EditorWorkspaceMode
+    data class FocusedTool(val tool: EditorTool) : EditorWorkspaceMode
+}
+
+private const val EditorStateSeparator = "\u001F"
+
+val EditorSelectionSaver = Saver<EditorSelection, String>(
+    save = { selection ->
+        when (selection) {
+            EditorSelection.None -> "none"
+            is EditorSelection.Clip -> listOf("clip", selection.clipId).joinToString(EditorStateSeparator)
+            is EditorSelection.Track -> listOf("track", selection.trackId).joinToString(EditorStateSeparator)
+            is EditorSelection.TextOverlay -> listOf("text", selection.overlayId).joinToString(EditorStateSeparator)
+            is EditorSelection.ImageOverlay -> listOf("image", selection.overlayId).joinToString(EditorStateSeparator)
+        }
+    },
+    restore = { token ->
+        val parts = token.split(EditorStateSeparator)
+        when (parts.firstOrNull()) {
+            "clip" -> parts.getOrNull(1)?.let(EditorSelection::Clip) ?: EditorSelection.None
+            "track" -> parts.getOrNull(1)?.let(EditorSelection::Track) ?: EditorSelection.None
+            "text" -> parts.getOrNull(1)?.let(EditorSelection::TextOverlay) ?: EditorSelection.None
+            "image" -> parts.getOrNull(1)?.let(EditorSelection::ImageOverlay) ?: EditorSelection.None
+            else -> EditorSelection.None
+        }
+    }
+)
+
+val EditorToolSaver = Saver<EditorTool?, String>(
+    save = { tool ->
+        when (tool) {
+            null -> "none"
+            is EditorTool.Trim -> listOf("trim", tool.clipId, tool.startPrecise.toString()).joinToString(EditorStateSeparator)
+            is EditorTool.Speed -> listOf("speed", tool.clipId).joinToString(EditorStateSeparator)
+            is EditorTool.Crop -> listOf("crop", tool.clipId).joinToString(EditorStateSeparator)
+            is EditorTool.Transform -> listOf("transform", tool.ownerId, tool.ownerType.name).joinToString(EditorStateSeparator)
+            is EditorTool.Opacity -> listOf("opacity", tool.ownerId, tool.ownerType.name).joinToString(EditorStateSeparator)
+            is EditorTool.Volume -> listOf("volume", tool.clipId).joinToString(EditorStateSeparator)
+            is EditorTool.Fade -> listOf("fade", tool.clipId).joinToString(EditorStateSeparator)
+            is EditorTool.TextEditor -> listOf("text-editor", tool.overlayId.orEmpty()).joinToString(EditorStateSeparator)
+            is EditorTool.TextStyle -> listOf("text-style", tool.overlayId).joinToString(EditorStateSeparator)
+            is EditorTool.Timing -> listOf("timing", tool.ownerId, tool.ownerType.name).joinToString(EditorStateSeparator)
+            is EditorTool.Keyframes -> listOf("keyframes", tool.ownerId, tool.ownerType.name).joinToString(EditorStateSeparator)
+            is EditorTool.More -> listOf("more", tool.ownerId, tool.ownerType.name).joinToString(EditorStateSeparator)
+        }
+    },
+    restore = { token ->
+        val p = token.split(EditorStateSeparator)
+        when (p.firstOrNull()) {
+            "trim" -> p.getOrNull(1)?.let { EditorTool.Trim(it, p.getOrNull(2).toBoolean()) }
+            "speed" -> p.getOrNull(1)?.let(EditorTool::Speed)
+            "crop" -> p.getOrNull(1)?.let(EditorTool::Crop)
+            "transform" -> if (p.size >= 3) EditorTool.Transform(p[1], VisualOwnerType.valueOf(p[2])) else null
+            "opacity" -> if (p.size >= 3) EditorTool.Opacity(p[1], VisualOwnerType.valueOf(p[2])) else null
+            "volume" -> p.getOrNull(1)?.let(EditorTool::Volume)
+            "fade" -> p.getOrNull(1)?.let(EditorTool::Fade)
+            "text-editor" -> EditorTool.TextEditor(p.getOrNull(1)?.takeIf(String::isNotEmpty))
+            "text-style" -> p.getOrNull(1)?.let(EditorTool::TextStyle)
+            "timing" -> if (p.size >= 3) EditorTool.Timing(p[1], TimedOwnerType.valueOf(p[2])) else null
+            "keyframes" -> if (p.size >= 3) EditorTool.Keyframes(p[1], VisualOwnerType.valueOf(p[2])) else null
+            "more" -> if (p.size >= 3) EditorTool.More(p[1], VisualOwnerType.valueOf(p[2])) else null
+            else -> null
+        }
+    }
+)
 
 /**
  * UI-only transform values used while a pointer/slider gesture is active.

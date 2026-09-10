@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -80,6 +81,8 @@ import com.videoflow.app.util.formatDurationUs
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
+// Two independent 48dp actions require 96dp; compactness is achieved by removing the
+// old expanding name/action row rather than shrinking accessible touch targets.
 private val TrackHeaderWidth = 96.dp
 private val TimelineTrimHandleWidth = 18.dp
 
@@ -108,11 +111,13 @@ fun TimelineWorkspace(
     onToggleVisible: (TimelineTrack) -> Unit,
     onToggleLock: (TimelineTrack) -> Unit,
     onTrackSettings: (TimelineTrack) -> Unit,
+    trackRowHeight: Dp = 72.dp,
     modifier: Modifier = Modifier,
     revision: Long = 0L,
     onProfessionalTool: (ProfessionalEditorTool)->Unit = {}
 ) {
     val horizontal = rememberScrollState()
+    val verticalTracks = rememberScrollState()
     val safeDuration = maxOf(durationUs, 5_000_000L)
     var originUs by rememberSaveable { mutableLongStateOf(0L) }
     val windowDurationUs = minOf(safeDuration,TimelineViewport.durationUs(pixelsPerSecond))
@@ -148,7 +153,7 @@ fun TimelineWorkspace(
     }
     val hasTimelineItems = clips.isNotEmpty() || textOverlays.isNotEmpty() || imageOverlays.isNotEmpty()
 
-    Surface(modifier = modifier, color = VideoFlowEditorColors.TimelineBackground) {
+    Surface(modifier = modifier.testTag("timeline-workspace"), color = VideoFlowEditorColors.TimelineBackground) {
         Column(Modifier.fillMaxSize()) {
             if(safeDuration>windowDurationUs) {
                 Slider(value=(playheadUs.toDouble()/safeDuration).toFloat().coerceIn(0f,1f),
@@ -207,7 +212,14 @@ fun TimelineWorkspace(
                     }
                 }
             } else {
-                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(verticalTracks)
+                        .testTag("timeline-track-viewport")
+                        .semantics { contentDescription = "Timeline track viewport" }
+                ) {
                     TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)
                     tracks.sortedBy { it.orderIndex }.forEach { track ->
                         TrackRow(
@@ -235,7 +247,8 @@ fun TimelineWorkspace(
                             onToggleMute = { onToggleMute(track) },
                             onToggleVisible = { onToggleVisible(track) },
                             onToggleLock = { onToggleLock(track) },
-                            onTrackSettings = { onTrackSettings(track) }
+                            onTrackSettings = { onTrackSettings(track) },
+                            laneHeight = trackRowHeight
                         )
                     }
                 }
@@ -270,42 +283,44 @@ private fun TrackRow(
     onToggleMute: () -> Unit,
     onToggleVisible: () -> Unit,
     onToggleLock: () -> Unit,
-    onTrackSettings: () -> Unit
+    onTrackSettings: () -> Unit,
+    laneHeight: Dp
 ) {
     val density = LocalDensity.current
-    val laneHeight = 88.dp
     Row(Modifier.fillMaxWidth().height(laneHeight).semantics { contentDescription = "${track.name} track row" }) {
         Surface(color = VideoFlowEditorColors.TimelineTrackHeader, modifier = Modifier.width(TrackHeaderWidth).fillMaxHeight()) {
-            Row(
-                Modifier.fillMaxSize().padding(start = 7.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Box(Modifier.fillMaxSize()) {
                 Text(
-                    track.name.take(7),
-                    color = VideoFlowEditorColors.PrimaryText,
-                    style = MaterialTheme.typography.labelMedium,
+                    track.name.take(10),
+                    color = VideoFlowEditorColors.SecondaryText,
+                    style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 2.dp, vertical = 1.dp)
                 )
-                if (track.type == TrackType.AUDIO) {
-                    IconButton(onClick = onToggleMute, modifier = Modifier.width(48.dp).height(48.dp)) {
-                        Icon(
-                            if (track.muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                            contentDescription = if (track.muted) "Unmute ${track.name}" else "Mute ${track.name}",
-                            tint = VideoFlowEditorColors.SecondaryText
-                        )
+                Row(
+                    Modifier.align(Alignment.BottomCenter).height(48.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (track.type == TrackType.AUDIO) {
+                        IconButton(onClick = onToggleMute, modifier = Modifier.width(48.dp).height(48.dp)) {
+                            Icon(
+                                if (track.muted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                                contentDescription = if (track.muted) "Unmute ${track.name}" else "Mute ${track.name}",
+                                tint = VideoFlowEditorColors.SecondaryText
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onToggleVisible, modifier = Modifier.width(48.dp).height(48.dp)) {
+                            Icon(
+                                if (track.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (track.visible) "Hide ${track.name}" else "Show ${track.name}",
+                                tint = VideoFlowEditorColors.SecondaryText
+                            )
+                        }
                     }
-                } else {
-                    IconButton(onClick = onToggleVisible, modifier = Modifier.width(48.dp).height(48.dp)) {
-                        Icon(
-                            if (track.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                            contentDescription = if (track.visible) "Hide ${track.name}" else "Show ${track.name}",
-                            tint = VideoFlowEditorColors.SecondaryText
-                        )
+                    IconButton(onClick = onTrackSettings, modifier = Modifier.width(48.dp).height(48.dp)) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More options for ${track.name}", tint = VideoFlowEditorColors.SecondaryText)
                     }
-                }
-                IconButton(onClick = onTrackSettings, modifier = Modifier.width(48.dp).height(48.dp)) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings", tint = VideoFlowEditorColors.SecondaryText)
                 }
             }
         }
@@ -350,7 +365,8 @@ private fun TrackRow(
                             onSelect = { onSelect(EditorSelection.Clip(clip.id)) },
                             onMove = { onMoveClip(clip.id, it) },
                             onTrimStart = { onTrimClipStart(clip.id, it) },
-                            onTrimEnd = { onTrimClipEnd(clip.id, it) }
+                            onTrimEnd = { onTrimClipEnd(clip.id, it) },
+                            laneHeight = laneHeight
                         )
                     }
                     textOverlays.forEach { overlay ->
@@ -413,7 +429,8 @@ private fun TimelineClipCard(
     onSelect: () -> Unit,
     onMove: (Long) -> Unit,
     onTrimStart: (Long) -> Unit,
-    onTrimEnd: (Long) -> Unit
+    onTrimEnd: (Long) -> Unit,
+    laneHeight: Dp
 ) {
     val density = LocalDensity.current
     var movePx by remember(clip.id) { mutableFloatStateOf(0f) }
@@ -465,7 +482,7 @@ private fun TimelineClipCard(
         Modifier
             .offset(x = visualStartDp, y = 5.dp)
             .width(visualWidthDp)
-            .height(68.dp)
+            .height((laneHeight - 10.dp).coerceAtLeast(54.dp))
             .graphicsLayer { translationX = movePx }
     ) {
         Card(
@@ -578,9 +595,9 @@ private fun OverlayBlock(
         colors = CardDefaults.cardColors(containerColor = VideoFlowEditorColors.TimelineOverlayClip),
         border = if (selected) BorderStroke(2.dp, VideoFlowEditorColors.SelectionAccent) else null,
         modifier = Modifier
-            .offset(x = timeWidth(startUs, pixelsPerSecond), y = 10.dp)
+            .offset(x = timeWidth(startUs, pixelsPerSecond), y = 6.dp)
             .width(timeWidth(durationUs, pixelsPerSecond).coerceAtLeast(64.dp))
-            .height(56.dp)
+            .height(52.dp)
             .semantics {
                 contentDescription = "$label overlay${if (selected) ", selected" else ""}"
                 this.selected = selected

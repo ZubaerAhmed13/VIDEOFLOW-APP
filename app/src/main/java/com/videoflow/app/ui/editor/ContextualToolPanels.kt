@@ -77,12 +77,17 @@ fun ContextualToolHost(
     onSelect: (EditorSelection) -> Unit,
     onOpenTool: (EditorTool) -> Unit,
     onPreviewSeek: (Long) -> Unit,
-    refresh: () -> Unit
+    refresh: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     if (tool == null || editor == null) return
     val timeline = editor.timeline
 
-    ContextualToolPanelSurface {
+    FocusedToolScaffold(
+        modifier = modifier,
+        toolKey = tool,
+        fallbackCancel = onDismiss
+    ) {
         when (tool) {
             is EditorTool.Trim -> timeline.clips.firstOrNull { it.id == tool.clipId }?.let { clip ->
                 val filmstripPaths by androidx.compose.runtime.produceState(
@@ -125,7 +130,6 @@ fun ContextualToolHost(
             is EditorTool.Keyframes -> KeyframePanel(tool, projectId, editor, playheadUs, contextualVm, editorVm, refresh, onDismiss)
             is EditorTool.More -> MorePanel(tool, projectId, editor, editorVm, contextualVm, onSelect, onOpenTool, refresh, onDismiss)
         }
-        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -159,6 +163,9 @@ private fun ToolHeader(title: String, subtitle: String? = null) {
 
 @Composable
 private fun ActionRow(onCancel: () -> Unit, onReset: (() -> Unit)? = null, onDone: () -> Unit) {
+    // In the production focused workspace, bind feature-owned callbacks to the shell's
+    // non-scrolling action bar. Standalone previews/tests retain the legacy inline row.
+    if (registerFocusedToolActions(onCancel = onCancel, onReset = onReset, onDone = onDone)) return
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         TextButton(onClick = onCancel) { Text("Cancel") }
         if (onReset != null) OutlinedButton(onClick = onReset) { Text("Reset") }

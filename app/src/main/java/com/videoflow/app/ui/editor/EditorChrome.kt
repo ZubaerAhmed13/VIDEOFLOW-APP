@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -76,7 +77,8 @@ fun EditorTopBar(
     onBack: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
-    onExport: () -> Unit
+    onExport: () -> Unit,
+    showExport: Boolean = true
 ) {
     var hadSaveInFlight by remember { mutableStateOf(false) }
     var showSavedConfirmation by remember { mutableStateOf(false) }
@@ -130,8 +132,10 @@ fun EditorTopBar(
             IconButton(onClick = onRedo, enabled = canRedo && !saving) {
                 Icon(Icons.Default.Redo, contentDescription = "Redo")
             }
-            TextButton(onClick = onExport) {
-                Text("Export", color = VideoFlowEditorColors.PrimaryText, fontWeight = FontWeight.SemiBold)
+            if (showExport) {
+                TextButton(onClick = onExport) {
+                    Text("Export", color = VideoFlowEditorColors.PrimaryText, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     )
@@ -202,7 +206,7 @@ fun EditorBottomToolbar(
     Surface(
         color = VideoFlowEditorColors.EditorSurface,
         tonalElevation = 4.dp,
-        modifier = Modifier.navigationBarsPadding()
+        modifier = Modifier.navigationBarsPadding().testTag("editor-bottom-toolbar")
     ) {
         when (selection) {
             EditorSelection.None, is EditorSelection.Track -> PrimaryToolbar(onPanel, onTool)
@@ -289,6 +293,7 @@ private fun ToolRow(content: @Composable () -> Unit) {
             .fillMaxWidth()
             .height(72.dp)
             .horizontalScroll(rememberScrollState())
+            .testTag("editor-bottom-tool-carousel")
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -298,12 +303,14 @@ private fun ToolRow(content: @Composable () -> Unit) {
 @Composable
 private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     val fontScale = LocalDensity.current.fontScale
-    val compactLabelSize = if (fontScale >= 1.3f) 9.sp else MaterialTheme.typography.labelSmall.fontSize
-    val cellWidth = when {
+    val baseCellWidth = when {
         label.length >= 11 -> 96.dp
         label.length >= 8 -> 84.dp
         else -> 72.dp
     }
+    // Preserve readable typography at large font scales; grow the horizontally scrollable cell
+    // instead of forcing labels down to a microscopic fixed 9sp size.
+    val cellWidth = baseCellWidth + if (fontScale >= 1.3f) 12.dp else 0.dp
     Column(
         modifier = Modifier
             .width(cellWidth)
@@ -321,7 +328,7 @@ private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             color = VideoFlowEditorColors.PrimaryText,
             style = MaterialTheme.typography.labelSmall,
-            fontSize = compactLabelSize,
+            fontSize = MaterialTheme.typography.labelSmall.fontSize,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
