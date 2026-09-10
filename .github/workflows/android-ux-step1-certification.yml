@@ -186,8 +186,7 @@ jobs:
             mkdir -p ux-step1-emulator-reports ux-step1-visual-evidence
             adb install -r ux-step1-runtime/VideoFlow_UXStep1_Debug.apk
             adb install -r ux-step1-runtime/VideoFlow_UXStep1_Debug-androidTest.apk
-            CLASSES='com.videoflow.app.ui.UXStep1EditorShellComposeTest,com.videoflow.app.ui.UXStep1FontScaleComposeTest,com.videoflow.app.ui.UXStep1VisualEvidenceTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.EditorWorkspaceComposeTest,com.videoflow.app.ui.ContextualToolbarComposeTest,com.videoflow.app.ui.Step5ToolbarGeometryComposeTest,com.videoflow.app.ui.TrimOpenGeometryComposeTest'
-            adb shell am instrument -w -r -e class "$CLASSES" com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ux-step1-emulator-reports/instrumentation-output.txt 2>&1
+            adb shell am instrument -w -r -e class 'com.videoflow.app.ui.UXStep1EditorShellComposeTest,com.videoflow.app.ui.UXStep1FontScaleComposeTest,com.videoflow.app.ui.UXStep1VisualEvidenceTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.EditorWorkspaceComposeTest,com.videoflow.app.ui.ContextualToolbarComposeTest,com.videoflow.app.ui.Step5ToolbarGeometryComposeTest,com.videoflow.app.ui.TrimOpenGeometryComposeTest' com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ux-step1-emulator-reports/instrumentation-output.txt 2>&1
             cat ux-step1-emulator-reports/instrumentation-output.txt
             ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' ux-step1-emulator-reports/instrumentation-output.txt
             grep -E -q 'OK \([0-9]+ tests?\)' ux-step1-emulator-reports/instrumentation-output.txt
