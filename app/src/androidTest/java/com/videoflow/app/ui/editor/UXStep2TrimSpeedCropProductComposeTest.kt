@@ -9,7 +9,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -75,13 +74,13 @@ class UXStep2TrimSpeedCropProductComposeTest {
                 )
             }
         }
-        rule.onNodeWithText("Start      0 sec").assertExists()
-        rule.onNodeWithText("End        1 min 40 sec").assertExists()
-        rule.onNodeWithText("Duration   1 min 40 sec").assertExists()
+        rule.onNodeWithText("Start      0 sec").assertIsDisplayed()
+        rule.onNodeWithText("End        1 min 40 sec").assertIsDisplayed()
+        rule.onNodeWithText("Duration   1 min 40 sec").assertIsDisplayed()
         rule.onNodeWithText("Precise").performClick()
-        rule.onNodeWithText("Start      00:00:00.000").assertExists()
-        rule.onNodeWithText("End        00:01:40.000").assertExists()
-        rule.onNodeWithText("Duration   00:01:40.000").assertExists()
+        rule.onNodeWithText("Start      00:00:00.000").assertIsDisplayed()
+        rule.onNodeWithText("End        00:01:40.000").assertIsDisplayed()
+        rule.onNodeWithText("Duration   00:01:40.000").assertIsDisplayed()
         screenshot("trim-precise")
         rule.onNodeWithText("Trim").performClick()
         screenshot("trim-normal")
@@ -106,12 +105,12 @@ class UXStep2TrimSpeedCropProductComposeTest {
             }
         }
         rule.onNodeWithContentDescription("Current speed, 1.00 times").assertIsDisplayed()
-        rule.onNodeWithText("Original   1 min 40 sec").assertExists()
-        rule.onNodeWithText("Result     1 min 40 sec").assertExists()
+        rule.onNodeWithText("Original   1 min 40 sec").assertIsDisplayed()
+        rule.onNodeWithText("Result     1 min 40 sec").assertIsDisplayed()
         screenshot("speed-1x")
         rule.onNodeWithText("2.00×").performScrollTo().performClick()
         rule.onNodeWithContentDescription("Current speed, 2.00 times").assertIsDisplayed()
-        rule.onNodeWithText("Result     50 sec").assertExists()
+        rule.onNodeWithText("Result     50 sec").assertIsDisplayed()
         screenshot("speed-2x")
         rule.onNodeWithText("Done").performClick()
         assertEquals(2.0, committed!!, 0.0001)
@@ -210,7 +209,7 @@ class UXStep2TrimSpeedCropProductComposeTest {
                     when (index) {
                         0 -> rule.onNodeWithContentDescription("Trim start and end handles").assertIsDisplayed()
                         1 -> rule.onNodeWithContentDescription("Speed slider, 1.00 times").assertIsDisplayed()
-                        2 -> rule.onNodeWithText("Free").assertExists()
+                        2 -> rule.onNodeWithText("Free").assertIsDisplayed()
                     }
                     if (size == "360x800" && index == 0) screenshot("trim-compact-360x800")
                     if (size == "360x800" && index == 2) screenshot("crop-compact-360x800")
