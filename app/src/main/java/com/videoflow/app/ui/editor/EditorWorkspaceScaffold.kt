@@ -60,7 +60,7 @@ fun editorShellMetrics(availableHeight: Dp): EditorShellMetrics {
     }
     return EditorShellMetrics(
         trackRowHeight = trackRowHeight,
-        timelineViewportHeight = timelineChrome + trackRowHeight * 3,
+        timelineViewportHeight = timelineChrome + trackRowHeight * 3f,
         minimumPreviewHeight = minimumPreviewHeight
     )
 }
