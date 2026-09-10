@@ -1,0 +1,214 @@
+name: VideoFlow UX Step 1 Editor Shell Certification
+
+on:
+  push:
+    branches:
+      - ux-step1-editor-shell-layout
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ux-step1-cert-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-regression:
+    name: Step 1 build, regression and source safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Install Android API 37 platform and build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM_URL='https://dl.google.com/android/repository/platform-37.0_r02.zip'
+          PLATFORM_SHA1='ed8ebf7f8822a4de5686d427f237d2fa30ff7410'
+          curl -fL --retry 4 --retry-delay 2 "$PLATFORM_URL" -o /tmp/platform-37.0_r02.zip
+          echo "$PLATFORM_SHA1  /tmp/platform-37.0_r02.zip" | sha1sum -c -
+          rm -rf "$ANDROID_HOME/platforms/android-37.0"
+          mkdir -p "$ANDROID_HOME/platforms"
+          unzip -q /tmp/platform-37.0_r02.zip -d "$ANDROID_HOME/platforms"
+          sdkmanager 'build-tools;36.0.0'
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Step 1 source-scope and architecture audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='09fa329870683496c3a8ab1a36bb9ed83c74176b'
+          git cat-file -e "$BASE^{commit}"
+          git diff --name-only "$BASE"...HEAD > /tmp/ux-step1-files.txt
+          cat /tmp/ux-step1-files.txt
+          if grep -E '^app/src/main/java/com/videoflow/app/(domain|data|render|export)/' /tmp/ux-step1-files.txt; then
+            echo 'UX Step 1 changed forbidden feature/render/data/domain source.' >&2
+            exit 1
+          fi
+          grep -q 'sealed interface EditorWorkspaceMode' app/src/main/java/com/videoflow/app/ui/editor/EditorWorkspaceModels.kt
+          grep -q 'EditorWorkspaceMode.FocusedTool' app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt
+          grep -q 'MainEditorPortraitScaffold' app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt
+          grep -q 'FocusedEditorWorkspace' app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt
+          grep -q 'FocusedToolScaffold' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+          grep -q 'timeline-track-viewport' app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt
+          grep -q 'heightIn(min = metrics.minimumPreviewHeight)' app/src/main/java/com/videoflow/app/ui/editor/EditorWorkspaceScaffold.kt
+          grep -q 'showExport = workspaceMode == EditorWorkspaceMode.Main' app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          screen = Path('app/src/main/java/com/videoflow/app/ui/screens/EditorScreen.kt').read_text()
+          panels = Path('app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt').read_text()
+          assert screen.count('ContextualToolHost(') == 1, 'major contextual host must be mounted exactly once'
+          focus_at = screen.index('FocusedEditorWorkspace(')
+          host_at = screen.index('ContextualToolHost(')
+          assert host_at > focus_at, 'contextual host must live inside focused workspace path'
+          host_body = panels[panels.index('fun ContextualToolHost('):panels.index('@Composable\nfun ContextualToolPanelSurface')]
+          assert 'FocusedToolScaffold(' in host_body
+          assert 'ContextualToolPanelSurface {' not in host_body, 'major tools must not use legacy overlay surface'
+          timeline = Path('app/src/main/java/com/videoflow/app/ui/editor/TimelineWorkspace.kt').read_text()
+          assert timeline.index('tracks.sortedBy') < timeline.index('TimedEffectIndicators(' , timeline.index('tracks.sortedBy')), 'real tracks must precede effect lanes'
+          print('Step 1 static architecture audit PASS')
+          PY
+
+      - name: All unit tests
+        run: ./gradlew test --stacktrace
+
+      - name: Android lint
+        run: ./gradlew lint --stacktrace
+
+      - name: Compile all instrumentation and Compose tests
+        run: ./gradlew compileDebugAndroidTestKotlin --stacktrace
+
+      - name: Assemble exact-head debug and instrumentation APKs
+        run: ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace
+
+      - name: Package runtime bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ux-step1-runtime
+          cp app/build/outputs/apk/debug/app-debug.apk ux-step1-runtime/VideoFlow_UXStep1_Debug.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ux-step1-runtime/VideoFlow_UXStep1_Debug-androidTest.apk
+          (cd ux-step1-runtime && sha256sum *.apk > SHA256SUMS.txt)
+          git rev-parse HEAD > ux-step1-runtime/EXACT_HEAD.txt
+
+      - name: Upload exact-head runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-UX-Step1-Runtime-Bundle
+          path: ux-step1-runtime/
+          if-no-files-found: error
+          retention-days: 30
+
+  api35-editor-shell-certification:
+    name: API 35 Step 1 geometry and visual certification
+    needs: build-and-regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Reclaim hosted-runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+          sudo rm -rf "$ANDROID_HOME/ndk" "$ANDROID_HOME/cmake" "$ANDROID_HOME/system-images" "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/sources" "$ANDROID_HOME/extras" || true
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* /tmp/* || true
+          df -h /
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 15859902
+          packages: platform-tools
+
+      - name: Download exact runtime bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoFlow-UX-Step1-Runtime-Bundle
+          path: ux-step1-runtime
+
+      - name: Verify runtime bundle integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd ux-step1-runtime && sha256sum -c SHA256SUMS.txt)
+
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chown "$USER":"$(id -gn)" /dev/kvm
+          sudo chmod 660 /dev/kvm
+
+      - name: Run API 35 editor-shell geometry, regression and visual evidence
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 600
+          disk-size: 1536M
+          script: |
+            set -e
+            mkdir -p ux-step1-emulator-reports ux-step1-visual-evidence
+            adb install -r ux-step1-runtime/VideoFlow_UXStep1_Debug.apk
+            adb install -r ux-step1-runtime/VideoFlow_UXStep1_Debug-androidTest.apk
+            CLASSES='com.videoflow.app.ui.UXStep1EditorShellComposeTest,com.videoflow.app.ui.UXStep1FontScaleComposeTest,com.videoflow.app.ui.UXStep1VisualEvidenceTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.LongTimelineWorkspaceSmokeTest,com.videoflow.app.ui.EditorWorkspaceComposeTest,com.videoflow.app.ui.ContextualToolbarComposeTest,com.videoflow.app.ui.Step5ToolbarGeometryComposeTest,com.videoflow.app.ui.TrimOpenGeometryComposeTest'
+            adb shell am instrument -w -r -e class "$CLASSES" com.videoflow.app.debug.test/androidx.test.runner.AndroidJUnitRunner > ux-step1-emulator-reports/instrumentation-output.txt 2>&1
+            cat ux-step1-emulator-reports/instrumentation-output.txt
+            ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' ux-step1-emulator-reports/instrumentation-output.txt
+            grep -E -q 'OK \([0-9]+ tests?\)' ux-step1-emulator-reports/instrumentation-output.txt
+            adb exec-out run-as com.videoflow.app.debug sh -c 'cd files && tar -cf - ux-step1-evidence 2>/dev/null' | tar -xf - -C ux-step1-visual-evidence || true
+            adb exec-out run-as com.videoflow.app.debug sh -c 'cd files && tar -cf - ui-step1-visual 2>/dev/null' | tar -xf - -C ux-step1-visual-evidence || true
+            find ux-step1-visual-evidence -type f -maxdepth 3 -print | sort | tee ux-step1-emulator-reports/visual-evidence-files.txt
+            test -f ux-step1-visual-evidence/ux-step1-evidence/A-main-393x852-three-tracks.png
+            test -f ux-step1-visual-evidence/ux-step1-evidence/B-main-393x852-six-tracks-before-scroll.png
+            test -f ux-step1-visual-evidence/ux-step1-evidence/C-main-393x852-tracks-4-to-6.png
+            test -f ux-step1-visual-evidence/ux-step1-evidence/D-focused-393x852-preview-controls-actions.png
+            test -f ux-step1-visual-evidence/ux-step1-evidence/E-main-360x800-compact.png
+            test -f ux-step1-visual-evidence/ux-step1-evidence/F-main-412x915-tall.png
+            test -f ux-step1-visual-evidence/ui-step1-visual/editor-landscape.png
+
+      - name: Upload API 35 certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-UX-Step1-API35-Certification
+          path: |
+            ux-step1-emulator-reports/
+            ux-step1-visual-evidence/
+          if-no-files-found: warn
+          retention-days: 30
