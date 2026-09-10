@@ -23,6 +23,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
 import com.videoflow.app.ui.editor.EditorBottomToolbar
 import com.videoflow.app.ui.editor.EditorSelection
 import com.videoflow.app.ui.editor.FocusedEditorWorkspace
@@ -45,89 +46,101 @@ class UXStep1EditorShellComposeTest {
     @get:Rule
     val rule = createComposeRule()
 
+    private val device: UiDevice
+        get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+
     private val density: Float
         get() = InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
 
     @Test
     fun EDITOR_SHELL_PORTRAIT_GEOMETRY_threeTracksAndPreviewStayStable() {
         val trackCount = mutableIntStateOf(3)
-        rule.setContent {
-            MaterialTheme {
-                Box(Modifier.fillMaxSize()) {
-                    Box(Modifier.fillMaxWidth().height(760.dp)) {
-                        MainEditorPortraitScaffold(
-                            preview = {
-                                Box(
-                                    Modifier
-                                        .fillMaxSize()
-                                        .testTag("cert-preview-content")
-                                        .semantics { contentDescription = "Certification video preview" }
-                                )
-                            },
-                            transport = {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(52.dp)
-                                        .semantics { contentDescription = "Certification transport" }
-                                )
-                            },
-                            timeline = { rowHeight ->
-                                Column(Modifier.fillMaxSize().testTag("cert-timeline-content")) {
-                                    // Same compact navigation + ruler budget used by production metrics.
-                                    Box(Modifier.fillMaxWidth().height(84.dp))
-                                    Column(
+        try {
+            device.executeShellCommand("wm density 160")
+            device.executeShellCommand("wm size 393x852")
+            device.waitForIdle()
+
+            rule.setContent {
+                MaterialTheme {
+                    Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxWidth().height(760.dp)) {
+                            MainEditorPortraitScaffold(
+                                preview = {
+                                    Box(
+                                        Modifier
+                                            .fillMaxSize()
+                                            .testTag("cert-preview-content")
+                                            .semantics { contentDescription = "Certification video preview" }
+                                    )
+                                },
+                                transport = {
+                                    Box(
                                         Modifier
                                             .fillMaxWidth()
-                                            .weight(1f)
-                                            .verticalScroll(rememberScrollState())
-                                            .testTag("cert-track-scroll")
-                                    ) {
-                                        repeat(trackCount.intValue) { index ->
-                                            Box(
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .height(rowHeight)
-                                                    .semantics {
-                                                        contentDescription = "Certification Track ${index + 1}"
-                                                    }
-                                            )
+                                            .height(52.dp)
+                                            .semantics { contentDescription = "Certification transport" }
+                                    )
+                                },
+                                timeline = { rowHeight ->
+                                    Column(Modifier.fillMaxSize().testTag("cert-timeline-content")) {
+                                        // Same compact navigation + ruler budget used by production metrics.
+                                        Box(Modifier.fillMaxWidth().height(84.dp))
+                                        Column(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f)
+                                                .verticalScroll(rememberScrollState())
+                                                .testTag("cert-track-scroll")
+                                        ) {
+                                            repeat(trackCount.intValue) { index ->
+                                                Box(
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .height(rowHeight)
+                                                        .semantics {
+                                                            contentDescription = "Certification Track ${index + 1}"
+                                                        }
+                                                )
+                                            }
                                         }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
+
+            val previewBefore = rule.onNodeWithTag("editor-preview-slot").fetchSemanticsNode().boundsInRoot
+            val timelineBefore = rule.onNodeWithTag("editor-timeline-slot").fetchSemanticsNode().boundsInRoot
+            val metrics = editorShellMetrics(760.dp)
+            val expectedTimelinePx = metrics.timelineViewportHeight.value * density
+            val minimumPreviewPx = metrics.minimumPreviewHeight.value * density
+
+            assertTrue("Preview must meet the professional minimum", previewBefore.height >= minimumPreviewPx - 2f)
+            assertTrue("Timeline must use the bounded three-row geometry", abs(timelineBefore.height - expectedTimelinePx) <= 3f)
+
+            for (index in 1..3) {
+                val row = rule.onNodeWithContentDescription("Certification Track $index").fetchSemanticsNode().boundsInRoot
+                assertTrue("Track $index top must be visible", row.top >= timelineBefore.top - 2f)
+                assertTrue("Track $index bottom must be visible", row.bottom <= timelineBefore.bottom + 2f)
+            }
+
+            rule.runOnIdle { trackCount.intValue = 10 }
+            rule.waitForIdle()
+            val previewAfter = rule.onNodeWithTag("editor-preview-slot").fetchSemanticsNode().boundsInRoot
+            val timelineAfter = rule.onNodeWithTag("editor-timeline-slot").fetchSemanticsNode().boundsInRoot
+            assertTrue("Adding tracks must not collapse preview", abs(previewAfter.height - previewBefore.height) <= 2f)
+            assertTrue("Adding tracks must not grow timeline", abs(timelineAfter.height - timelineBefore.height) <= 2f)
+
+            rule.onNodeWithContentDescription("Certification Track 10").performScrollTo()
+            rule.waitForIdle()
+            val last = rule.onNodeWithContentDescription("Certification Track 10").fetchSemanticsNode().boundsInRoot
+            assertTrue("Track 10 must be reachable by vertical scrolling", last.top >= timelineAfter.top - 2f && last.bottom <= timelineAfter.bottom + 2f)
+        } finally {
+            device.executeShellCommand("wm size reset")
+            device.executeShellCommand("wm density reset")
         }
-
-        val previewBefore = rule.onNodeWithTag("editor-preview-slot").fetchSemanticsNode().boundsInRoot
-        val timelineBefore = rule.onNodeWithTag("editor-timeline-slot").fetchSemanticsNode().boundsInRoot
-        val metrics = editorShellMetrics(760.dp)
-        val expectedTimelinePx = metrics.timelineViewportHeight.value * density
-        val minimumPreviewPx = metrics.minimumPreviewHeight.value * density
-
-        assertTrue("Preview must meet the professional minimum", previewBefore.height >= minimumPreviewPx - 2f)
-        assertTrue("Timeline must use the bounded three-row geometry", abs(timelineBefore.height - expectedTimelinePx) <= 3f)
-
-        for (index in 1..3) {
-            val row = rule.onNodeWithContentDescription("Certification Track $index").fetchSemanticsNode().boundsInRoot
-            assertTrue("Track $index top must be visible", row.top >= timelineBefore.top - 2f)
-            assertTrue("Track $index bottom must be visible", row.bottom <= timelineBefore.bottom + 2f)
-        }
-
-        rule.runOnIdle { trackCount.intValue = 10 }
-        rule.waitForIdle()
-        val previewAfter = rule.onNodeWithTag("editor-preview-slot").fetchSemanticsNode().boundsInRoot
-        val timelineAfter = rule.onNodeWithTag("editor-timeline-slot").fetchSemanticsNode().boundsInRoot
-        assertTrue("Adding tracks must not collapse preview", abs(previewAfter.height - previewBefore.height) <= 2f)
-        assertTrue("Adding tracks must not grow timeline", abs(timelineAfter.height - timelineBefore.height) <= 2f)
-
-        rule.onNodeWithContentDescription("Certification Track 10").performScrollTo()
-        rule.waitForIdle()
-        val last = rule.onNodeWithContentDescription("Certification Track 10").fetchSemanticsNode().boundsInRoot
-        assertTrue("Track 10 must be reachable by vertical scrolling", last.top >= timelineAfter.top - 2f && last.bottom <= timelineAfter.bottom + 2f)
     }
 
     @Test
@@ -220,26 +233,35 @@ class UXStep1EditorShellComposeTest {
 
     @Test
     fun EDITOR_SHELL_LANDSCAPE_focusedControlsUseSidePanel() {
-        rule.setContent {
-            MaterialTheme {
-                Box(Modifier.fillMaxWidth().height(420.dp)) {
-                    FocusedEditorWorkspace(
-                        preview = { Box(Modifier.fillMaxSize().testTag("cert-wide-preview")) },
-                        transport = { Box(Modifier.fillMaxWidth().height(52.dp)) },
-                        focusedTool = {
-                            FocusedToolScaffold(fallbackCancel = {}) {
-                                registerFocusedToolActions(onCancel = {}, onReset = null, onDone = {})
-                                Box(Modifier.fillMaxWidth().height(160.dp))
+        try {
+            device.executeShellCommand("wm density 160")
+            device.executeShellCommand("wm size 852x393")
+            device.waitForIdle()
+
+            rule.setContent {
+                MaterialTheme {
+                    Box(Modifier.fillMaxSize()) {
+                        FocusedEditorWorkspace(
+                            preview = { Box(Modifier.fillMaxSize().testTag("cert-wide-preview")) },
+                            transport = { Box(Modifier.fillMaxWidth().height(52.dp)) },
+                            focusedTool = {
+                                FocusedToolScaffold(fallbackCancel = {}) {
+                                    registerFocusedToolActions(onCancel = {}, onReset = null, onDone = {})
+                                    Box(Modifier.fillMaxWidth().height(160.dp))
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
+            val preview = rule.onNodeWithTag("editor-preview-slot").fetchSemanticsNode().boundsInRoot
+            val tool = rule.onNodeWithTag("editor-focused-tool-slot").fetchSemanticsNode().boundsInRoot
+            assertTrue("Landscape focused controls should be to the right of preview", tool.left >= preview.right - 2f)
+            assertTrue("Preview must remain the larger landscape region", preview.width > tool.width)
+        } finally {
+            device.executeShellCommand("wm size reset")
+            device.executeShellCommand("wm density reset")
         }
-        val preview = rule.onNodeWithTag("editor-preview-slot").fetchSemanticsNode().boundsInRoot
-        val tool = rule.onNodeWithTag("editor-focused-tool-slot").fetchSemanticsNode().boundsInRoot
-        assertTrue("Landscape focused controls should be to the right of preview", tool.left >= preview.right - 2f)
-        assertTrue("Preview must remain the larger landscape region", preview.width > tool.width)
     }
 
     @Test
