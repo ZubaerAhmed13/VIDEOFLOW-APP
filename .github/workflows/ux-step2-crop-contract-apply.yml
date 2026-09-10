@@ -1,0 +1,235 @@
+name: UX Step 2 Crop Contract Apply
+
+on:
+  push:
+    branches:
+      - ux-step2-trim-speed-crop
+    paths:
+      - .github/workflows/ux-step2-crop-contract-apply.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux-step2-trim-speed-crop
+          fetch-depth: 0
+
+      - name: Apply atomic crop contract correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"anchor not found in {path}: {old[:120]!r}")
+              if text.count(old) != 1:
+                  raise SystemExit(f"anchor count != 1 in {path}: {text.count(old)}")
+              p.write_text(text.replace(old, new, 1))
+
+          helper = Path('app/src/main/java/com/videoflow/app/render/effects/Media3CropEffect.kt')
+          helper.write_text('''package com.videoflow.app.render.effects
+
+import androidx.media3.common.Effect
+import androidx.media3.effect.Crop
+import com.videoflow.app.domain.editor.CropRect
+
+/** Media3 NDC crop bounds shared by editor preview and final render. */
+internal data class Media3CropBounds(
+    val left: Float,
+    val right: Float,
+    val bottom: Float,
+    val top: Float
+)
+
+/**
+ * Converts VideoFlow's normalized top-left-origin crop rectangle into Media3 Crop bounds.
+ * A full-source crop deliberately returns null so no redundant GL stage is installed.
+ */
+internal fun normalizedCropToMedia3Bounds(crop: CropRect): Media3CropBounds? {
+    if (crop.left <= 0f && crop.top <= 0f && crop.right >= 1f && crop.bottom >= 1f) return null
+    return Media3CropBounds(
+        left = crop.left * 2f - 1f,
+        right = crop.right * 2f - 1f,
+        bottom = 1f - crop.bottom * 2f,
+        top = 1f - crop.top * 2f
+    )
+}
+
+internal fun media3CropEffectOrNull(crop: CropRect): Effect? =
+    normalizedCropToMedia3Bounds(crop)?.let { bounds ->
+        Crop(bounds.left, bounds.right, bounds.bottom, bounds.top)
+    }
+''')
+
+          replace_once(
+              'app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt',
+              'import androidx.media3.effect.Crop\n',
+              'import com.videoflow.app.render.effects.media3CropEffectOrNull\n'
+          )
+          replace_once(
+              'app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt',
+              '''        val crop = clip.transform.crop
+        if (crop.left > 0f || crop.top > 0f || crop.right < 1f || crop.bottom < 1f) {
+            effects += Crop(
+                crop.left * 2f - 1f,
+                crop.right * 2f - 1f,
+                1f - crop.bottom * 2f,
+                1f - crop.top * 2f
+            )
+        }
+''',
+              '''        media3CropEffectOrNull(clip.transform.crop)?.let { effects += it }
+'''
+          )
+
+          replace_once(
+              'app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt',
+              'import com.videoflow.app.domain.model.VideoFlowProject\n',
+              'import com.videoflow.app.domain.model.VideoFlowProject\nimport com.videoflow.app.render.effects.media3CropEffectOrNull\n'
+          )
+          replace_once(
+              'app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt',
+              '''                    val t = transform ?: EvaluatedPreviewTransform()
+                    val cropEditing = (activeTool as? EditorTool.Crop)?.takeIf { it.clipId == activeVideoClip?.id } != null
+                    val crop = if (cropEditing) CropRect() else activeVideoClip?.transform?.crop ?: CropRect()
+                    val cropCenterX = (crop.left + crop.right) / 2f
+                    val cropCenterY = (crop.top + crop.bottom) / 2f
+                    val displaySize = activeAsset?.let { asset ->
+                        val w = asset.width
+                        val h = asset.height
+                        if (w != null && h != null && w > 0 && h > 0) displayDimensionsForRotation(w, h, asset.rotationDegrees) else null
+                    }
+                    val cropGeometry = displaySize?.let { (sw, sh) ->
+                        uniformCropPreviewGeometry(sw, sh, maxWidth.value.coerceAtLeast(1f), maxHeight.value.coerceAtLeast(1f), crop)
+                    } ?: UniformCropPreviewGeometry(1f, 1f, 1f)
+''',
+              '''                    val t = transform ?: EvaluatedPreviewTransform()
+                    val cropEditing = (activeTool as? EditorTool.Crop)?.takeIf { it.clipId == activeVideoClip?.id } != null
+                    // Crop is a source-space operation. While editing, show the undistorted full source
+                    // beneath the interactive mask. Outside Crop mode, preview the committed crop with
+                    // the exact same Media3 Crop conversion used by final render.
+                    val previewTransform = if (cropEditing) EvaluatedPreviewTransform() else t
+                    val previewVideoEffects = androidx.compose.runtime.remember(visualState.value, activeVideoClip, cropEditing) {
+                        activeVideoClip?.let { clip ->
+                            buildList {
+                                addAll(com.videoflow.app.render.effects.VisualEffectPipeline.create(visualState.value, clip.id, clip.sourceStartUs, clip.speed))
+                                if (!cropEditing) media3CropEffectOrNull(clip.transform.crop)?.let { add(it) }
+                            }
+                        }.orEmpty()
+                    }
+'''
+          )
+          replace_once(
+              'app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt',
+              '''                        videoEffects = androidx.compose.runtime.remember(visualState.value, activeVideoClip) {
+                            activeVideoClip?.let { com.videoflow.app.render.effects.VisualEffectPipeline.create(visualState.value, it.id, it.sourceStartUs, it.speed) }.orEmpty()
+                        },
+''',
+              '''                        videoEffects = previewVideoEffects,
+'''
+          )
+          replace_once(
+              'app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt',
+              '''                            .offset(
+                                x = maxWidth * (t.x - 0.5f),
+                                y = maxHeight * (t.y - 0.5f)
+                            )
+                            .graphicsLayer {
+                                val cropScale = cropGeometry.scale
+                                scaleX = (t.scaleX * cropScale) * if (t.flipHorizontal) -1f else 1f
+                                scaleY = (t.scaleY * cropScale) * if (t.flipVertical) -1f else 1f
+                                rotationZ = t.rotation
+                                alpha = t.opacity.coerceIn(0f, 1f)
+                                translationX = (0.5f - cropCenterX) * size.width * cropGeometry.contentWidthFraction * cropScale
+                                translationY = (0.5f - cropCenterY) * size.height * cropGeometry.contentHeightFraction * cropScale
+                            }
+''',
+              '''                            .offset(
+                                x = maxWidth * (previewTransform.x - 0.5f),
+                                y = maxHeight * (previewTransform.y - 0.5f)
+                            )
+                            .graphicsLayer {
+                                // Crop itself never introduces independent X/Y scaling. Any non-uniform
+                                // transform here can only come from an explicit Transform edit.
+                                scaleX = previewTransform.scaleX * if (previewTransform.flipHorizontal) -1f else 1f
+                                scaleY = previewTransform.scaleY * if (previewTransform.flipVertical) -1f else 1f
+                                rotationZ = previewTransform.rotation
+                                alpha = previewTransform.opacity.coerceIn(0f, 1f)
+                            }
+'''
+          )
+
+          math_path = Path('app/src/main/java/com/videoflow/app/ui/editor/ContextualEditingMath.kt')
+          math = math_path.read_text()
+          marker = '\ninternal data class UniformCropPreviewGeometry('
+          if marker not in math:
+              raise SystemExit('UniformCropPreviewGeometry marker missing')
+          math_path.write_text(math.split(marker, 1)[0].rstrip() + '\n')
+
+          replace_once(
+              'app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt',
+              '        onDone = { onCommitCrop(crop); onDismiss() }\n',
+              '        onDone = { onCommitCrop(crop) }\n'
+          )
+
+          test_path = Path('app/src/test/java/com/videoflow/app/ui/editor/UXStep2TrimSpeedCropCoreTest.kt')
+          test = test_path.read_text()
+          test = test.replace(
+              'import com.videoflow.app.domain.editor.TimelineEngine\n',
+              'import com.videoflow.app.domain.editor.TimelineEngine\nimport com.videoflow.app.render.effects.normalizedCropToMedia3Bounds\n'
+          )
+          old_test = '''    @Test fun cropGeometry_usesOneUniformScale() {
+        val full = uniformCropPreviewGeometry(1920,1080,393f,221f,CropRect(0f,0f,1f,1f))
+        val portrait = uniformCropPreviewGeometry(1920,1080,393f,221f,CropRect(0.342f,0f,0.658f,1f))
+        assertEquals(1f, full.scale, 0.001f)
+        assertTrue(portrait.scale > 1f)
+        assertTrue(portrait.contentWidthFraction > 0f && portrait.contentHeightFraction > 0f)
+    }
+'''
+          new_test = '''    @Test fun cropGeometry_usesSharedSourceSpaceMedia3Bounds() {
+        val bounds = normalizedCropToMedia3Bounds(CropRect(0.25f, 0.10f, 0.75f, 0.90f))
+        requireNotNull(bounds)
+        assertEquals(-0.50f, bounds.left, 0.001f)
+        assertEquals(0.50f, bounds.right, 0.001f)
+        assertEquals(-0.80f, bounds.bottom, 0.001f)
+        assertEquals(0.80f, bounds.top, 0.001f)
+        assertEquals(null, normalizedCropToMedia3Bounds(CropRect()))
+    }
+'''
+          if old_test not in test:
+              raise SystemExit('crop unit-test anchor missing')
+          test_path.write_text(test.replace(old_test, new_test, 1))
+          PY
+
+          git diff --check
+          grep -q 'media3CropEffectOrNull' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          grep -q 'media3CropEffectOrNull(clip.transform.crop)' app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt
+          ! grep -q 'uniformCropPreviewGeometry' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          ! grep -q 'cropCenterX' app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt
+          grep -q 'onDone = { onCommitCrop(crop) }' app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt
+
+      - name: Commit corrected Step 2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/videoflow/app/render/effects/Media3CropEffect.kt \
+                  app/src/main/java/com/videoflow/app/render/Media3CompositionBuilder.kt \
+                  app/src/main/java/com/videoflow/app/ui/editor/PreviewWorkspace.kt \
+                  app/src/main/java/com/videoflow/app/ui/editor/ContextualEditingMath.kt \
+                  app/src/main/java/com/videoflow/app/ui/editor/ContextualToolPanels.kt \
+                  app/src/test/java/com/videoflow/app/ui/editor/UXStep2TrimSpeedCropCoreTest.kt
+          git commit -m 'Fix Step 2 crop preview-render geometry contract'
+          git push origin HEAD:ux-step2-trim-speed-crop
