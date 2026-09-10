@@ -10,8 +10,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -28,9 +31,7 @@ import com.videoflow.app.domain.model.MediaAsset
 import com.videoflow.app.domain.model.SourceStatus
 import com.videoflow.app.domain.model.VideoFlowProject
 import java.io.File
-import kotlin.math.abs
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -78,9 +79,12 @@ class UXStep2TrimSpeedCropProductComposeTest {
         rule.onNodeWithText("End        1 min 40 sec").assertIsDisplayed()
         rule.onNodeWithText("Duration   1 min 40 sec").assertIsDisplayed()
         rule.onNodeWithText("Precise").performClick()
-        rule.onNodeWithText("Start      00:00:00.000").assertIsDisplayed()
-        rule.onNodeWithText("End        00:01:40.000").assertIsDisplayed()
-        rule.onNodeWithText("Duration   00:01:40.000").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Precise trim start")
+            .assertIsDisplayed()
+            .assertTextContains("00:00:00.000")
+        rule.onNodeWithContentDescription("Precise trim end")
+            .assertIsDisplayed()
+            .assertTextContains("00:01:40.000")
         screenshot("trim-precise")
         rule.onNodeWithText("Trim").performClick()
         screenshot("trim-normal")
@@ -129,21 +133,24 @@ class UXStep2TrimSpeedCropProductComposeTest {
             }
         }
         screenshot("crop-free")
-        rule.onNodeWithText("1:1").performScrollTo().performClick()
+        rule.onNode(hasText("1:1") and hasClickAction()).performScrollTo().performClick()
         rule.waitForIdle()
-        val oneToOne = checkNotNull(draft.value.crop)
-        assertEquals(1f / (1920f / 1080f), (oneToOne.right - oneToOne.left) / (oneToOne.bottom - oneToOne.top), .002f)
+        var oneToOne: CropRect? = null
+        rule.runOnIdle { oneToOne = draft.value.crop }
+        val square = checkNotNull(oneToOne)
+        assertEquals(1f / (1920f / 1080f), (square.right - square.left) / (square.bottom - square.top), .002f)
         screenshot("crop-1x1")
-        rule.onNodeWithText("9:16").performScrollTo().performClick()
+        rule.onNode(hasText("9:16") and hasClickAction()).performScrollTo().performClick()
         rule.waitForIdle()
-        val portrait = checkNotNull(draft.value.crop)
+        var portraitDraft: CropRect? = null
+        rule.runOnIdle { portraitDraft = draft.value.crop }
+        val portrait = checkNotNull(portraitDraft)
         val expectedNormalized = (9f / 16f) / (1920f / 1080f)
         assertEquals(expectedNormalized, (portrait.right - portrait.left) / (portrait.bottom - portrait.top), .002f)
         assertTrue(portrait.left >= 0f && portrait.top >= 0f && portrait.right <= 1f && portrait.bottom <= 1f)
         screenshot("crop-9x16")
         rule.onNodeWithText("Done").performClick()
         assertEquals(portrait, committed)
-
     }
 
     @Test fun rotatedPortraitCropUsesDisplayDimensionsAndCompactLandscapeFocusedShellStaysUsable() {
@@ -156,9 +163,11 @@ class UXStep2TrimSpeedCropProductComposeTest {
                 )
             }
         }
-        rule.onNodeWithText("9:16").performScrollTo().performClick()
+        rule.onNode(hasText("9:16") and hasClickAction()).performScrollTo().performClick()
         rule.waitForIdle()
-        val crop = checkNotNull(rotatedDraft.value.crop)
+        var rotatedCrop: CropRect? = null
+        rule.runOnIdle { rotatedCrop = rotatedDraft.value.crop }
+        val crop = checkNotNull(rotatedCrop)
         val rotatedSourceAspect = 1080f / 1920f
         assertEquals((9f / 16f) / rotatedSourceAspect, (crop.right - crop.left) / (crop.bottom - crop.top), .002f)
         screenshot("crop-rotated-portrait")
@@ -209,7 +218,7 @@ class UXStep2TrimSpeedCropProductComposeTest {
                     when (index) {
                         0 -> rule.onNodeWithContentDescription("Trim start and end handles").assertIsDisplayed()
                         1 -> rule.onNodeWithContentDescription("Speed slider, 1.00 times").assertIsDisplayed()
-                        2 -> rule.onNodeWithText("Free").assertIsDisplayed()
+                        2 -> rule.onNode(hasText("Free", substring = true) and hasClickAction()).performScrollTo().assertIsDisplayed()
                     }
                     if (size == "360x800" && index == 0) screenshot("trim-compact-360x800")
                     if (size == "360x800" && index == 2) screenshot("crop-compact-360x800")
