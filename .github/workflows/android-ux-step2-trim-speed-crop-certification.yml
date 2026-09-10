@@ -134,6 +134,10 @@ jobs:
           test -s app/src/test/java/com/videoflow/app/ui/editor/UXStep2TrimSpeedCropCoreTest.kt
           test -s app/src/androidTest/java/com/videoflow/app/ui/editor/UXStep2TrimSpeedCropProductComposeTest.kt
           test -s app/src/androidTest/java/com/videoflow/app/step5/UXStep2CropRenderGeometryTest.kt
+          test -s scripts/ux_step2/run_api35_certification.sh
+          grep -q "run_suite step1-shell-regression" scripts/ux_step2/run_api35_certification.sh
+          grep -q "run_suite step2-trim-speed-crop-ui" scripts/ux_step2/run_api35_certification.sh
+          grep -q "run_suite step2-crop-real-render" scripts/ux_step2/run_api35_certification.sh
           test -s UX_STEP_2_TRIM_SPEED_CROP_COMPLETION_REPORT.md
 
       - name: Full unit regression
@@ -232,54 +236,7 @@ jobs:
           disable-linux-hw-accel: false
           emulator-boot-timeout: 600
           disk-size: 3072M
-          script: |
-            set -eu
-            PACKAGE_ID='com.videoflow.app.debug'
-            TEST_RUNNER="$PACKAGE_ID.test/androidx.test.runner.AndroidJUnitRunner"
-            mkdir -p ux-step2-emulator-reports ux-step2-evidence
-            adb install -r ux-step2-runtime/VideoFlow_UXStep2_Debug.apk
-            adb install -r ux-step2-runtime/VideoFlow_UXStep2_Debug-androidTest.apk
-
-            run_suite() {
-              name="$1"
-              classes="$2"
-              out="ux-step2-emulator-reports/${name}.txt"
-              adb shell am instrument -w -r -e class "$classes" "$TEST_RUNNER" > "$out" 2>&1
-              cat "$out"
-              ! grep -E -q 'FAILURES!!!|INSTRUMENTATION_FAILED|Process crashed|shortMsg=' "$out"
-              grep -E -q 'OK \([0-9]+ tests?\)' "$out"
-              grep -q 'INSTRUMENTATION_CODE: -1' "$out"
-            }
-
-            run_suite step1-shell-regression 'com.videoflow.app.ui.UXStep1EditorShellComposeTest,com.videoflow.app.ui.UXStep1FontScaleComposeTest,com.videoflow.app.ui.EditorWorkspaceVisualCertificationTest,com.videoflow.app.ui.ContextualToolbarComposeTest'
-            run_suite step2-trim-speed-crop-ui 'com.videoflow.app.ui.editor.UXStep2TrimSpeedCropProductComposeTest,com.videoflow.app.ui.ProfessionalToolControlsTest,com.videoflow.app.ui.TrimOpenGeometryComposeTest'
-            run_suite step2-room-history-persistence 'com.videoflow.app.db.RoomPersistenceTest,com.videoflow.app.db.Step2MigrationTest,com.videoflow.app.editor.Step2ComplexPersistenceTest'
-            run_suite step2-speed-av-sync 'com.videoflow.app.step5.Step5AudioVideoSyncTest#decodedFlashAndToneStayAlignedAfterTrimAndSpeedAndVisualProcessing'
-            run_suite step2-crop-real-render 'com.videoflow.app.step5.UXStep2CropRenderGeometryTest,com.videoflow.app.step5.Step5CompositionGeometryTest'
-            run_suite retained-player-proxy-render 'com.videoflow.app.media.MediaAnalyzerInstrumentationTest,com.videoflow.app.media.PlayerInstrumentationTest,com.videoflow.app.editor.ProxyManagerInstrumentationTest,com.videoflow.app.export.NativeRenderEngineInstrumentedTest,com.videoflow.app.export.SafMediaMuxerFactoryInstrumentedTest'
-
-            adb pull "/sdcard/Android/data/$PACKAGE_ID/files/ux-step2-evidence" ux-step2-evidence/ || true
-            adb pull "/sdcard/Android/data/$PACKAGE_ID/files/step5-evidence" ux-step2-evidence/ || true
-            adb logcat -d -v threadtime > ux-step2-emulator-reports/logcat.txt
-
-            for required in \
-              trim-normal.png \
-              trim-precise.png \
-              speed-1x.png \
-              speed-2x.png \
-              crop-free.png \
-              crop-1x1.png \
-              crop-9x16.png \
-              crop-rotated-portrait.png \
-              trim-compact-360x800.png \
-              crop-compact-360x800.png \
-              landscape-focused-crop.png; do
-              find ux-step2-evidence -name "$required" -type f -size +0c | grep -q .
-            done
-
-            find ux-step2-evidence -maxdepth 4 -type f -print | sort > ux-step2-emulator-reports/evidence-files.txt
-            grep -q 'step2-crop-geometry.jsonl' ux-step2-emulator-reports/evidence-files.txt
-            grep -q 'av-sync.jsonl' ux-step2-emulator-reports/evidence-files.txt
+          script: bash scripts/ux_step2/run_api35_certification.sh
 
       - name: Upload API 35 Step 2 certification evidence
         if: always()
