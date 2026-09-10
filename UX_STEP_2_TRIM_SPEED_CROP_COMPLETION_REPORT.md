@@ -48,7 +48,7 @@ The dedicated Step-2 product Compose suite exercises the production Trim, Speed 
 
 A real-render Crop geometry test renders a deterministic white square through Original, 1:1 and 9:16 crops and verifies that the square remains approximately square rather than becoming an ellipse/rectangle due to non-uniform scaling. The retained A/V synchronization test exercises speed with real video/audio events and checks drift tolerance. Step-1 shell/font/visual regression and retained Room, migration, player, proxy and native-render suites are also run on API 35.
 
-The API-35 emulator harness is intentionally POSIX-shell compatible because `reactivecircus/android-emulator-runner@v2` executes its `script:` body with `/bin/sh`. Bash-specific `set -o pipefail` is therefore not used inside that action body; strict `set -eu` remains enabled while the individual instrumentation suite checks explicitly validate success markers and reject failure/crash markers. Bash-only workflow steps outside the emulator action continue to declare `shell: bash` and retain `set -euo pipefail`.
+The API-35 emulator action invokes one checked-in Bash entrypoint, `scripts/ux_step2/run_api35_certification.sh`. This avoids relying on multi-line shell state inside `reactivecircus/android-emulator-runner@v2`, whose `script:` commands are dispatched independently through `/bin/sh -c`. The checked-in runner uses `set -euo pipefail`, captures every instrumentation transcript before evaluating it, rejects nonzero exits and explicit failure/crash markers, requires both JUnit and Android instrumentation success markers, and verifies the required screenshot/render evidence files before returning success.
 
 ## Files changed
 The authoritative final list is produced by:
