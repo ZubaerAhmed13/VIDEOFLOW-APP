@@ -1,6 +1,7 @@
 package com.videoflow.app.render.effects
 
 import androidx.media3.common.Effect
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Crop
 import com.videoflow.app.domain.editor.CropRect
 
@@ -26,6 +27,7 @@ internal fun normalizedCropToMedia3Bounds(crop: CropRect): Media3CropBounds? {
     )
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 internal fun media3CropEffectOrNull(crop: CropRect): Effect? =
     normalizedCropToMedia3Bounds(crop)?.let { bounds ->
         Crop(bounds.left, bounds.right, bounds.bottom, bounds.top)
