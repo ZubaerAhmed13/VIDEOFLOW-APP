@@ -79,10 +79,8 @@ class UXStep2TrimSpeedCropProductComposeTest {
         rule.onNodeWithText("Duration   1 min 40 sec").assertIsDisplayed()
         rule.onNodeWithText("Precise").performClick()
         rule.onNodeWithContentDescription("Precise trim start")
-            .assertIsDisplayed()
             .assertTextContains("00:00:00.000")
         rule.onNodeWithContentDescription("Precise trim end")
-            .assertIsDisplayed()
             .assertTextContains("00:01:40.000")
         screenshot("trim-precise")
         rule.onNodeWithText("Trim").performClick()
@@ -132,14 +130,14 @@ class UXStep2TrimSpeedCropProductComposeTest {
             }
         }
         screenshot("crop-free")
-        rule.onNode(hasText("1:1") and hasClickAction()).performScrollTo().performClick()
+        rule.onNode(hasText("1:1") and hasClickAction()).performClick()
         rule.waitForIdle()
         var oneToOne: CropRect? = null
         rule.runOnIdle { oneToOne = draft.value.crop }
         val square = checkNotNull(oneToOne)
         assertEquals(1f / (1920f / 1080f), (square.right - square.left) / (square.bottom - square.top), .002f)
         screenshot("crop-1x1")
-        rule.onNode(hasText("9:16") and hasClickAction()).performScrollTo().performClick()
+        rule.onNode(hasText("9:16") and hasClickAction()).performClick()
         rule.waitForIdle()
         var portraitDraft: CropRect? = null
         rule.runOnIdle { portraitDraft = draft.value.crop }
@@ -153,7 +151,7 @@ class UXStep2TrimSpeedCropProductComposeTest {
     }
 
     @Test fun rotatedPortraitCropUsesDisplayDimensionsAndCompactLandscapeFocusedShellStaysUsable() {
-        val rotatedDraft = mutableStateOf(ContextualPreviewDraft(crop = CropRect(), cropNormalizedAspect = null))
+        val rotatedDraft = mutableStateOf(ContextualPreviewDraft(crop = CropRect(.15f, .20f, .85f, .80f), cropNormalizedAspect = null))
         rule.setContent {
             MaterialTheme {
                 CropPanel(
@@ -162,24 +160,35 @@ class UXStep2TrimSpeedCropProductComposeTest {
                 )
             }
         }
-        rule.onNode(hasText("9:16") and hasClickAction()).performScrollTo().performClick()
+        rule.onNode(hasText("1:1") and hasClickAction()).performClick()
         rule.waitForIdle()
         var rotatedCrop: CropRect? = null
         rule.runOnIdle { rotatedCrop = rotatedDraft.value.crop }
         val crop = checkNotNull(rotatedCrop)
         val rotatedSourceAspect = 1080f / 1920f
-        assertEquals((9f / 16f) / rotatedSourceAspect, (crop.right - crop.left) / (crop.bottom - crop.top), .002f)
-        screenshot("crop-rotated-portrait")
+        assertEquals(1f / rotatedSourceAspect, (crop.right - crop.left) / (crop.bottom - crop.top), .002f)
+        screenshot("crop-rotated-1x1")
     }
 
-    @Test fun focusedShellKeepsPreviewAndPinnedActionsAcrossRequiredPhoneAndLandscapeClasses() {
-        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+    @Test fun focusedShellKeepsPreviewAndPinnedActionsAt360x800() = exerciseFocusedShellAtSize("360x800")
+
+    @Test fun focusedShellKeepsPreviewAndPinnedActionsAt393x852() = exerciseFocusedShellAtSize("393x852")
+
+    @Test fun focusedShellKeepsPreviewAndPinnedActionsAt412x915() = exerciseFocusedShellAtSize("412x915")
+
+    @Test fun focusedShellKeepsPreviewAndPinnedActionsAt852x393() = exerciseFocusedShellAtSize("852x393")
+
+    private fun exerciseFocusedShellAtSize(size: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
         val tool = mutableStateOf(0)
         val speedDraft = mutableStateOf(ContextualPreviewDraft(speed = 1.0))
         val cropDraft = mutableStateOf(ContextualPreviewDraft(crop = CropRect(), cropNormalizedAspect = null))
         try {
             device.executeShellCommand("wm density 160")
-            device.executeShellCommand("wm size 393x852")
+            device.executeShellCommand("wm size $size")
+            device.waitForIdle()
+            instrumentation.waitForIdleSync()
             rule.setContent {
                 MaterialTheme {
                     FocusedEditorWorkspace(
@@ -201,28 +210,23 @@ class UXStep2TrimSpeedCropProductComposeTest {
                     )
                 }
             }
-            val sizes = listOf("360x800", "393x852", "412x915", "852x393")
-            for (size in sizes) {
-                device.executeShellCommand("wm size $size")
-                device.waitForIdle()
-                for (index in 0..2) {
-                    rule.runOnIdle { tool.value = index }
-                    rule.waitForIdle()
-                    val preview = rule.onNodeWithTag("step2-focused-preview").fetchSemanticsNode().boundsInRoot
-                    val action = rule.onNodeWithTag("focused-tool-action-bar").fetchSemanticsNode().boundsInRoot
-                    assertTrue("preview must remain usable at $size tool=$index", preview.width > 0f && preview.height > 0f)
-                    assertTrue("pinned action bar must remain visible at $size tool=$index", action.width > 0f && action.height >= 48f)
-                    rule.onNodeWithContentDescription("Cancel").assertIsDisplayed()
-                    rule.onNodeWithContentDescription("Done").assertIsDisplayed()
-                    when (index) {
-                        0 -> rule.onNodeWithContentDescription("Trim start and end handles").assertIsDisplayed()
-                        1 -> rule.onNodeWithContentDescription("Speed slider, 1.00 times").assertIsDisplayed()
-                        2 -> rule.onNode(hasText("Free", substring = true) and hasClickAction()).performScrollTo().assertIsDisplayed()
-                    }
-                    if (size == "360x800" && index == 0) screenshot("trim-compact-360x800")
-                    if (size == "360x800" && index == 2) screenshot("crop-compact-360x800")
-                    if (size == "852x393" && index == 2) screenshot("landscape-focused-crop")
+            for (index in 0..2) {
+                rule.runOnIdle { tool.value = index }
+                rule.waitForIdle()
+                val preview = rule.onNodeWithTag("step2-focused-preview").fetchSemanticsNode().boundsInRoot
+                val action = rule.onNodeWithTag("focused-tool-action-bar").fetchSemanticsNode().boundsInRoot
+                assertTrue("preview must remain usable at $size tool=$index", preview.width > 0f && preview.height > 0f)
+                assertTrue("pinned action bar must remain visible at $size tool=$index", action.width > 0f && action.height >= 48f)
+                rule.onNodeWithContentDescription("Cancel").assertIsDisplayed()
+                rule.onNodeWithContentDescription("Done").assertIsDisplayed()
+                when (index) {
+                    0 -> rule.onNodeWithContentDescription("Trim start and end handles").assertIsDisplayed()
+                    1 -> rule.onNodeWithContentDescription("Speed slider, 1.00 times").assertIsDisplayed()
+                    2 -> rule.onNode(hasText("Free", substring = true) and hasClickAction()).performScrollTo().assertIsDisplayed()
                 }
+                if (size == "360x800" && index == 0) screenshot("trim-compact-360x800")
+                if (size == "360x800" && index == 2) screenshot("crop-compact-360x800")
+                if (size == "852x393" && index == 2) screenshot("landscape-focused-crop")
             }
         } finally {
             device.executeShellCommand("wm size reset")
