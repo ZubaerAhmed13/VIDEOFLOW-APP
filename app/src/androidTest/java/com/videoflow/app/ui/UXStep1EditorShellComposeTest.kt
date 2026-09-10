@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -15,9 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.test.assertDoesNotExist
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -196,8 +194,11 @@ class UXStep1EditorShellComposeTest {
             }
         }
 
-        rule.onNodeWithTag("editor-focused-workspace").assertExists()
-        rule.onNodeWithTag("editor-timeline-slot").assertDoesNotExist()
+        rule.onNodeWithTag("editor-focused-workspace").fetchSemanticsNode()
+        assertTrue(
+            "Main timeline must be absent in focused mode",
+            rule.onAllNodesWithTag("editor-timeline-slot").fetchSemanticsNodes().isEmpty()
+        )
         val root = rule.onNodeWithTag("cert-focused-root").fetchSemanticsNode().boundsInRoot
         val action = rule.onNodeWithTag("focused-tool-action-bar").fetchSemanticsNode().boundsInRoot
         assertTrue("Focused action bar must be inside the workspace", action.bottom <= root.bottom + 2f)
@@ -209,12 +210,12 @@ class UXStep1EditorShellComposeTest {
         assertTrue("Done touch target must be >=48dp", done.width >= 48f * density - 2f && done.height >= 48f * density - 2f)
 
         rule.onNodeWithContentDescription("Cancel").performClick()
-        rule.onNodeWithTag("cert-main-return").assertExists()
+        rule.onNodeWithTag("cert-main-return").fetchSemanticsNode()
 
         rule.runOnIdle { focused.value = true }
         rule.waitForIdle()
         rule.onNodeWithContentDescription("Done").performClick()
-        rule.onNodeWithTag("cert-main-return").assertExists()
+        rule.onNodeWithTag("cert-main-return").fetchSemanticsNode()
     }
 
     @Test
