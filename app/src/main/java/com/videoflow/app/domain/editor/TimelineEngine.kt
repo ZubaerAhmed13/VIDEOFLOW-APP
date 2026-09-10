@@ -35,7 +35,13 @@ object TimelineEngine {
         val start = newSourceStartUs.coerceIn(0L, assetDurationUs - 1L)
         val end = newSourceEndUs.coerceIn(start + 1L, assetDurationUs)
         require(end > start)
-        return clip.copy(sourceStartUs = start, sourceEndUs = end)
+        val newDurationUs = timelineDurationUs(end - start, clip.speed)
+        return clip.copy(
+            sourceStartUs = start,
+            sourceEndUs = end,
+            fadeInUs = clip.fadeInUs.coerceAtMost(newDurationUs),
+            fadeOutUs = clip.fadeOutUs.coerceAtMost(newDurationUs)
+        )
     }
 
     fun trimEnd(clip: TimelineClip, newSourceEndUs: Long, sourceDurationUs: Long): TimelineClip {

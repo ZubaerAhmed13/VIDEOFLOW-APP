@@ -189,7 +189,7 @@ fun PreviewWorkspace(
                 previewSource != null && activeAsset?.mimeType?.startsWith("video/") == true -> {
                     val t = transform ?: EvaluatedPreviewTransform()
                     val cropEditing = (activeTool as? EditorTool.Crop)?.takeIf { it.clipId == activeVideoClip?.id } != null
-                    val crop = if (cropEditing) CropRect.FULL else activeVideoClip?.transform?.crop ?: CropRect.FULL
+                    val crop = if (cropEditing) CropRect() else activeVideoClip?.transform?.crop ?: CropRect()
                     val cropCenterX = (crop.left + crop.right) / 2f
                     val cropCenterY = (crop.top + crop.bottom) / 2f
                     val displaySize = activeAsset?.let { asset ->

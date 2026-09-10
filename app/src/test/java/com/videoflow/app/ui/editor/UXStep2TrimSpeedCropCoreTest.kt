@@ -12,12 +12,14 @@ class UXStep2TrimSpeedCropCoreTest {
     private fun clip() = TimelineClip(id="clip", projectId="project", trackId="track", assetId="asset", timelineStartUs=7_000_000L, sourceStartUs=0L, sourceEndUs=120_000_000L)
 
     @Test fun focusedTrim_changesSourceRangeButKeepsTimelineAnchor() {
-        val before = clip()
+        val before = clip().copy(fadeInUs = 110_000_000L, fadeOutUs = 115_000_000L)
         val after = TimelineEngine.trimSourceRangeKeepingTimelineAnchor(before, 12_000_000L, 120_000_000L, 120_000_000L)
         assertEquals(7_000_000L, after.timelineStartUs)
         assertEquals(12_000_000L, after.sourceStartUs)
         assertEquals(120_000_000L, after.sourceEndUs)
         assertEquals(108_000_000L, after.timelineDurationUs)
+        assertTrue(after.fadeInUs <= after.timelineDurationUs)
+        assertTrue(after.fadeOutUs <= after.timelineDurationUs)
     }
 
     @Test fun directTimelineTrimStart_keepsItsExistingEdgeTrimSemantics() {

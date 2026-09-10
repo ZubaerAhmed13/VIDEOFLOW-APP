@@ -395,7 +395,7 @@ private fun CropPanel(
         val (sw, sh) = displayDimensionsForRotation(encodedWidth, encodedHeight, asset.rotationDegrees)
         val targetAspect = w.toFloat() / h.toFloat()
         val normalizedAspect = targetAspect / (sw.toFloat() / sh.toFloat())
-        update(centeredCrop(sw, sh, targetAspect), normalizedAspect)
+        update(aspectCropAroundCurrentCenter(crop, sw, sh, targetAspect), normalizedAspect)
     }
 
     ToolHeader("Crop", "Drag corners or edges directly on the video preview")
@@ -951,6 +951,27 @@ private fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPoin
     Slider(value = value.coerceIn(range.start, range.endInclusive), onValueChange = onValue, valueRange = range, modifier = Modifier.semantics { contentDescription = "$label, $display" })
 }
 
+private fun aspectCropAroundCurrentCenter(current: CropRect, sourceWidth: Int, sourceHeight: Int, targetAspect: Float): CropRect {
+    require(sourceWidth > 0 && sourceHeight > 0)
+    require(targetAspect.isFinite() && targetAspect > 0f)
+    val sourceAspect = sourceWidth.toFloat() / sourceHeight.toFloat()
+    val normalizedAspect = targetAspect / sourceAspect
+    val width: Float
+    val height: Float
+    if (normalizedAspect >= 1f) {
+        width = 1f
+        height = (1f / normalizedAspect).coerceIn(0.0001f, 1f)
+    } else {
+        width = normalizedAspect.coerceIn(0.0001f, 1f)
+        height = 1f
+    }
+    val centerX = ((current.left + current.right) / 2f).coerceIn(0f, 1f)
+    val centerY = ((current.top + current.bottom) / 2f).coerceIn(0f, 1f)
+    val left = (centerX - width / 2f).coerceIn(0f, 1f - width)
+    val top = (centerY - height / 2f).coerceIn(0f, 1f - height)
+    return CropRect(left, top, left + width, top + height)
+}
+
 private fun centeredCrop(sourceWidth: Int, sourceHeight: Int, targetAspect: Float): CropRect {
     val sourceAspect = sourceWidth.toFloat() / sourceHeight.toFloat()
     return if (sourceAspect > targetAspect) {
@@ -971,7 +992,7 @@ private fun normalize180(value: Float): Float {
     return normalized
 }
 
-private fun formatMultiplier(value: Float): String = if (value % 1f == 0f) value.roundToInt().toString() else "%.2f".format(value).trimEnd('0').trimEnd('.')
+private fun formatMultiplier(value: Float): String = String.format(java.util.Locale.US, "%.2f", value)
 
 private fun argbToHex(argb: Long): String = "#%08X".format(argb and 0xFFFFFFFFL)
 
