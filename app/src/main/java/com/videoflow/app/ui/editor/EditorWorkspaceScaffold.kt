@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.weight
@@ -79,6 +80,7 @@ fun MainEditorPortraitScaffold(
             Box(
                 Modifier
                     .fillMaxWidth()
+                    .heightIn(min = metrics.minimumPreviewHeight)
                     .weight(1f)
                     .testTag("editor-preview-slot")
             ) { preview() }

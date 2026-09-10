@@ -220,7 +220,6 @@ fun TimelineWorkspace(
                         .testTag("timeline-track-viewport")
                         .semantics { contentDescription = "Timeline track viewport" }
                 ) {
-                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)
                     tracks.sortedBy { it.orderIndex }.forEach { track ->
                         TrackRow(
                             track = track,
@@ -251,6 +250,10 @@ fun TimelineWorkspace(
                             laneHeight = trackRowHeight
                         )
                     }
+                    // Keep the first three real tracks at the top of the bounded viewport.
+                    // Legacy effect lanes remain reachable after the track stack instead of
+                    // consuming one of the three primary visible track rows.
+                    TimedEffectIndicators(clips,revision,horizontal,totalWidth,pixelsPerSecond,onSelect,onSeek,onProfessionalTool,originUs,windowEndUs)
                 }
             }
         }
@@ -319,7 +322,7 @@ private fun TrackRow(
                         }
                     }
                     IconButton(onClick = onTrackSettings, modifier = Modifier.width(48.dp).height(48.dp)) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More options for ${track.name}", tint = VideoFlowEditorColors.SecondaryText)
+                        Icon(Icons.Default.MoreVert, contentDescription = "Open ${track.name} settings", tint = VideoFlowEditorColors.SecondaryText)
                     }
                 }
             }
