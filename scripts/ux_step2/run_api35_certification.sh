@@ -58,7 +58,7 @@ for required in \
   crop-free.png \
   crop-1x1.png \
   crop-9x16.png \
-  crop-rotated-portrait.png \
+  crop-rotated-1x1.png \
   trim-compact-360x800.png \
   crop-compact-360x800.png \
   landscape-focused-crop.png; do
