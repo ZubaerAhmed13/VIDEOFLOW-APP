@@ -69,13 +69,24 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y ffmpeg
           fi
-          mkdir -p app/src/androidTest/assets
+          mkdir -p app/src/androidTest/assets app/src/debug/assets
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i testsrc2=size=320x240:rate=30 \
             -f lavfi -i sine=frequency=880:sample_rate=48000 \
             -t 2 -shortest -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
             -c:a aac -b:a 96k -movflags +faststart \
             app/src/androidTest/assets/sample_av.mp4
+          cp app/src/androidTest/assets/sample_av.mp4 app/src/debug/assets/sample_av.mp4
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=320x240:rate=30 \
+            -t 2 -an -c:v libx264 -preset ultrafast -pix_fmt yuv420p -movflags +faststart \
+            app/src/debug/assets/sample_video_only.mp4
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=320x240:rate=30 \
+            -t 2 -an -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -metadata:s:v:0 rotate=90 -movflags +faststart \
+            app/src/debug/assets/sample_rotated.mp4
+          printf 'VideoFlow intentionally malformed media fixture\n' > app/src/debug/assets/malformed.mp4
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i "color=black:size=320x240:rate=30,drawbox=color=white:t=fill:enable='between(t,0.6,0.68)+between(t,1.5,1.58)'" \
             -f lavfi -i "aevalsrc=0.7*sin(2*PI*1000*t)*(between(t\,0.6\,0.68)+between(t\,1.5\,1.58)):s=48000" \
@@ -91,6 +102,10 @@ jobs:
           test -s app/src/androidTest/assets/sample_av.mp4
           test -s app/src/androidTest/assets/step5-sync.mp4
           test -s app/src/androidTest/assets/step2-geometry.mp4
+          test -s app/src/debug/assets/sample_av.mp4
+          test -s app/src/debug/assets/sample_video_only.mp4
+          test -s app/src/debug/assets/sample_rotated.mp4
+          test -s app/src/debug/assets/malformed.mp4
           ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height \
             -of default=noprint_wrappers=1 app/src/androidTest/assets/step2-geometry.mp4 | tee ux-step2-fixture-info.txt
           grep -q 'codec_name=h264' ux-step2-fixture-info.txt
@@ -152,6 +167,15 @@ jobs:
       - name: Assemble exact debug and instrumentation APKs
         run: ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace
 
+      - name: Verify retained debug fixtures are packaged
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | tee ux-step2-debug-apk-assets.txt
+          for fixture in sample_av.mp4 sample_video_only.mp4 sample_rotated.mp4 malformed.mp4; do
+            grep -q "assets/$fixture" ux-step2-debug-apk-assets.txt
+          done
+
       - name: Package exact-head runtime
         shell: bash
         run: |
@@ -160,7 +184,7 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk ux-step2-runtime/VideoFlow_UXStep2_Debug.apk
           cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ux-step2-runtime/VideoFlow_UXStep2_Debug-androidTest.apk
           git rev-parse HEAD > ux-step2-runtime/EXACT_HEAD.txt
-          cp ux-step2-fixture-info.txt ux-step2-changed-files.txt ux-step2-runtime/
+          cp ux-step2-fixture-info.txt ux-step2-changed-files.txt ux-step2-debug-apk-assets.txt ux-step2-runtime/
           (cd ux-step2-runtime && sha256sum *.apk > SHA256SUMS.txt)
 
       - name: Upload exact API 35 runtime bundle
@@ -181,6 +205,7 @@ jobs:
             app/build/test-results/
             ux-step2-fixture-info.txt
             ux-step2-changed-files.txt
+            ux-step2-debug-apk-assets.txt
           if-no-files-found: warn
           retention-days: 30
 
