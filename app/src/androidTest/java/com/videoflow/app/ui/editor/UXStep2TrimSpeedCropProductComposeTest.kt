@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -19,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -61,7 +63,7 @@ class UXStep2TrimSpeedCropProductComposeTest {
         createdAt = 0L, updatedAt = 0L, lastOpenedAt = null, mediaAssets = listOf(asset(rotation))
     )
 
-    @Test fun trimNormalAndPreciseModesUseProfessionalTimeLanguageAndOneCommit() {
+    @Test fun trimNormalModeUsesProfessionalTimeLanguageAndOneCommit() {
         var committed: Pair<Long, Long>? = null
         var dismissed = false
         rule.setContent {
@@ -77,17 +79,27 @@ class UXStep2TrimSpeedCropProductComposeTest {
         rule.onNodeWithText("Start      0 sec").assertIsDisplayed()
         rule.onNodeWithText("End        1 min 40 sec").assertIsDisplayed()
         rule.onNodeWithText("Duration   1 min 40 sec").assertIsDisplayed()
-        rule.onNodeWithText("Precise").performClick()
+        screenshot("trim-normal")
+        rule.onNodeWithText("Done").performClick()
+        assertEquals(0L to 100_000_000L, committed)
+        assertTrue(dismissed)
+    }
+
+    @Test fun trimPreciseModeUsesExactProfessionalTimecode() {
+        rule.setContent {
+            MaterialTheme {
+                TrimPanel(
+                    tool = EditorTool.Trim(clip.id, startPrecise = true), clip = clip, project = project(), thumbnails = emptyMap(),
+                    filmstripPaths = emptyList(), waveforms = emptyMap(), playheadUs = clip.timelineStartUs,
+                    onPreviewSeek = {}, onCommitTrim = { _, _ -> }, onDismiss = {}
+                )
+            }
+        }
         rule.onNodeWithContentDescription("Precise trim start")
             .assertTextContains("00:00:00.000")
         rule.onNodeWithContentDescription("Precise trim end")
             .assertTextContains("00:01:40.000")
         screenshot("trim-precise")
-        rule.onNodeWithText("Trim").performClick()
-        screenshot("trim-normal")
-        rule.onNodeWithText("Done").performClick()
-        assertEquals(0L to 100_000_000L, committed)
-        assertTrue(dismissed)
     }
 
     @Test fun speedDraftUpdatesReadableResultThenDoneCommitsOnceAndCancelDoesNotCommit() {
@@ -130,14 +142,20 @@ class UXStep2TrimSpeedCropProductComposeTest {
             }
         }
         screenshot("crop-free")
-        rule.onNode(hasText("1:1") and hasClickAction()).performClick()
+        rule.onNode(hasText("1:1") and hasClickAction())
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performTouchInput { click() }
         rule.waitForIdle()
         var oneToOne: CropRect? = null
         rule.runOnIdle { oneToOne = draft.value.crop }
         val square = checkNotNull(oneToOne)
         assertEquals(1f / (1920f / 1080f), (square.right - square.left) / (square.bottom - square.top), .002f)
         screenshot("crop-1x1")
-        rule.onNode(hasText("9:16") and hasClickAction()).performClick()
+        rule.onNode(hasText("9:16") and hasClickAction())
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performTouchInput { click() }
         rule.waitForIdle()
         var portraitDraft: CropRect? = null
         rule.runOnIdle { portraitDraft = draft.value.crop }
@@ -160,7 +178,10 @@ class UXStep2TrimSpeedCropProductComposeTest {
                 )
             }
         }
-        rule.onNode(hasText("1:1") and hasClickAction()).performClick()
+        rule.onNode(hasText("1:1") and hasClickAction())
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performTouchInput { click() }
         rule.waitForIdle()
         var rotatedCrop: CropRect? = null
         rule.runOnIdle { rotatedCrop = rotatedDraft.value.crop }
